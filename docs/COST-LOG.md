@@ -76,18 +76,21 @@ from public.model_usage group by 1, 2, 3 order by 1 desc, 2;
 Each fail above has a shipped fix beside it; the next rows are the same tasks run again on the
 11-08 deploy, which is the number that matters.
 
-## Build cost (what building Orca costs, separate from running it)
+## Summary (attempts through 2026-11-10)
 
-Claude Code sessions' own meters (`cost_usd` from the session record), read 2026-11-15. Not part of
-the per-task figures above, which are what a student's use of Orca costs.
+| Measure | Value |
+|---|---|
+| Attempts completed | 10 (1 more pending) |
+| Succeeded | 1 (questions for the 9 weak spots, 11-10) |
+| **Success rate** | **10%** |
+| **Human fallback minutes** | **70 recorded** (all ~, the owner's recollection) + 2 attempts not recorded (n/r) |
+| Human $ at $30/h | $35.00 |
+| Tool $ | $0 (Supabase, Vercel Hobby, Trigger.dev free tier billed nothing) |
+| Model $ | **not yet measured**: 8 attempts made no model calls ($0); 2 did (the 11-07 syllabus paste, the 11-07 ALD import) and their spend is in production's `model_usage`, not read yet |
+| **Cost per successful task** | **$35.00 + the 2 unmeasured runs**, over 1 success |
 
-| Session | What it built | $ |
-|---|---|---|
-| Main session (since 2026-10-02, everything) | All phases, cram mode steps 1–8, the in-session workflows and agents | 856.38 |
-| Admin view (2026-11-10) | `/admin`, the gate, the heartbeat (PR #27) | 20.40 |
-| Hours per day (2026-11-10) | PR #41 | 11.42 |
-| Questions without material (2026-11-10) | PR #42 | 5.87 |
-| Cram schedule and covered state (2026-11-10) | PR #43 | 8.24 |
-
-The main session's meter can't be split by day or by feature from here; from now on each feature
-built in its own session gets its own row.
+Not measured yet, so not reported as zero: the model spend of the two 11-07 runs (run the first query
+above on the production project, or open `/admin/users/<id>` → Uploads, and fill the rows), and the
+human minutes for the two 11-10 attempts marked n/r. The one success cost Orca nothing in model
+spend because Claude wrote the questions on the student's side; that is a design choice (cram mode),
+not a measurement error.
