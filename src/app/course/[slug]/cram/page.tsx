@@ -139,7 +139,7 @@ function CrammingView({ course, today, plan, topics, spentMinutes, objectiveName
   const statusOf = new Map(topics.flatMap((t) => t.objectives.map((o) => [o.id, o.status] as const)));
   return (
     <>
-      <div className="flex w-[600px] flex-col gap-[12px]">
+      <div className="flex w-[360px] flex-col gap-[12px]">
         <motion.div variants={fadeUp}>
           <Card className="flex flex-col gap-[10px] px-[24px] pb-[20px] pt-[20px]">
             <p className="eyebrow text-[13px] text-wisteria-deep">Your time</p>
@@ -172,11 +172,78 @@ function CrammingView({ course, today, plan, topics, spentMinutes, objectiveName
               </ul>
             )}
             <p className="text-[16px] font-semibold text-prussian" data-part="cram-plan">
-              {plan.line}
+              {plan.daysLeft === 0 ? "Exam day. Light review only, nothing new." : `${plan.daysLeft} ${plan.daysLeft === 1 ? "day" : "days"} to the exam · ${Math.round(plan.verified.share * 100)}% verified`}
             </p>
           </Card>
         </motion.div>
 
+        <motion.div variants={fadeUp}>
+          <Card className="flex flex-col gap-[8px] px-[24px] pb-[18px] pt-[18px]" data-part="cram-today">
+            <h2 className="text-[20px] font-bold text-prussian">Today</h2>
+            {plan.daysLeft === 0 ? (
+              <p className="text-[14px] font-medium text-wisteria-deep">Light review only, nothing new.</p>
+            ) : plan.today.length === 0 ? (
+              <p className="text-[14px] font-medium text-wisteria-deep">Nothing planned today.</p>
+            ) : (
+              <ul className="flex flex-col gap-[4px]">
+                {plan.today.map((t) => (
+                  <li key={t.topicId} className="flex justify-between text-[15px] font-semibold text-prussian" data-part="cram-today-topic" data-topic={t.topicId}>
+                    <span>{topicName.get(t.topicId) ?? t.topicId}</span>
+                    <span className="text-wisteria-deep">{t.minutes} min</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+        </motion.div>
+
+        <motion.div variants={fadeUp}>
+          <Card className="flex flex-col gap-[8px] px-[24px] pb-[18px] pt-[18px]" data-part="cram-mock">
+            <h2 className="text-[20px] font-bold text-prussian">Practice test</h2>
+            <p className="text-[14px] font-medium text-wisteria-deep">No practice test yet</p>
+          </Card>
+        </motion.div>
+
+        <motion.div variants={fadeUp}>
+          <Card className="flex flex-col gap-[8px] px-[24px] pb-[18px] pt-[18px]" data-part="cram-vault">
+            <h2 className="text-[20px] font-bold text-prussian">Held back</h2>
+            {vault.length ? (
+              <ul className="flex flex-col gap-[2px]">
+                {vault.map((name) => (
+                  <li key={name} className="text-[14px] font-medium text-prussian" data-part="cram-vault-item">
+                    {name}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-[14px] font-medium text-wisteria-deep">Nothing held back yet.</p>
+            )}
+            <Link href={`/add-material?course=${course.slug}&type=Practice%20exam&holdBack=1`} data-part="cram-add-material" className="text-[13px] font-bold text-wisteria-deep underline">
+              Add a practice exam
+            </Link>
+          </Card>
+        </motion.div>
+
+        <motion.div variants={fadeUp} className="flex flex-wrap items-center gap-[8px]">
+          {connected ? (
+            <span className="text-[13px] font-medium text-prussian" data-part="study-with-claude">
+              Study with Claude: it has this exam&apos;s scope.
+            </span>
+          ) : (
+            <Link href="/settings#connector" data-part="study-with-claude" className={PILL}>
+              Study with Claude
+            </Link>
+          )}
+          <button type="button" onClick={onEdit} data-part="cram-edit" className={PILL}>
+            Edit scope
+          </button>
+          <Button size="xs" variant="secondary" onClick={onStop} data-part="cram-stop">
+            Stop cramming
+          </Button>
+        </motion.div>
+      </div>
+
+      <div className="flex w-[600px] flex-col gap-[12px]">
         <motion.div variants={fadeUp}>
           <Card className="flex flex-col gap-[12px] px-[24px] pb-[20px] pt-[20px]">
             <div className="flex items-baseline justify-between">
@@ -241,73 +308,6 @@ function CrammingView({ course, today, plan, topics, spentMinutes, objectiveName
               })}
             </ul>
           </Card>
-        </motion.div>
-      </div>
-
-      <div className="flex w-[360px] flex-col gap-[12px]">
-        <motion.div variants={fadeUp}>
-          <Card className="flex flex-col gap-[8px] px-[24px] pb-[18px] pt-[18px]" data-part="cram-today">
-            <h2 className="text-[20px] font-bold text-prussian">Today</h2>
-            {plan.daysLeft === 0 ? (
-              <p className="text-[14px] font-medium text-wisteria-deep">Light review only, nothing new.</p>
-            ) : plan.today.length === 0 ? (
-              <p className="text-[14px] font-medium text-wisteria-deep">Nothing planned today.</p>
-            ) : (
-              <ul className="flex flex-col gap-[4px]">
-                {plan.today.map((t) => (
-                  <li key={t.topicId} className="flex justify-between text-[15px] font-semibold text-prussian" data-part="cram-today-topic" data-topic={t.topicId}>
-                    <span>{topicName.get(t.topicId) ?? t.topicId}</span>
-                    <span className="text-wisteria-deep">{t.minutes} min</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Card>
-        </motion.div>
-
-        <motion.div variants={fadeUp}>
-          <Card className="flex flex-col gap-[8px] px-[24px] pb-[18px] pt-[18px]" data-part="cram-mock">
-            <h2 className="text-[20px] font-bold text-prussian">Practice test</h2>
-            <p className="text-[14px] font-medium text-wisteria-deep">No practice test yet</p>
-          </Card>
-        </motion.div>
-
-        <motion.div variants={fadeUp}>
-          <Card className="flex flex-col gap-[8px] px-[24px] pb-[18px] pt-[18px]" data-part="cram-vault">
-            <h2 className="text-[20px] font-bold text-prussian">Held back</h2>
-            {vault.length ? (
-              <ul className="flex flex-col gap-[2px]">
-                {vault.map((name) => (
-                  <li key={name} className="text-[14px] font-medium text-prussian" data-part="cram-vault-item">
-                    {name}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-[14px] font-medium text-wisteria-deep">Nothing held back yet.</p>
-            )}
-            <Link href={`/add-material?course=${course.slug}&type=Practice%20exam&holdBack=1`} data-part="cram-add-material" className="text-[13px] font-bold text-wisteria-deep underline">
-              Add a practice exam
-            </Link>
-          </Card>
-        </motion.div>
-
-        <motion.div variants={fadeUp} className="flex flex-wrap items-center gap-[8px]">
-          {connected ? (
-            <span className="text-[13px] font-medium text-prussian" data-part="study-with-claude">
-              Study with Claude: it has this exam&apos;s scope.
-            </span>
-          ) : (
-            <Link href="/settings#connector" data-part="study-with-claude" className={PILL}>
-              Study with Claude
-            </Link>
-          )}
-          <button type="button" onClick={onEdit} data-part="cram-edit" className={PILL}>
-            Edit scope
-          </button>
-          <Button size="xs" variant="secondary" onClick={onStop} data-part="cram-stop">
-            Stop cramming
-          </Button>
         </motion.div>
       </div>
     </>
