@@ -56,7 +56,10 @@ from public.model_usage group by 1, 2, 3 order by 1 desc, 2;
 | 2026-11-08 | Remove a failed upload from Circuit Analysis | The failed card goes; the course keeps what other files taught | **Fail**: the file's done run went too (same material), its objectives were archived; restored by hand | 0 | 0 | ~10 | Removal now archives only what no other file teaches (11-08); the course had one file, so this case still loses its source |
 | 2026-11-08 | Restore the archived objectives by hand after the removal | The course keeps its outline | **Fail** as a task a student should never need: the objectives came back but their source pages were gone, so no questions could be written; the sidebar said "writing" for two days with no job | 0 | 0 | ~5 | Sidebar now honest, and the server asks for questions itself (PRs #18, #19) |
 | 2026-11-09 | Re-paste the syllabus as Syllabus | A Syllabus-typed material builds | **Fail**: "OpenAI rejected that API key" from the job on Trigger.dev (its copy of the key) | 0 | 0 | ~3 | Fix the key on the Trigger project, Try again |
-| 2026-11-10 | Quiz through Claude | Claude asks and Orca grades one question | pending | | | | After the key is fixed and the syllabus builds |
+| 2026-11-10 | Quiz through Claude (Circuit Analysis cram) | Claude asks a question and Orca records the answer | **Fail**: Claude's copy of the connector still had the v0.3 tools (no `add_questions`, `log_evidence`); the bank was empty; a 3/3 answer went unrecorded | 0 | 0 | n/r | Re-adding the connector refreshes the tools; the empty bank was the next blocker |
+| 2026-11-10 | Cram setup for Midterm 2 | A plan appears, scope narrowed to lectures 11–16 | **Fail**: cramming set, but the scope held all 151 objectives at weight 1 and there was no time budget, so no plan | 0 | 0 | n/r | Scope picker and a default budget (PR #40), hours per day (PR #41) |
+| 2026-11-10 | Questions for the 9 weak spots, with no teaching material | Questions stored and askable for each | **Pass** after PR #42: Claude wrote 18 through `add_questions`, 0 refused, stored as not course-specific | 0 | 0 | ~2 | Written on the developer's Claude session, not Orca's key; before #42 every one was refused (no anchor possible) |
+| 2026-11-10 | Quiz through Claude, again | Claude asks one of the 18 and Orca records the answer | pending | | | | Next cram chat |
 
 ## Totals so far
 
@@ -72,3 +75,19 @@ from public.model_usage group by 1, 2, 3 order by 1 desc, 2;
 
 Each fail above has a shipped fix beside it; the next rows are the same tasks run again on the
 11-08 deploy, which is the number that matters.
+
+## Build cost (what building Orca costs, separate from running it)
+
+Claude Code sessions' own meters (`cost_usd` from the session record), read 2026-11-15. Not part of
+the per-task figures above, which are what a student's use of Orca costs.
+
+| Session | What it built | $ |
+|---|---|---|
+| Main session (since 2026-10-02, everything) | All phases, cram mode steps 1–8, the in-session workflows and agents | 856.38 |
+| Admin view (2026-11-10) | `/admin`, the gate, the heartbeat (PR #27) | 20.40 |
+| Hours per day (2026-11-10) | PR #41 | 11.42 |
+| Questions without material (2026-11-10) | PR #42 | 5.87 |
+| Cram schedule and covered state (2026-11-10) | PR #43 | 8.24 |
+
+The main session's meter can't be split by day or by feature from here; from now on each feature
+built in its own session gets its own row.
