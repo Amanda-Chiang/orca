@@ -5,6 +5,7 @@
  * small enough come straight from their tables. Evidence and feedback are read a page at a time.
  * Days are UTC, as the cost log counts them (docs/COST-LOG.md).
  */
+import { type ActivityDay, type ConnectorRow, type InAppRow, type KindSummary, activityByDay, isStudyKind, summarize } from "@/lib/admin/activity";
 import { type DayRow, type UserRow, type UserSort, fillDays, sortUsers } from "@/lib/admin/stats";
 import { LIMITS, type RateAction } from "@/lib/limits";
 import type { OrcaSupabase } from "@/lib/supabase/server";
@@ -105,6 +106,8 @@ export interface SessionRow {
   id: string;
   course: string | null;
   mode: string;
+  /** A warm-up (stored as mode "quick"); null for sessions finished before the column existed. */
+  warmup: boolean | null;
   correct: number;
   total: number;
   seconds: number;
@@ -140,11 +143,19 @@ export interface Page<T> {
   more: boolean;
 }
 
+export interface Activity {
+  /** One row per kind of study: today, the last 7 UTC days, all time. */
+  byKind: KindSummary[];
+  /** The last `ACTIVITY_DAYS` UTC days, newest first, every day present. */
+  byDay: ActivityDay[];
+}
+
 export interface UserDetail {
   profile: { id: string; name: string | null; email: string | null; joined: string; lastActive: string | null; timezone: string; isAdmin: boolean };
   courses: UserCourse[];
   uploads: UserUpload[];
   spend: Spend;
+  activity: Activity;
   sessions: SessionRow[];
   evidence: Page<EvidenceRow>;
   feedback: FeedbackRow[];
@@ -155,11 +166,12 @@ export interface UserDetail {
 export const EVIDENCE_PAGE = 200;
 export const FEEDBACK_PAGE = 100;
 export const SPEND_DAYS = 30;
+export const ACTIVITY_DAYS = 30;
 export const FEEDBACK_REASONS = ["wrong-answer", "unclear", "too-easy", "too-hard", "not-my-course", "not-relevant"] as const;
 
 /* ── Reading ── */
 
-async function call<T>(db: OrcaSupabase, fn: "admin_overview" | "admin_users" | "admin_user_courses" | "admin_user_uploads" | "admin_spend" | "admin_user_evidence" | "admin_feedback" | "admin_feedback_counts", args: Record<string, unknown>, what: string): Promise<T> {
+async function call<T>(db: OrcaSupabase, fn: "admin_overview" | "admin_users" | "admin_user_courses" | "admin_user_uploads" | "admin_spend" | "admin_user_evidence" | "admin_feedback" | "admin_feedback_counts" | "admin_activity", args: Record<string, unknown>, what: string): Promise<T> {
   // The functions' argument shapes are in database.types.ts; each caller below passes what its function takes.
   const { data, error } = await db.rpc(fn, args as never);
   if (error) throw new Error(`Couldn't read ${what}: ${error.message}`);
@@ -228,6 +240,28 @@ export async function spend(db: OrcaSupabase, opts: { owner?: string; days?: num
   };
 }
 
+/**
+ * What students are doing, by kind of study (migration 20261110180000): everyone's, or one student's
+ * when `owner` is given. The connector's minutes are an estimate (`connectorMinutes`).
+ */
+export async function activity(db: OrcaSupabase, opts: { owner?: string; today?: Date } = {}): Promise<Activity> {
+  const a = await call<{ in_app: unknown; connector: unknown }>(db, "admin_activity", { owner: opts.owner ?? null }, "the activity");
+  const inApp: InAppRow[] = list<Record<string, unknown>>(a.in_app, "the in-app activity").map((r) => {
+    const kind = String(r.kind);
+    if (!isStudyKind(kind) || kind === "connector") throw new Error(`Couldn't read the activity: unknown kind of session "${kind}"`);
+    return { owner: String(r.owner), day: String(r.day), kind, sessions: num(r.sessions), seconds: num(r.seconds), answers: num(r.answers) };
+  });
+  const connector: ConnectorRow[] = list<Record<string, unknown>>(a.connector, "the connector activity").map((r) => ({
+    owner: String(r.owner),
+    day: String(r.day),
+    answers: num(r.answers),
+    first: String(r.first),
+    last: String(r.last),
+  }));
+  const today = opts.today ?? new Date();
+  return { byKind: summarize(inApp, connector, today), byDay: activityByDay(inApp, connector, ACTIVITY_DAYS, today) };
+}
+
 export async function feedback(db: OrcaSupabase, opts: { owner?: string; reason?: string; downOnly?: boolean; offset?: number; limit?: number } = {}): Promise<Page<FeedbackRow>> {
   const limit = Math.min(Math.max(opts.limit ?? FEEDBACK_PAGE, 1), 500);
   const offset = Math.max(opts.offset ?? 0, 0);
@@ -261,12 +295,13 @@ export async function userDetail(db: OrcaSupabase, id: string, opts: { evidenceO
   const { data: profile, error } = await db.from("profiles").select("owner_id, name, created_at, last_active_at, timezone, is_admin").eq("owner_id", id).maybeSingle();
   if (error) throw new Error(`Couldn't read the profile: ${error.message}`);
   if (!profile) return null;
-  const [account, courses, uploads, spent, sessions, ev, fb, security, rate] = await Promise.all([
+  const [account, courses, uploads, spent, act, sessions, ev, fb, security, rate] = await Promise.all([
     db.auth.admin.getUserById(id),
     call(db, "admin_user_courses", { uid: id }, "the user's courses").then((d) => list<Record<string, unknown>>(d, "the user's courses")),
     call(db, "admin_user_uploads", { uid: id }, "the user's uploads").then((d) => list<Record<string, unknown>>(d, "the user's uploads")),
     spend(db, { owner: id, today: opts.today }),
-    db.from("session_results").select("id, course_id, mode, correct, total, seconds, finished_at").eq("owner_id", id).order("finished_at", { ascending: false }).limit(200),
+    activity(db, { owner: id, today: opts.today }),
+    db.from("session_results").select("id, course_id, mode, warmup, correct, total, seconds, finished_at").eq("owner_id", id).order("finished_at", { ascending: false }).limit(200),
     evidence(db, id, opts.evidenceOffset ?? 0),
     feedback(db, { owner: id, downOnly: false, limit: 200 }),
     db.from("security_events").select("id, at, kind, check, severity, quote, run_id, material_id, question_id").eq("owner_id", id).order("at", { ascending: false }).limit(200),
@@ -315,7 +350,8 @@ export async function userDetail(db: OrcaSupabase, id: string, opts: { evidenceO
       };
     }),
     spend: spent,
-    sessions: sessions.data.map((s) => ({ id: s.id, course: courseName.get(s.course_id) ?? null, mode: s.mode, correct: s.correct, total: s.total, seconds: s.seconds, finishedAt: s.finished_at })),
+    activity: act,
+    sessions: sessions.data.map((s) => ({ id: s.id, course: courseName.get(s.course_id) ?? null, mode: s.mode, warmup: s.warmup, correct: s.correct, total: s.total, seconds: s.seconds, finishedAt: s.finished_at })),
     evidence: ev,
     feedback: fb.rows,
     security: security.data,

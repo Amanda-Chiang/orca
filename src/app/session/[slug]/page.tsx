@@ -78,7 +78,7 @@ function SessionBody({ course, kind, topicId, minutes, scope, early, warmUp }: {
   const resumed = useResumed(course, saved);
   if (choice !== "new" && resumed) {
     if (choice === "resume") {
-      return <QuizRunner course={course} items={resumed.items} mode={kind} title={resumed.title} backHref={`/course/${course.slug}`} progressKind={kind} resume={resumed.resume} />;
+      return <QuizRunner course={course} items={resumed.items} mode={kind} title={resumed.title} backHref={`/course/${course.slug}`} progressKind={kind} resume={resumed.resume} warmUp={warmUp} />;
     }
     return (
       <ResumePrompt
@@ -211,7 +211,7 @@ function QuickReview({ course, early = false, warmUp = false }: { course: Course
       : `Nothing to review in ${course.name} right now.`;
     return <NothingToDo course={course} message={message} onBack={() => goBack(router, backHref)} caughtUp={caughtUp} />;
   }
-  return <QuizRunner course={course} items={items} mode="quick" title={warmUp ? `${course.name} · Warm-up` : course.name} backHref={backHref} replacementFor={replacementFor} progressKind="quick" />;
+  return <QuizRunner course={course} items={items} mode="quick" title={warmUp ? `${course.name} · Warm-up` : course.name} backHref={backHref} replacementFor={replacementFor} progressKind="quick" warmUp={warmUp} />;
 }
 
 /**

@@ -532,7 +532,7 @@ All 11 Figma screens are built. Where things live:
   `security_events` row (kind `admin_read`, the route in `quote`). The figures are summed by service-role-only SQL
   functions (`admin_*`, revoked from students; pgTAP 20). The pages are server components rendered from the
   database, so `isAdminPath` skips the store's loading screen (or the 404 would never reach the response).
-  Figures Orca doesn't record (page views) say "not recorded". **Heartbeat:** `POST /api/heartbeat`
+  Figures Orca doesn't record (page views) say "not recorded". **What students are doing** (2026-11-15, `admin_activity`, migration `20261110180000`, `src/lib/admin/activity.ts`): sessions, minutes and answers per kind of study (topic quiz, quick review, dive, re-quiz, warm-up from `session_results.warmup`, Claude connector) on `/admin` and each user's page, plus that user's last 30 days; the connector's minutes are an estimate (first to last connector event per student per UTC day, capped at 120). **Heartbeat:** `POST /api/heartbeat`
   (`src/components/layout/Heartbeat.tsx`, mounted once the store is ready) sets `profiles.last_active_at` for the
   verified user once per 5 minutes while a tab is visible, under the `heartbeat` rate limit; nothing waits on it.
 - `src/lib/jobs/` + `src/lib/server/jobs/` + `src/trigger/` — upload and top-up jobs (`ORCA_JOBS=inline|trigger`). A queued

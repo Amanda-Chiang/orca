@@ -1,15 +1,16 @@
+import { KindTable } from "@/components/admin/ActivityTables";
 import { UsersTable } from "@/components/admin/UsersTable";
 import { AdminPage, Section, Tiles } from "@/components/admin/AdminPage";
 import { int, money } from "@/components/admin/format";
 import { requireAdmin } from "@/lib/server/admin";
-import { overview, users } from "@/lib/server/admin-queries";
+import { activity, overview, users } from "@/lib/server/admin-queries";
 
 /** /admin: the overview tiles and the users table. Admins only; anyone else sees the app's 404. */
 export const dynamic = "force-dynamic";
 
 export default async function AdminOverviewPage() {
   const { db } = await requireAdmin("/admin");
-  const [o, rows] = await Promise.all([overview(db), users(db, "joined")]);
+  const [o, act, rows] = await Promise.all([overview(db), activity(db), users(db, "joined")]);
   return (
     <AdminPage title="Overview" current="/admin">
       <Tiles
@@ -25,6 +26,9 @@ export default async function AdminOverviewPage() {
           { label: "Paused runs", value: int(o.pausedRuns) },
         ]}
       />
+      <Section title="What students are doing" aside="every account · by kind of study · UTC days">
+        <KindTable rows={act.byKind} part="admin-activity" />
+      </Section>
       <Section title="Users" aside={`${int(rows.length)} accounts · newest first`}>
         <UsersTable rows={rows} sort="joined" />
       </Section>

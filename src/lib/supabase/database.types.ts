@@ -447,13 +447,13 @@ isOneToOne: false
                   ]
                 },"session_results": {
                   Row: {
-                    "correct": number,"course_id": string,"finished_at": string,"id": string,"mode": string,"owner_id": string,"seconds": number,"session_id": string,"topic_id": string | null,"total": number
+                    "correct": number,"course_id": string,"finished_at": string,"id": string,"mode": string,"owner_id": string,"seconds": number,"session_id": string,"topic_id": string | null,"total": number,"warmup": boolean | null
                   }
                   Insert: {
-                    "correct": number,"course_id": string,"finished_at"?: string,"id"?: string,"mode": string,"owner_id"?: string,"seconds": number,"session_id": string,"topic_id"?: string | null,"total": number
+                    "correct": number,"course_id": string,"finished_at"?: string,"id"?: string,"mode": string,"owner_id"?: string,"seconds": number,"session_id": string,"topic_id"?: string | null,"total": number,"warmup"?: boolean | null
                   }
                   Update: {
-                    "correct"?: number,"course_id"?: string,"finished_at"?: string,"id"?: string,"mode"?: string,"owner_id"?: string,"seconds"?: number,"session_id"?: string,"topic_id"?: string | null,"total"?: number
+                    "correct"?: number,"course_id"?: string,"finished_at"?: string,"id"?: string,"mode"?: string,"owner_id"?: string,"seconds"?: number,"session_id"?: string,"topic_id"?: string | null,"total"?: number,"warmup"?: boolean | null
                   }
                   Relationships: [
                     {
@@ -507,7 +507,10 @@ isOneToOne: false
             [_ in never]: never
           }
           Functions: {
-            "admin_feedback":
+            "admin_activity":
+{ Args: { "owner"?: string }; Returns: Json
+                           },
+"admin_feedback":
 { Args: { "down_only"?: boolean,"lim"?: number,"off"?: number,"owner"?: string,"reason"?: string }; Returns: Json
                            },
 "admin_feedback_counts":

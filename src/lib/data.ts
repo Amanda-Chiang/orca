@@ -224,6 +224,8 @@ export interface QuizResult {
   correct: number;
   total: number;
   seconds: number;
+  /** A quick session started as the warm-up (?warmup=1); undefined for sessions stored before 2026-11-15. */
+  warmup?: boolean;
   /** ISO time. */
   finishedAt: string;
 }

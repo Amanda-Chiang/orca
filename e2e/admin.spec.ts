@@ -1,4 +1,4 @@
-import { admin, expect, seedFixtureCourse, test } from "./fixture";
+import { F, admin, expect, seedFixtureCourse, test } from "./fixture";
 
 /**
  * The admin view (2026-11-10) is the owner's alone: `profiles.is_admin`, set only in the database.
@@ -49,6 +49,33 @@ test("a plain student gets 404 on /admin and its API; an admin sees the view", a
   await expect(page.locator('[data-part="admin-user-courses"]')).toContainText("Logic Fixture");
   await expect(page.locator('[data-part="admin-user-uploads"]')).toContainText("L01_Fixture.pdf");
   await expect(page.getByText("Page views and time on the app: not recorded")).toBeVisible();
+
+  // What this student is doing, by kind of study (2026-11-15): nothing yet, then seeded sessions.
+  await expect(page.locator('[data-part="admin-user-activity"]')).toHaveCount(0);
+  await expect(page.getByText("No sessions yet.", { exact: true })).toHaveCount(2);
+  const seeded = await admin()
+    .from("session_results")
+    .insert([
+      { owner_id: student.id, course_id: F.course, mode: "quick", session_id: "e2e-quick", correct: 3, total: 4, seconds: 300, warmup: false },
+      { owner_id: student.id, course_id: F.course, mode: "quick", session_id: "e2e-warm", correct: 2, total: 5, seconds: 180, warmup: true },
+      { owner_id: student.id, course_id: F.course, mode: "deep", session_id: "e2e-deep", correct: 6, total: 8, seconds: 1200, warmup: false },
+    ]);
+  expect(seeded.error).toBeNull();
+  await page.reload();
+  const kinds = page.locator('[data-part="admin-user-activity"]');
+  await expect(kinds.locator("tbody tr")).toHaveCount(6);
+  // Kind, then sessions / minutes / answers for today, 7 days and all time (answers come from evidence: none seeded).
+  await expect(kinds.locator("tr", { has: page.locator('[data-kind="warmup"]') }).locator("td")).toHaveText(["Warm-up", "1", "3", "0", "1", "3", "0", "1", "3", "0"]);
+  await expect(kinds.locator("tr", { has: page.locator('[data-kind="quick"]') }).locator("td").nth(2)).toHaveText("5");
+  await expect(kinds.locator("tr", { has: page.locator('[data-kind="connector"]') }).locator("td").nth(2)).toHaveText("0 est.");
+  // Today's row of the per-day table: day, then topic, quick, dive, re-quiz, warm-up, connector, minutes, answers.
+  const days = page.locator('[data-part="admin-user-activity-days"] tbody tr');
+  await expect(days).toHaveCount(30);
+  await expect(days.first().locator("td")).toHaveText([new Date().toISOString().slice(0, 10), "0", "1", "1", "0", "1", "0", "28", "0"]);
+  await expect(page.locator('[data-part="admin-user-sessions"]')).toContainText("quick (warm-up)");
+  await page.goto("/admin");
+  await expect(page.locator('[data-part="admin-activity"] tbody tr')).toHaveCount(6);
+  await expect(page.locator('[data-part="admin-activity"] [data-kind="warmup"]')).toHaveText("Warm-up");
 
   await page.goto("/admin/questions");
   await expect(page.getByRole("heading", { name: "Questions" })).toBeVisible();
