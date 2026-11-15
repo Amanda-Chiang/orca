@@ -1,8 +1,8 @@
 "use client";
 
-import { use, useState } from "react";
+import { use, useEffect, useState } from "react";
 import Link from "next/link";
-import { motion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
 import { cardExam, daysUntil, examObjectives } from "@/lib/course/exam-card";
 import type { CramCovered, CramPlan, CramPlanDay, CramPlanInput, SpentMinutes } from "@/lib/mastery/cram-plan";
 import type { ObjectiveStatus } from "@/lib/mastery/types";
@@ -16,7 +16,7 @@ import { ProgressBar } from "@/components/ui/ProgressBar";
 import { CramSetup } from "@/components/course/CramSetup";
 import { useConnectorStatus, useCramPlan } from "@/components/course/useCram";
 import { MASTERY_LABEL } from "@/components/review/parts";
-import { fadeUp, stagger } from "@/lib/motion";
+import { fadeUp, overlayFade, popIn, stagger } from "@/lib/motion";
 
 const PILL = "pressable rounded-pill bg-parchment px-[12px] py-[6px] text-[13px] font-bold text-prussian ring-2 ring-inset ring-alice-deep lip-2 lip-alice";
 
@@ -128,127 +128,126 @@ export default function CramPage({ params, searchParams }: PageProps<"/course/[s
 const isVerified = (s: ObjectiveStatus) => s === "verified" || s === "mastered";
 
 function CrammingView({ course, today, plan, topics, spentMinutes, objectiveName, vault, connected, onEdit, onStop }: { course: { slug: string }; today: string; plan: CramPlan; topics: CramPlanInput["topics"]; spentMinutes: SpentMinutes; objectiveName: (id: string) => string; vault: string[]; connected: boolean | null; onEdit: () => void; onStop: () => void }) {
-  // The budget's days, as the plan reads them (a budget saved before per-day budgets shows its spread); the total is their sum.
+  void today;
   const days = Object.keys(plan.perDay).sort();
   const hours = days.reduce((sum, d) => sum + plan.perDay[d], 0);
   const studied = spentMinutes.beforeToday + spentMinutes.today;
   const topicName = new Map(plan.topics.map((t) => [t.id, t.name]));
   const coveredOf = new Map(plan.topics.map((t) => [t.id, t.covered]));
-  // Per topic: its in-scope objectives (weight > 0), how many are verified, and each one's status.
-  const scoped = new Map(topics.map((t) => [t.id, t.objectives.filter((o) => o.weight > 0)]));
   const statusOf = new Map(topics.flatMap((t) => t.objectives.map((o) => [o.id, o.status] as const)));
+  // Every weak spot in scope, one list (owner, 2026-11-15: only what needs attention stays on the page).
+  const weak = plan.topics.flatMap((t) => t.weakSpots.map((id) => ({ id, topic: t.name })));
+  const [scopeOpen, setScopeOpen] = useState(false);
   return (
-    <>
-      <div className="flex w-[360px] flex-col gap-[12px]">
-        <motion.div variants={fadeUp}>
-          <Card className="flex flex-col gap-[10px] px-[24px] pb-[20px] pt-[20px]">
-            <p className="eyebrow text-[13px] text-wisteria-deep">Your time</p>
-            <p className="text-[22px] font-bold text-prussian" data-part="cram-budget">
-              {hoursText(plan.hoursLeft)} hours left of {hoursText(hours)}
-              {plan.behindMinutes > 0 && <span className="text-wisteria-deep"> · {plan.behindMinutes} minutes behind</span>}
-            </p>
-            <p className="text-[13px] font-medium text-wisteria-deep" data-part="cram-spent">
-              {minutesText(studied)} studied in Orca since you started · {plan.studyDays.length} study day{plan.studyDays.length === 1 ? "" : "s"} left
-              {plan.daysLeft > 0 ? ` · ${minutesText(plan.minutesToday)} left today` : ""}
-            </p>
-            {days.length > 0 && (
-              <ul className="flex flex-wrap gap-[6px]" data-part="cram-days" aria-label="Hours by day">
-                {days.map((day) => {
-                  const isToday = day === today;
-                  const past = day < today;
-                  return (
-                    <li
-                      key={day}
-                      className={`rounded-pill px-[10px] py-[4px] text-[12px] font-bold ring-2 ring-inset ${isToday ? "bg-wisteria text-parchment ring-wisteria" : past ? "bg-parchment text-wisteria-deep ring-alice-deep opacity-70" : "bg-parchment text-prussian ring-alice-deep"}`}
-                      data-part="cram-day"
-                      data-day={day}
-                      data-today={isToday ? "1" : undefined}
-                      data-hours={plan.perDay[day]}
-                    >
-                      {dayChip(day)} · {hoursText(plan.perDay[day])} h
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-            <p className="text-[16px] font-semibold text-prussian" data-part="cram-plan">
-              {plan.daysLeft === 0 ? "Exam day. Light review only, nothing new." : `${plan.daysLeft} ${plan.daysLeft === 1 ? "day" : "days"} to the exam · ${Math.round(plan.verified.share * 100)}% verified`}
-            </p>
-          </Card>
-        </motion.div>
-
-        <motion.div variants={fadeUp}>
-          <Card className="flex flex-col gap-[8px] px-[24px] pb-[18px] pt-[18px]" data-part="cram-today">
-            <h2 className="text-[20px] font-bold text-prussian">Today</h2>
-            {plan.daysLeft === 0 ? (
-              <p className="text-[14px] font-medium text-wisteria-deep">Light review only, nothing new.</p>
-            ) : plan.today.length === 0 ? (
-              <p className="text-[14px] font-medium text-wisteria-deep">Nothing planned today.</p>
-            ) : (
-              <ul className="flex flex-col gap-[4px]">
-                {plan.today.map((t) => (
-                  <li key={t.topicId} className="flex justify-between text-[15px] font-semibold text-prussian" data-part="cram-today-topic" data-topic={t.topicId}>
-                    <span>{topicName.get(t.topicId) ?? t.topicId}</span>
-                    <span className="text-wisteria-deep">{t.minutes} min</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Card>
-        </motion.div>
-
-        <motion.div variants={fadeUp}>
-          <Card className="flex flex-col gap-[8px] px-[24px] pb-[18px] pt-[18px]" data-part="cram-mock">
-            <h2 className="text-[20px] font-bold text-prussian">Practice test</h2>
-            <p className="text-[14px] font-medium text-wisteria-deep">No practice test yet</p>
-          </Card>
-        </motion.div>
-
-        <motion.div variants={fadeUp}>
-          <Card className="flex flex-col gap-[8px] px-[24px] pb-[18px] pt-[18px]" data-part="cram-vault">
-            <h2 className="text-[20px] font-bold text-prussian">Held back</h2>
-            {vault.length ? (
-              <ul className="flex flex-col gap-[2px]">
-                {vault.map((name) => (
-                  <li key={name} className="text-[14px] font-medium text-prussian" data-part="cram-vault-item">
-                    {name}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-[14px] font-medium text-wisteria-deep">Nothing held back yet.</p>
-            )}
-            <Link href={`/add-material?course=${course.slug}&type=Practice%20exam&holdBack=1`} data-part="cram-add-material" className="text-[13px] font-bold text-wisteria-deep underline">
-              Add a practice exam
-            </Link>
-          </Card>
-        </motion.div>
-
-        <motion.div variants={fadeUp} className="flex flex-wrap items-center gap-[8px]">
-          {connected ? (
-            <span className="text-[13px] font-medium text-prussian" data-part="study-with-claude">
-              Study with Claude: it has this exam&apos;s scope.
-            </span>
-          ) : (
-            <Link href="/settings#connector" data-part="study-with-claude" className={PILL}>
-              Study with Claude
-            </Link>
-          )}
-          <button type="button" onClick={onEdit} data-part="cram-edit" className={PILL}>
-            Edit scope
+    <div className="flex w-full flex-col gap-[12px]">
+      {/* One line: the budget and the share verified; Edit and Stop beside it. */}
+      <motion.div variants={fadeUp} className="flex flex-wrap items-center gap-x-[14px] gap-y-[6px]" data-part="cram-header">
+        <p className="text-[18px] font-bold text-prussian" data-part="cram-budget">
+          {hoursText(plan.hoursLeft)} hours left of {hoursText(hours)}
+          {plan.behindMinutes > 0 && <span className="text-wisteria-deep"> · {plan.behindMinutes} minutes behind</span>}
+        </p>
+        <p className="text-[15px] font-semibold text-wisteria-deep" data-part="cram-plan">
+          {plan.daysLeft === 0 ? "Exam day. Light review only, nothing new." : `${plan.daysLeft} ${plan.daysLeft === 1 ? "day" : "days"} to the exam · ${Math.round(plan.verified.share * 100)}% verified`}
+        </p>
+        <p className="text-[13px] font-medium text-wisteria-deep" data-part="cram-spent">
+          {minutesText(studied)} studied{plan.daysLeft > 0 ? ` · ${minutesText(plan.minutesToday)} left today` : ""}
+        </p>
+        <span className="ml-auto flex items-center gap-[8px]">
+          <button type="button" onClick={onEdit} data-part="cram-edit" className="text-[13px] font-bold text-wisteria-deep underline">
+            Edit
           </button>
           <Button size="xs" variant="secondary" onClick={onStop} data-part="cram-stop">
             Stop cramming
           </Button>
-        </motion.div>
-      </div>
+        </span>
+      </motion.div>
 
-      <div className="flex w-[600px] flex-col gap-[12px]">
-        <motion.div variants={fadeUp}>
-          <Card className="flex flex-col gap-[12px] px-[24px] pb-[20px] pt-[20px]">
-            <div className="flex items-baseline justify-between">
-              <h2 className="text-[22px] font-bold text-prussian">The schedule</h2>
-              <p className="text-[13px] font-medium text-wisteria-deep">Weak spots first, then the heaviest topics</p>
+      <div className="flex items-start gap-[12px]">
+        <div className="flex w-[340px] shrink-0 flex-col gap-[12px]">
+          <motion.div variants={fadeUp}>
+            <Card className="flex flex-col gap-[10px] px-[22px] pb-[18px] pt-[18px]" data-part="cram-today">
+              <h2 className="text-[20px] font-bold text-prussian">Today</h2>
+              {plan.daysLeft === 0 ? (
+                <p className="text-[14px] font-medium text-wisteria-deep">Light review only, nothing new.</p>
+              ) : plan.today.length === 0 ? (
+                <p className="text-[14px] font-medium text-wisteria-deep">Nothing planned today.</p>
+              ) : (
+                <ul className="flex flex-col gap-[4px]">
+                  {plan.today.map((t) => (
+                    <li key={t.topicId} className="flex justify-between gap-[8px] text-[15px] font-semibold text-prussian" data-part="cram-today-topic" data-topic={t.topicId}>
+                      <span className="truncate">{topicName.get(t.topicId) ?? t.topicId}</span>
+                      <span className="shrink-0 text-wisteria-deep">{t.minutes} min</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <div className="flex flex-wrap items-center gap-[8px] pt-[4px]">
+                <Link href={`/session/${course.slug}?kind=quick`} data-part="cram-start-review" className={PILL}>
+                  Start quick review
+                </Link>
+                {connected ? (
+                  <span className="text-[13px] font-medium text-prussian" data-part="study-with-claude">
+                    Or study with Claude: it has this plan.
+                  </span>
+                ) : (
+                  <Link href="/settings#connector" data-part="study-with-claude" className={PILL}>
+                    Study with Claude
+                  </Link>
+                )}
+              </div>
+            </Card>
+          </motion.div>
+
+          <motion.div variants={fadeUp}>
+            <Card className="flex flex-col gap-[6px] px-[22px] pb-[16px] pt-[16px]" data-part="cram-weak">
+              <h2 className="text-[17px] font-bold text-prussian">Weak spots{weak.length ? ` · ${weak.length}` : ""}</h2>
+              {weak.length === 0 ? (
+                <p className="text-[13px] font-medium text-wisteria-deep">None flagged in scope.</p>
+              ) : (
+                <ul className="flex max-h-[180px] flex-col gap-[3px] overflow-y-auto">
+                  {weak.map((w) => (
+                    <li key={w.id} className="text-[13px] font-medium leading-snug text-prussian" data-part="cram-weak-item" data-objective={w.id}>
+                      {objectiveName(w.id)} <span className="text-wisteria-deep">· {MASTERY_LABEL[statusOf.get(w.id) ?? "unseen"]}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Card>
+          </motion.div>
+
+          <motion.div variants={fadeUp}>
+            <Card className="flex flex-col gap-[4px] px-[22px] pb-[16px] pt-[16px]" data-part="cram-mock">
+              <h2 className="text-[17px] font-bold text-prussian">Practice test</h2>
+              {vault.length ? (
+                <>
+                  <ul className="flex flex-col" data-part="cram-vault">
+                    {vault.map((name) => (
+                      <li key={name} className="truncate text-[13px] font-semibold text-prussian" data-part="cram-vault-item">
+                        {name}
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="text-[13px] font-medium text-wisteria-deep">Held back. No practice test yet: sit it timed once your weak spots are covered.</p>
+                </>
+              ) : (
+                <p className="text-[13px] font-medium text-wisteria-deep">
+                  No practice test yet.{" "}
+                  <Link href={`/add-material?course=${course.slug}&type=Practice%20exam&holdBack=1`} data-part="cram-add-material" className="font-bold underline">
+                    Add one
+                  </Link>
+                </p>
+              )}
+            </Card>
+          </motion.div>
+        </div>
+
+        <motion.div variants={fadeUp} className="min-w-0 flex-1">
+          <Card className="flex flex-col gap-[12px] px-[22px] pb-[18px] pt-[18px]">
+            <div className="flex items-baseline justify-between gap-[12px]">
+              <h2 className="text-[20px] font-bold text-prussian">The schedule</h2>
+              <button type="button" onClick={() => setScopeOpen(true)} data-part="cram-scope-open" className="text-[13px] font-bold text-wisteria-deep underline">
+                See all {plan.topics.length} topics
+              </button>
             </div>
             {plan.days.length === 0 ? (
               <p className="text-[14px] font-medium text-wisteria-deep">No days before the exam.</p>
@@ -259,11 +258,34 @@ function CrammingView({ course, today, plan, topics, spentMinutes, objectiveName
                 ))}
               </ol>
             )}
+            <p className="flex flex-wrap gap-[10px] text-[12px] font-semibold text-wisteria-deep" aria-label="Key">
+              <span><span className="mr-[4px] inline-block h-[10px] w-[10px] rounded-[3px] bg-alice align-middle" />Not started</span>
+              <span><span className="mr-[4px] inline-block h-[10px] w-[10px] rounded-[3px] bg-periwinkle/40 align-middle" />In progress</span>
+              <span><span className="mr-[4px] inline-block h-[10px] w-[10px] rounded-[3px] bg-wisteria/25 align-middle" />Done</span>
+            </p>
           </Card>
         </motion.div>
+      </div>
 
-        <motion.div variants={fadeUp}>
-          <Card className="flex flex-col gap-[14px] px-[24px] pb-[20px] pt-[20px]">
+      <ScopePanel open={scopeOpen} onClose={() => setScopeOpen(false)} plan={plan} topics={topics} objectiveName={objectiveName} statusOf={statusOf} />
+    </div>
+  );
+}
+
+/** Every topic in scope, with how far it has got: the detail behind the schedule, opened on demand. */
+function ScopePanel({ open, onClose, plan, topics, objectiveName, statusOf }: { open: boolean; onClose: () => void; plan: CramPlan; topics: CramPlanInput["topics"]; objectiveName: (id: string) => string; statusOf: Map<string, ObjectiveStatus> }) {
+  const scoped = new Map(topics.map((t) => [t.id, t.objectives.filter((o) => o.weight > 0)]));
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+  return (
+    <AnimatePresence>
+      {open && (
+        <motion.div key="scope" className="fixed inset-0 z-50 flex justify-end bg-prussian/40" variants={overlayFade} initial="hidden" animate="show" exit="exit" onClick={onClose}>
+          <motion.aside role="dialog" aria-modal="true" aria-label="The scope" className="flex h-full w-[460px] max-w-full flex-col gap-[12px] overflow-y-auto bg-parchment px-[22px] py-[20px]" variants={popIn} initial="hidden" animate="show" exit="exit" onClick={(e) => e.stopPropagation()} data-part="cram-scope">
             <div className="flex items-baseline justify-between">
               <h2 className="text-[22px] font-bold text-prussian">The scope</h2>
               <p className="text-[14px] font-medium text-wisteria-deep" data-part="cram-verified">
@@ -271,33 +293,33 @@ function CrammingView({ course, today, plan, topics, spentMinutes, objectiveName
               </p>
             </div>
             {plan.topics.length === 0 && <p className="text-[14px] font-medium text-wisteria-deep">This exam has no objectives in scope yet.</p>}
-            <ul className="flex flex-col gap-[12px]">
+            <ul className="flex flex-col gap-[10px]">
               {plan.topics.map((t) => {
                 const inScope = scoped.get(t.id) ?? [];
                 const verified = inScope.filter((o) => isVerified(o.status)).length;
                 return (
-                  <li key={t.id} className={`flex flex-col gap-[6px] rounded-[16px] border-2 px-[16px] py-[12px] ${t.covered === "done" ? "border-wisteria bg-alice/40" : t.covered === "in-progress" ? "border-periwinkle-deep" : "border-alice-deep"}`} data-part="cram-topic" data-topic={t.id} data-done={t.done ? "1" : undefined} data-covered={t.covered}>
-                    <div className="flex items-center justify-between gap-[12px]">
+                  <li key={t.id} className="flex flex-col gap-[6px] rounded-[14px] border-2 border-alice-deep px-[14px] py-[10px]" data-part="cram-topic" data-topic={t.id} data-done={t.done ? "1" : undefined} data-covered={t.covered}>
+                    <div className="flex items-center justify-between gap-[10px]">
                       <div className="flex min-w-0 items-center gap-[8px]">
-                        <p className="truncate text-[17px] font-bold text-prussian">{t.name}</p>
+                        <p className="truncate text-[15px] font-bold text-prussian">{t.name}</p>
                         <span className={`shrink-0 rounded-pill px-[8px] py-[2px] text-[11px] font-bold ring-2 ring-inset ${COVERED[t.covered].chip}`} data-part="cram-topic-covered">
                           {COVERED[t.covered].label}
                         </span>
                       </div>
-                      <p className="shrink-0 text-[14px] font-semibold text-wisteria-deep" data-part="cram-topic-minutes">
+                      <p className="shrink-0 text-[13px] font-semibold text-wisteria-deep" data-part="cram-topic-minutes">
                         {t.done ? "Done" : t.minutesToday > 0 ? `${t.minutesToday} min today` : "Not today"}
                       </p>
                     </div>
                     <div className="flex items-center gap-[10px]">
-                      <ProgressBar value={inScope.length ? verified / inScope.length : 0} height={10} label={`${t.name} verified`} className="flex-1" />
-                      <span className="shrink-0 text-[13px] font-semibold text-wisteria-deep" data-part="cram-topic-verified">
+                      <ProgressBar value={inScope.length ? verified / inScope.length : 0} height={8} label={`${t.name} verified`} className="flex-1" />
+                      <span className="shrink-0 text-[12px] font-semibold text-wisteria-deep" data-part="cram-topic-verified">
                         {verified}/{inScope.length} verified
                       </span>
                     </div>
                     {t.weakSpots.length > 0 && (
                       <ul className="flex flex-col gap-[2px]" data-part="cram-weak-spots">
                         {t.weakSpots.map((id) => (
-                          <li key={id} className="text-[13px] font-medium text-prussian" data-part="cram-weak-spot" data-objective={id}>
+                          <li key={id} className="text-[12px] font-medium text-prussian" data-part="cram-weak-spot" data-objective={id}>
                             {objectiveName(id)} <span className="text-wisteria-deep">· {MASTERY_LABEL[statusOf.get(id) ?? "unseen"]}</span>
                           </li>
                         ))}
@@ -307,10 +329,10 @@ function CrammingView({ course, today, plan, topics, spentMinutes, objectiveName
                 );
               })}
             </ul>
-          </Card>
+          </motion.aside>
         </motion.div>
-      </div>
-    </>
+      )}
+    </AnimatePresence>
   );
 }
 
@@ -341,7 +363,7 @@ function ScheduleDay({ day, topicName, covered }: { day: CramPlanDay; topicName:
       </div>
       {day.topics.length > 0 ? (
         <ul className="flex flex-col gap-[4px]">
-          {day.topics.map((t) => {
+          {day.topics.slice(0, 4).map((t) => {
             const state = covered(t.topicId);
             return (
               <li key={t.topicId} className={`rounded-[8px] px-[6px] py-[3px] text-[12px] font-semibold leading-tight ${state === "done" ? "bg-wisteria/25 text-prussian" : state === "in-progress" ? "bg-periwinkle/40 text-prussian" : "bg-alice text-prussian"}`} data-part="cram-day-topic" data-topic={t.topicId} data-covered={state}>
@@ -350,6 +372,11 @@ function ScheduleDay({ day, topicName, covered }: { day: CramPlanDay; topicName:
               </li>
             );
           })}
+          {day.topics.length > 4 && (
+            <li className="px-[6px] text-[12px] font-semibold text-wisteria-deep" data-part="cram-day-more">
+              +{day.topics.length - 4} more
+            </li>
+          )}
         </ul>
       ) : (
         <p className="text-[12px] font-medium text-wisteria-deep">{day.hours > 0 ? "Nothing planned" : ""}</p>
