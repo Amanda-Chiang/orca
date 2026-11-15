@@ -58,6 +58,8 @@ export interface QuizRunnerProps {
   replacementFor?: (item: RunnerItem, exclude: ReadonlySet<string>) => RunnerItem | null;
   /** Save the session's progress after every question under this kind (cleared when it finishes), so it can be resumed. */
   progressKind?: SessionProgress["kind"];
+  /** The warm-up (a quick session started with ?warmup=1): its result is stored with `warmup` so the admin view counts it apart. */
+  warmUp?: boolean;
   /** Where an unfinished session left off (its items are `items`). */
   resume?: { sessionId: string; index: number; correct: number; skipped: number; ungraded: number; missed: RunnerItem[]; seconds: number };
 }
@@ -67,7 +69,7 @@ export interface QuizRunnerProps {
  * answer, records one evidence event per graded answer, records the finished session, then tops up
  * the stock for the objectives it asked about.
  */
-export function QuizRunner({ course, items: firstItems, mode, title, backHref, again, replacementFor, progressKind, resume }: QuizRunnerProps) {
+export function QuizRunner({ course, items: firstItems, mode, title, backHref, again, replacementFor, progressKind, resume, warmUp = false }: QuizRunnerProps) {
   const router = useRouter();
   const streak = useStreak();
   const { recordQuiz, recordEvidence, objectives, feedback, rateQuestion, saveProgress, editStructure } = useOrca();
@@ -156,8 +158,8 @@ export function QuizRunner({ course, items: firstItems, mode, title, backHref, a
     if (progressKind) saveProgress(course.id, progressKind, null);
     sessionId.current ??= crypto.randomUUID();
     const total = questions.length - ungraded - skipped;
-    if (total > 0) recordQuiz({ courseId: course.id, topicId: mode === "topic" ? (allItems[0]?.topicId ?? null) : null, mode, sessionId: sessionId.current, correct, total, seconds });
-  }, [finished, course, mode, allItems, correct, ungraded, skipped, questions.length, seconds, recordQuiz, progressKind, saveProgress]);
+    if (total > 0) recordQuiz({ courseId: course.id, topicId: mode === "topic" ? (allItems[0]?.topicId ?? null) : null, mode, sessionId: sessionId.current, correct, total, seconds, warmup: mode === "quick" && warmUp });
+  }, [finished, course, mode, allItems, correct, ungraded, skipped, questions.length, seconds, recordQuiz, progressKind, saveProgress, warmUp]);
 
   // Then write more questions for the weak points this run asked about that the student is still
   // working on (waits for the server-model check); a mastered one gets none until it fades, and an

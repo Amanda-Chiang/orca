@@ -389,7 +389,7 @@ export function materialFromRow(r: Row<"materials">): Material {
 }
 
 export function sessionToRow(r: Omit<QuizResult, "finishedAt">): Omit<Row<"session_results">, "id" | "owner_id" | "finished_at"> {
-  return { course_id: r.courseId, topic_id: r.topicId, mode: r.mode, session_id: r.sessionId, correct: r.correct, total: r.total, seconds: r.seconds };
+  return { course_id: r.courseId, topic_id: r.topicId, mode: r.mode, session_id: r.sessionId, correct: r.correct, total: r.total, seconds: r.seconds, warmup: r.warmup === true };
 }
 
 export function sessionFromRow(r: Row<"session_results">): QuizResult {
@@ -401,6 +401,7 @@ export function sessionFromRow(r: Row<"session_results">): QuizResult {
     correct: r.correct,
     total: r.total,
     seconds: r.seconds,
+    ...(r.warmup !== null ? { warmup: r.warmup } : {}),
     finishedAt: new Date(r.finished_at).toISOString(),
   };
 }

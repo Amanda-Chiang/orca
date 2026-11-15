@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { z } from "zod";
+import { DayTable, KindTable } from "@/components/admin/ActivityTables";
 import { AdminPage, Bar, NotRecorded, Section, Table, Tiles } from "@/components/admin/AdminPage";
 import { day, duration, int, money, when, yesNo } from "@/components/admin/format";
 import { barWidths } from "@/lib/admin/stats";
 import { requireAdmin } from "@/lib/server/admin";
-import { EVIDENCE_PAGE, userDetail } from "@/lib/server/admin-queries";
+import { ACTIVITY_DAYS, EVIDENCE_PAGE, userDetail } from "@/lib/server/admin-queries";
 
 /** /admin/users/[id]?evidence=offset: one account's courses, uploads, spend, sessions, evidence, feedback and events. Admins only. */
 export const dynamic = "force-dynamic";
@@ -77,6 +78,14 @@ export default async function AdminUserPage({ params, searchParams }: { params: 
         />
       </Section>
 
+      <Section title="What this student is doing" aside="by kind of study · UTC days">
+        <KindTable rows={d.activity.byKind} part="admin-user-activity" />
+      </Section>
+
+      <Section title="Study by day" aside={`last ${ACTIVITY_DAYS} days, UTC · sessions by kind`}>
+        <DayTable rows={d.activity.byDay} everything={d.activity.byKind} />
+      </Section>
+
       <Section title="Model spend by step" aside="all time">
         <Table
           rows={d.spend.byKind}
@@ -119,7 +128,7 @@ export default async function AdminUserPage({ params, searchParams }: { params: 
           columns={[
             { key: "finished", label: "Finished", cell: (s) => when(s.finishedAt) },
             { key: "course", label: "Course", cell: (s) => s.course ?? "—" },
-            { key: "mode", label: "Mode", cell: (s) => s.mode },
+            { key: "mode", label: "Mode", cell: (s) => (s.warmup ? "quick (warm-up)" : s.mode) },
             { key: "score", label: "Correct / total", num: true, cell: (s) => `${int(s.correct)} / ${int(s.total)}` },
             { key: "seconds", label: "Time", num: true, cell: (s) => duration(s.seconds) },
           ]}

@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test";
 import type { AnswerEvent } from "../src/lib/mastery/types";
-import { type Student, expect, test, F, seedFixtureCourse, stored } from "./fixture";
+import { type Student, admin, expect, test, F, seedFixtureCourse, stored } from "./fixture";
 
 /** The evidence the app saved (through POST /api/evidence), read back from the database. */
 async function storedEvidence(page: Page, student: Student) {
@@ -107,6 +107,9 @@ test.describe("a course with uploaded questions", () => {
     await expect(page.locator("[data-visual]")).toHaveCount(2);
     await expect(page.locator("[data-part=warmup-start]")).toHaveCount(0);
     await expect(page.locator('[data-todo="warmup"]')).toHaveCount(0);
+    // Stored as a quick session marked warm-up, so the admin view counts it apart (2026-11-15).
+    const { data: sessions } = await admin().from("session_results").select("mode, warmup").eq("owner_id", student.id);
+    expect(sessions).toEqual([{ mode: "quick", warmup: true }]);
   });
 
   test("answering quiz questions records evidence, and a miss makes a weak point that moves the trail, island and streak", async ({ page, student }) => {
