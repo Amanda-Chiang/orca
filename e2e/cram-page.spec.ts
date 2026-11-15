@@ -90,15 +90,20 @@ test("setup picks the files and the hours for each day, one at 0; the page then 
   await expect(cram).toHaveAttribute("data-cramming", "1");
   await expect(page.locator("h1")).toHaveText("Cramming for Midterm");
   await expect(cram.locator("[data-part=cram-budget]")).toHaveText("9.5 hours left of 9.5");
-  await expect(cram.locator("[data-part=cram-spent]")).toHaveText("0 min studied in Orca since you started · 4 study days left · 120 min left today");
-  const chips = cram.locator("[data-part=cram-days] [data-part=cram-day]");
+  await expect(cram.locator("[data-part=cram-spent]")).toHaveText("0 min studied · 120 min left today");
+  // The days and their hours are the schedule's columns (the page shows the hours once).
+  const chips = cram.locator("[data-part=cram-schedule] [data-part=cram-day-col]");
   await expect(chips).toHaveCount(5);
   await expect(chips.first()).toHaveAttribute("data-today", "1");
   await expect(chips.first()).toHaveAttribute("data-hours", "2");
-  await expect(cram.locator(`[data-part=cram-days] [data-part=cram-day][data-day="${dayOut}"]`)).toHaveAttribute("data-hours", "0");
-  await expect(cram.locator(`[data-part=cram-days] [data-part=cram-day][data-day="${inDays(1)}"]`)).toContainText("1.5 h");
+  await expect(cram.locator(`[data-part=cram-day-col][data-day="${dayOut}"]`)).toHaveAttribute("data-hours", "0");
+  await expect(cram.locator(`[data-part=cram-day-col][data-day="${inDays(1)}"] [data-part=cram-day-col-hours]`)).toHaveText("1.5 h");
   await expect(cram.locator("[data-part=cram-plan]")).toHaveText("5 days to the exam · 0% verified");
-  const rows = cram.locator("[data-part=cram-topic]");
+  // Weak spots on the page; the per-topic scope opens in a side panel.
+  await expect(cram.locator("[data-part=cram-weak] [data-part=cram-weak-item]")).toHaveCount(1);
+  await expect(cram.locator("[data-part=cram-topic]")).toHaveCount(0);
+  await cram.locator("[data-part=cram-scope-open]").click();
+  const rows = page.locator("[data-part=cram-scope] [data-part=cram-topic]");
   await expect(rows).toHaveCount(1);
   const row = rows.first();
   await expect(row).toHaveAttribute("data-topic", F.twosComplement);
@@ -108,6 +113,8 @@ test("setup picks the files and the hours for each day, one at 0; the page then 
   // The worry is a struggled flag, so that objective is a weak spot under its topic.
   await expect(row.locator("[data-part=cram-weak-spot]")).toHaveCount(1);
   await expect(row.locator("[data-part=cram-weak-spot]")).toContainText("Sign-extend a number · Learning");
+  await page.keyboard.press("Escape");
+  await expect(page.locator("[data-part=cram-scope]")).toHaveCount(0);
   await expect(cram.locator("[data-part=cram-today] [data-part=cram-today-topic]")).toHaveText("Two's Complement120 min");
   await expect(cram.locator("[data-part=cram-mock]")).toContainText("No practice test yet");
   await expect(cram.locator("[data-part=cram-vault] [data-part=cram-vault-item]")).toHaveText([PAST_EXAM]);
@@ -174,7 +181,7 @@ test("the schedule shows a column per day of the cram with its hours and topics,
   await page.goto(`/course/${SLUG}/cram`);
   const cram = page.locator("[data-part=cram-page]");
   await expect(cram).toHaveAttribute("data-cramming", "1");
-  await expect(cram.locator("[data-part=cram-spent]")).toHaveText("60 min studied in Orca since you started · 2 study days left · 120 min left today");
+  await expect(cram.locator("[data-part=cram-spent]")).toHaveText("60 min studied · 120 min left today");
   // Three columns, yesterday to tomorrow, each with its hours; today highlighted; yesterday past and met (60 minutes studied of the 60 asked).
   const cols = cram.locator("[data-part=cram-schedule] [data-part=cram-day-col]");
   await expect(cols).toHaveCount(3);
@@ -204,8 +211,9 @@ test("the schedule shows a column per day of the cram with its hours and topics,
   ]);
   expect(await topicsOf(cols.nth(0))).toEqual([[F.booleanAlgebra, "Boolean Algebra60 min"]]);
   // The covered state: Boolean Algebra has an answer since the cram started, Two's Complement nothing yet.
-  const ba = cram.locator(`[data-part=cram-topic][data-topic="${F.booleanAlgebra}"]`);
-  const tc = cram.locator(`[data-part=cram-topic][data-topic="${F.twosComplement}"]`);
+  await cram.locator("[data-part=cram-scope-open]").click();
+  const ba = page.locator(`[data-part=cram-scope] [data-part=cram-topic][data-topic="${F.booleanAlgebra}"]`);
+  const tc = page.locator(`[data-part=cram-scope] [data-part=cram-topic][data-topic="${F.twosComplement}"]`);
   await expect(ba).toHaveAttribute("data-covered", "in-progress");
   await expect(ba.locator("[data-part=cram-topic-covered]")).toHaveText("In progress");
   await expect(tc).toHaveAttribute("data-covered", "untouched");
