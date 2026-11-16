@@ -59,7 +59,7 @@ test("the exam card shows the soonest exam; Cram for this exam opens the page's 
   // Back on the course page, the card shows the plan line and links to the page.
   await page.goto(`/course/${SLUG}`);
   await expect(card).toHaveAttribute("data-cramming", "1");
-  await expect(card.locator("[data-part=cram-plan]")).toHaveText("5 days to the exam. Today: Two's Complement. Verified: 0%.");
+  await expect(card.locator("[data-part=cram-plan]")).toHaveText("5 days to the exam. Today: a quick sweep (one question per topic), then Two's Complement. Verified: 0%.");
   await expect(card.locator("[data-part=cram-plan]")).toHaveAttribute("href", `/course/${SLUG}/cram`);
   await expect(card.locator("[data-part=study-with-claude]")).toHaveAttribute("href", "/settings#connector");
   await expect(card).toContainText("Scope from your professor's words.");

@@ -343,3 +343,24 @@ case, zero-hour days, past days and met, covered); `tests/server/cram-fields.tes
 `spentByDay` and `touchedObjectiveIds`); e2e `cram-page`: a three-day cram with different hours shows
 three columns, today highlighted, yesterday met, a topic answered since the cram started in progress;
 `connector` asserts `plan.days` and `covered`.
+
+## Addendum, 2026-11-16: a backlog, not a timetable (owner: "match the ALD cram style")
+
+Supersedes the split, `behindMinutes` and the line's behind form above.
+
+- **Today is a queue.** `plan.today` lists topics in the order to do them (weak spots first, then the
+  heaviest), each taking its share before the next starts; no 5-minute slices across every topic.
+  The schedule covers every topic once (its nominal need: 60 min per unverified objective at its
+  weight) before a second pass spends the spare time in proportion.
+- **No debt.** `behindMinutes` is gone. When the time left can't cover the need, topics are taken in
+  rank order and the rest go to `plan.cut` ("If time runs short: …" on the line and the page). Past
+  days show minutes studied, not "short".
+- **Diagnostic first.** While nothing in scope is verified or answered since `budget.since`,
+  `plan.diagnostic` = `{ minutes, topicIds }`: a sweep of one question per open topic (3 min a topic,
+  10–30), taken out of today before the queue.
+- **Practice tests on days.** `CramPlanInput.mocks` (the vault's held-back exams): the first goes on
+  the last study day before the exam, a second halfway; `days[].mock` and `plan.mockToday`, their
+  minutes (`scope.format.minutes`, else 60) taken out of the day first.
+- **Claude time counts.** Connector evidence (answers, work, signals, flags) is cut into stretches at
+  gaps over 30 minutes; each counts first-to-last plus 5 minutes, on the day it starts, no daily cap
+  (`connectorMinutesByDay` in `src/lib/course/cram-page.ts`, used by the page and `course_state`).

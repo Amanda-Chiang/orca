@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { Course, Exam } from "@/lib/data";
-import { planTopics, spentMinutesByDayInOrca, spentMinutesInOrca, touchedObjectives } from "@/lib/course/cram-page";
+import { connectorMinutesByDay, planTopics, spentMinutesByDayInOrca, spentMinutesInOrca, touchedObjectives } from "@/lib/course/cram-page";
 import { cramPlan, type CramPlan, type CramPlanInput, type SpentMinutes } from "@/lib/mastery/cram-plan";
 import type { CourseMastery } from "@/lib/mastery/course-mastery";
 import { useDayKey, useOrca } from "@/lib/store";
@@ -11,24 +11,34 @@ import { useNow } from "@/hooks/useNow";
 /**
  * The exam's cram plan, computed in the browser from the store (cram mode contract, section 6):
  * null until the exam has a time budget (set at the page's setup). Spent minutes are the course's
- * finished sessions since the budget's `since`, split at today and by day: "in Orca", since the
- * connector's estimate lives on the server (`course_state`). The topics' covered state reads the
- * store's evidence since then.
+ * finished sessions since the budget's `since` plus the time studied with Claude (its connector
+ * evidence in stretches, `connectorMinutesByDay`, as `course_state` counts it), split at today and by
+ * day. The topics' covered state reads the store's evidence since then. The vault's held-back exams
+ * are the practice tests the plan places on days.
  */
 export function useCramPlan(course: Course | undefined, exam: Exam | null, mastery: CourseMastery | undefined): { plan: CramPlan; spentMinutes: SpentMinutes; topics: CramPlanInput["topics"] } | null {
-  const { objectives, relations, results, evidence } = useOrca();
+  const { objectives, relations, results, evidence, materials } = useOrca();
   const dayKey = useDayKey();
   const nowMs = useNow();
   const budget = exam?.scope?.budget;
   return useMemo(() => {
     if (!course || !mastery || !exam || !budget) return null;
     const today = dayKey(new Date(nowMs).toISOString());
-    const spentMinutes = spentMinutesInOrca(results, course.id, budget.since, today, dayKey);
-    const topics = planTopics(exam, course.topics, objectives[course.id] ?? {}, relations[course.id] ?? [], (id) => mastery.objectives.get(id)?.status ?? "unseen");
+    const inOrca = spentMinutesInOrca(results, course.id, budget.since, today, dayKey);
     const spentByDay = spentMinutesByDayInOrca(results, course.id, budget.since, dayKey);
+    const mine = evidence.filter((e) => e.courseId === course.id && e.at >= budget.since);
+    const withClaude = connectorMinutesByDay(mine.map((e) => ({ at: e.at, source: "source" in e ? e.source : null, flagSource: e.kind === "confusion" ? e.flagSource : null })), dayKey);
+    const spentMinutes = { ...inOrca };
+    for (const [day, minutes] of withClaude) {
+      spentByDay[day] = (spentByDay[day] ?? 0) + minutes;
+      if (day === today) spentMinutes.today += minutes;
+      else if (day < today) spentMinutes.beforeToday += minutes;
+    }
+    const topics = planTopics(exam, course.topics, objectives[course.id] ?? {}, relations[course.id] ?? [], (id) => mastery.objectives.get(id)?.status ?? "unseen");
     const touchedObjectiveIds = touchedObjectives(evidence, course.id, budget.since);
-    return { plan: cramPlan({ today, examDate: exam.date, budget, topics, spentMinutes, spentByDay, touchedObjectiveIds }), spentMinutes, topics };
-  }, [exam, budget, course, objectives, relations, results, evidence, mastery, dayKey, nowMs]);
+    const mocks = materials.filter((m) => m.courseId === course.id && m.heldBack).map((m) => ({ materialId: m.id, name: m.filename, ...(exam.scope?.format?.minutes ? { minutes: exam.scope.format.minutes } : {}) }));
+    return { plan: cramPlan({ today, examDate: exam.date, budget, topics, spentMinutes, spentByDay, touchedObjectiveIds, mocks }), spentMinutes, topics };
+  }, [exam, budget, course, objectives, relations, results, evidence, materials, mastery, dayKey, nowMs]);
 }
 
 /**

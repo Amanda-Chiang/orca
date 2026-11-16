@@ -46,12 +46,12 @@ test("course_state's plan counts the sessions and the connector's chat since the
   });
   const { plan, coverage, topErrors } = await cramFields(db as never, OWNER, input([exam()]));
   assert.ok(plan);
-  // The budget was saved the old way: 6 hours over 9 days is 40 minutes a day. Before today: 30 session + 20 chat minutes against 120 asked for; today: 30 chat minutes.
-  assert.equal(plan.behindMinutes, 70);
-  assert.equal(plan.minutesToday, 10);
-  assert.equal(Math.round(plan.hoursLeft * 1000) / 1000, 3.5);
+  // The budget was saved the old way: 6 hours over 9 days is 40 minutes a day. Today: a 30-minute chat stretch plus its last question (5 minutes), so today's 40 are nearly used; missed time earlier isn't debt.
+  assert.deepEqual(plan.cut, []);
+  assert.equal(plan.minutesToday, 5);
+  assert.equal(Math.round(plan.hoursLeft * 1000) / 1000, 3.417);
   assert.equal(plan.daysLeft, 6);
-  assert.equal(plan.line, "6 days to the exam. Done: Counters. Today: Adders, Buses. Verified: 50%. 70 minutes behind: Buses gets shortened.");
+  assert.equal(plan.line, "6 days to the exam. Done: Counters. Today: Adders. Verified: 50%.");
   assert.deepEqual(plan.verified, { done: 2, total: 4, share: 0.5 });
   assert.deepEqual(plan.topics.map((t) => [t.id, t.done, t.weakSpots]), [
     ["A", false, ["a1"]],
@@ -64,8 +64,8 @@ test("course_state's plan counts the sessions and the connector's chat since the
   assert.deepEqual(plan.days.map((d) => [d.day, d.spentMinutes, d.met]), [
     ["2026-11-10", 0, false],
     ["2026-11-11", 30, false],
-    ["2026-11-12", 20, false],
-    ["2026-11-13", 30, null],
+    ["2026-11-12", 25, false],
+    ["2026-11-13", 35, null],
     ["2026-11-14", 0, null],
     ["2026-11-15", 0, null],
     ["2026-11-16", 0, null],
@@ -90,8 +90,8 @@ test("the minutes by day and the objectives touched since the cram started", () 
     { at: "2026-11-12T23:30:00.000Z", source: "connector", objective_id: "y" },
     { at: "2026-11-13T15:00:00.000Z", source: "quiz", objective_id: "x" },
   ];
-  assert.deepEqual(spentMinutesByDay(sessions, events, "UTC"), { "2026-11-12": 45 });
-  assert.deepEqual(spentMinutesByDay(sessions, events, "America/New_York"), { "2026-11-12": 45 }, "the chat's 23:00 is still the 12th in New York");
+  assert.deepEqual(spentMinutesByDay(sessions, events, "UTC"), { "2026-11-12": 50 });
+  assert.deepEqual(spentMinutesByDay(sessions, events, "America/New_York"), { "2026-11-12": 50 }, "the chat's 23:00 is still the 12th in New York");
   assert.deepEqual(touchedSince(events, "2026-11-12T23:30:00.000Z"), ["y", "x"]);
   assert.deepEqual(touchedSince(events, "2026-11-14T00:00:00.000Z"), []);
 });
@@ -105,7 +105,7 @@ test("the plan covers only the exam's topics when it names some, and is null wit
   // Cramming without a budget: the plan assumes 2 hours a study day from today (6 days to the 19th), nothing spent, and says so.
   const noBudget = await cramFields(db as never, OWNER, input([exam({ scope: null })]));
   assert.equal(noBudget.plan?.defaulted, true);
-  assert.deepEqual([noBudget.plan?.hoursLeft, noBudget.plan?.minutesPerDay, noBudget.plan?.behindMinutes], [12, 120, 0]);
+  assert.deepEqual([noBudget.plan?.hoursLeft, noBudget.plan?.minutesPerDay, noBudget.plan?.cut], [12, 120, []]);
   assert.ok(noBudget.coverage, "coverage still follows the cramming exam");
   const budgeted = await cramFields(db as never, OWNER, input([exam()]));
   assert.equal(budgeted.plan?.defaulted, false, "a set budget isn't assumed");
@@ -138,7 +138,7 @@ test("topErrors count the kinds of mistake since the cram started, else over the
   assert.deepEqual(topErrorsOf([{ kind: "answer", error_type: "typo" }]), [], "an unknown kind is ignored");
 });
 
-test("spent minutes split at the start of the student's today: sessions by the day they finished, the chat by day", () => {
+test("spent minutes split at the start of the student's today: sessions by the day they finished, the chat by stretch (plus 5 minutes each)", () => {
   const sessions = [
     { finished_at: "2026-11-12T10:00:00.000Z", seconds: 600 },
     { finished_at: "2026-11-13T03:00:00.000Z", seconds: 1200 }, // the 12th's evening in New York
@@ -150,19 +150,23 @@ test("spent minutes split at the start of the student's today: sessions by the d
     { at: "2026-11-13T15:00:00.000Z", source: "connector" },
     { at: "2026-11-13T15:10:00.000Z", source: "connector" },
   ];
-  assert.deepEqual(spentMinutesSplit(sessions, events, "America/New_York", "2026-11-13"), { beforeToday: 60, today: 15 });
-  assert.deepEqual(spentMinutesSplit(sessions, events, "UTC", "2026-11-13"), { beforeToday: 40, today: 35 });
-  assert.deepEqual(spentMinutesSplit(sessions, events, "UTC", "2026-11-12"), { beforeToday: 0, today: 40 }, "later days count nowhere");
+  assert.deepEqual(spentMinutesSplit(sessions, events, "America/New_York", "2026-11-13"), { beforeToday: 65, today: 20 });
+  assert.deepEqual(spentMinutesSplit(sessions, events, "UTC", "2026-11-13"), { beforeToday: 45, today: 40 });
+  assert.deepEqual(spentMinutesSplit(sessions, events, "UTC", "2026-11-12"), { beforeToday: 0, today: 45 }, "later days count nowhere");
 });
 
-test("the connector estimate is each day's span in the student's timezone, capped at 120 minutes", () => {
+test("the connector estimate counts stretches of Claude's evidence (gaps under 30 minutes) plus 5 minutes each, on the day each starts", () => {
   const events = [
-    // 23:50 to 00:10 UTC is one evening in New York (two days in UTC).
+    // 23:50 to 00:10 UTC: one stretch, counted on the day it started (the 12th in both zones).
     { at: "2026-11-12T23:50:00.000Z", source: "connector" },
     { at: "2026-11-13T00:10:00.000Z", source: "connector" },
     { at: "2026-11-13T00:05:00.000Z", source: "quiz" },
   ];
-  assert.equal(connectorMinutes(events, "America/New_York"), 20);
-  assert.equal(connectorMinutes(events, "UTC"), 0, "one event a day spans nothing");
-  assert.equal(connectorMinutes([{ at: "2026-11-13T08:00:00.000Z", source: "connector" }, { at: "2026-11-13T20:00:00.000Z", source: "connector" }], "UTC"), 120);
+  assert.equal(connectorMinutes(events, "America/New_York"), 25);
+  assert.equal(connectorMinutes(events, "UTC"), 25);
+  // Twelve hours apart: two stretches of one event each, not a twelve-hour session.
+  assert.equal(connectorMinutes([{ at: "2026-11-13T08:00:00.000Z", source: "connector" }, { at: "2026-11-13T20:00:00.000Z", source: "connector" }], "UTC"), 10);
+  // A long session with no gap over 30 minutes counts whole (no daily cap), and a flag Claude raised counts.
+  const long = Array.from({ length: 13 }, (_, i) => ({ at: new Date(Date.parse("2026-11-13T08:00:00.000Z") + i * 25 * 60_000).toISOString(), source: i === 6 ? null : "connector", ...(i === 6 ? { flag_source: "connector-struggled" } : {}) }));
+  assert.equal(connectorMinutes(long, "UTC"), 300 + 5);
 });

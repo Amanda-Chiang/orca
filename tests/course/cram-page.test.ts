@@ -72,8 +72,10 @@ test("the page's plan: an exam 5 days out, 6 hours by day with one day out, noth
   assert.deepEqual(plan.studyDays, ["2026-11-10", "2026-11-11", "2026-11-13", "2026-11-14"]);
   assert.equal(plan.hoursLeft, 6);
   assert.equal(plan.minutesToday, 90);
-  assert.equal(plan.behindMinutes, 0);
-  assert.deepEqual(plan.today, [{ topicId: "t", minutes: 90 }]);
+  assert.deepEqual(plan.cut, []);
+  // Nothing answered yet: a 10-minute sweep opens the day, then the topic.
+  assert.deepEqual(plan.diagnostic, { minutes: 10, topicIds: ["t"] });
+  assert.deepEqual(plan.today, [{ topicId: "t", minutes: 80 }]);
   assert.deepEqual(plan.topics[0].weakSpots, ["a"]);
-  assert.equal(plan.line, "5 days to the exam. Today: Two's Complement. Verified: 0%.");
+  assert.equal(plan.line, "5 days to the exam. Today: a quick sweep (one question per topic), then Two's Complement. Verified: 0%.");
 });
