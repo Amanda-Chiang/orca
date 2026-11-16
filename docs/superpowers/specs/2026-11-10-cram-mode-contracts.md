@@ -364,3 +364,10 @@ Supersedes the split, `behindMinutes` and the line's behind form above.
 - **Claude time counts.** Connector evidence (answers, work, signals, flags) is cut into stretches at
   gaps over 30 minutes; each counts first-to-last plus 5 minutes, on the day it starts, no daily cap
   (`connectorMinutesByDay` in `src/lib/course/cram-page.ts`, used by the page and `course_state`).
+
+**Correction, 2026-11-16 (later):** when the need exceeds the time, the time is shared, not given in
+rank order: every kept topic gets `MIN_TOPIC_MINUTES` (30) first, then the rest in proportion to its
+need; only when the time can't give every topic that floor are the lowest-priority ones cut. A topic
+takes at most `BLOCK_MAX_MINUTES` (120) a day while others still need time. A file-scoped exam keeps
+an untaught objective only when at least half of its topic's taught objectives are in scope (a weak
+spot still follows any in-scope objective of its topic).

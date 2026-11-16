@@ -150,6 +150,10 @@ const toFive = (minutes: number) => Math.round(minutes / 5) * 5;
 /** The nominal minutes an unverified objective needs, at weight 1 (the schedule's unit of need). */
 export const MINUTES_PER_UNVERIFIED = 60;
 
+/** The most one topic takes in a day while others still need time. */
+export const BLOCK_MAX_MINUTES = 120;
+/** A topic whose share of a short cram would be less than this is cut rather than given a sliver. */
+export const MIN_TOPIC_MINUTES = 30;
 /** A practice test's minutes when its length isn't known. */
 export const MOCK_MINUTES = 60;
 /** A diagnostic sweep: about this many minutes a topic, within the bounds below. */
@@ -180,15 +184,20 @@ function scheduleDays(days: ReadonlyArray<{ day: string; minutes: number }>, top
   for (const { day, minutes } of days) {
     const planned: Array<{ topicId: string; minutes: number }> = [];
     let left = minutes;
-    for (const pass of [need.first, need.second]) {
+    // A topic takes at most BLOCK_MAX_MINUTES a day while others still need time, so a long day works through
+    // several topics in turn (owner, 2026-11-16: a 14-hour day isn't 14 hours of one topic); only then does the cap lift.
+    const taken = new Map<number, number>();
+    for (const [pass, cap] of [[need.first, BLOCK_MAX_MINUTES], [need.first, Infinity], [need.second, BLOCK_MAX_MINUTES], [need.second, Infinity]] as const) {
       for (const i of ranked) {
         if (left < 5) break;
-        const take = toFive(Math.min(pass[i], left));
+        const room = cap - (taken.get(i) ?? 0);
+        const take = toFive(Math.min(pass[i], left, room));
         if (take <= 0) continue;
         const same = planned.find((p) => p.topicId === topics[i].id);
         if (same) same.minutes += take;
         else planned.push({ topicId: topics[i].id, minutes: take });
         pass[i] = Math.max(0, pass[i] - take);
+        taken.set(i, (taken.get(i) ?? 0) + take);
         left -= take;
       }
     }
@@ -202,9 +211,10 @@ const nominalNeeds = (topics: readonly CramPlanTopic[]) => topics.map((t) => (t.
 
 /**
  * What each topic gets of `minutes`: when everything fits, its nominal need in a first pass and the
- * spare time as review in a second, in proportion; when it doesn't, the topics in rank order take
- * their full need until the time runs out, and the rest get nothing (they're `cut`). Priority
- * decides, not an even squeeze.
+ * spare time as review in a second, in proportion. When it doesn't, the time is shared in proportion
+ * to the needs, so every topic gets some (owner, 2026-11-16: a cram that's half AC material can't
+ * put two days on one topic): each kept topic gets MIN_TOPIC_MINUTES first, then the rest in
+ * proportion; when the time can't give every topic that floor, the lowest priority are `cut`.
  */
 function needsFor(topics: readonly CramPlanTopic[], minutes: number, ranked: readonly number[]): { need: Passes; cut: number[] } {
   const nominal = nominalNeeds(topics);
@@ -212,18 +222,16 @@ function needsFor(topics: readonly CramPlanTopic[], minutes: number, ranked: rea
   const none = nominal.map(() => 0);
   if (sum <= 0 || minutes <= 0) return { need: { first: none, second: [...none] }, cut: [] };
   if (sum <= minutes) return { need: { first: nominal, second: nominal.map((n) => (n * (minutes - sum)) / sum) }, cut: [] };
-  const need = nominal.map(() => 0);
+  // Priority keeps a topic: the lowest-ranked go first while the time can't give each kept one its floor.
+  const kept = ranked.filter((i) => nominal[i] > 0);
+  const floor = (i: number) => Math.min(nominal[i], MIN_TOPIC_MINUTES);
   const cut: number[] = [];
-  let left = minutes;
-  for (const i of ranked) {
-    if (nominal[i] <= 0) continue;
-    if (left < 5) {
-      cut.push(i);
-      continue;
-    }
-    need[i] = Math.min(nominal[i], left);
-    left -= need[i];
-  }
+  while (kept.length > 1 && kept.reduce((sum, i) => sum + floor(i), 0) > minutes) cut.push(kept.pop()!);
+  // Each kept topic gets its floor, and the rest of the time in proportion to what it still needs beyond it.
+  const spare = Math.max(0, minutes - kept.reduce((sum, i) => sum + floor(i), 0));
+  const beyond = kept.reduce((sum, i) => sum + (nominal[i] - floor(i)), 0);
+  const need = nominal.map(() => 0);
+  for (const i of kept) need[i] = Math.min(nominal[i], floor(i) + (beyond > 0 ? ((nominal[i] - floor(i)) * spare) / beyond : 0));
   return { need: { first: need, second: nominal.map(() => 0) }, cut };
 }
 
