@@ -116,7 +116,8 @@ export interface CramPlan {
 const DAY_MS = 86_400_000;
 const VERIFIED: ReadonlySet<ObjectiveStatus> = new Set(["verified", "mastered"]);
 /** Statuses that aren't in rotation and have no check open (src/lib/mastery/types.ts): everything else is a weak spot. */
-const NOT_WEAK: ReadonlySet<ObjectiveStatus> = new Set(["unseen", "verified"]);
+/** Statuses that aren't a weak spot: everything else (in rotation, or waiting on a check) is. */
+export const NOT_WEAK: ReadonlySet<ObjectiveStatus> = new Set(["unseen", "verified"]);
 
 function ymd(day: string): [number, number, number] {
   const [y, m, d] = day.split("-").map(Number);
@@ -177,8 +178,9 @@ export function cramPlan(input: CramPlanInput): CramPlan {
   const hoursAhead = days.filter((d) => d >= today && d < examDate).reduce((sum, d) => sum + perDay[d], 0);
   const hoursLeft = Math.max(0, hoursAhead - spentMinutes.today / 60);
   const minutesToday = daysLeft === 0 ? 0 : Math.max(0, (perDay[today] ?? 0) * 60 - spentMinutes.today);
-  // Behind: what the budget asked for on the days before today, less what was spent on them.
-  const hoursBefore = days.filter((d) => d < today).reduce((sum, d) => sum + perDay[d], 0);
+  // Behind: what the budget asked for on the days of this cram before today (from the day it started, before the exam), less what was spent on them.
+  const startDay = budget.since.slice(0, 10);
+  const hoursBefore = days.filter((d) => d >= startDay && d < today && d < examDate).reduce((sum, d) => sum + perDay[d], 0);
   const behindMinutes = Math.max(0, Math.round(hoursBefore * 60 - spentMinutes.beforeToday));
 
   const touched = new Set(input.touchedObjectiveIds);
@@ -220,7 +222,8 @@ export function cramPlan(input: CramPlanInput): CramPlan {
   // split is taken out, with the needs scaled to the minutes ahead (today's left and the later days' hours),
   // so the days fill the budget and cover the scope. The days before today get the same walk from the
   // start of the cram, scaled to the whole budget: what was planned for them, as derivable now.
-  const dayList = days.filter((d) => d < examDate);
+  // Days left over from before this cram started (an earlier test, an exam moved) aren't part of it.
+  const dayList = days.filter((d) => d >= startDay && d < examDate);
   const later = dayList.filter((d) => d > today).map((d) => ({ day: d, minutes: perDay[d] * 60 }));
   const ahead = needsFor(topics, minutesToday + later.reduce((sum, d) => sum + d.minutes, 0));
   topics.forEach((t, i) => {

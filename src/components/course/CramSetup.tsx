@@ -6,6 +6,8 @@ import { DEFAULT_CONFIG, type Course, type Exam, type ExamScope, type Material, 
 import { hoursFromDuration, perDayHours, remainingDays, weekdayName } from "@/lib/course/cram-page";
 import { scopeFromSetup, splitByMaterials } from "@/lib/course/exam-card";
 import { HOUR_STEP, budgetFromPerDay, isHalfHours, perDayOf } from "@/lib/mastery/cram-budget";
+import { NOT_WEAK } from "@/lib/mastery/cram-plan";
+import type { CourseMastery } from "@/lib/mastery/course-mastery";
 import { Button } from "@/components/ui/Button";
 import { useOrca } from "@/lib/store";
 
@@ -38,7 +40,7 @@ const parseHours = (text: string): number | null => {
  * cramming with its budget (`since` = now, kept with the past days' hours when the scope of a
  * running cram is edited).
  */
-export function CramSetup({ exam, course, candidates, materials, catalogue, today, onDone, onCancel }: { exam: Exam; course: Course; candidates: readonly string[]; materials: readonly Material[]; catalogue: Readonly<Record<string, Objective>>; today: string; onDone: () => void; onCancel: () => void }) {
+export function CramSetup({ exam, course, candidates, materials, catalogue, mastery, today, onDone, onCancel }: { exam: Exam; course: Course; candidates: readonly string[]; materials: readonly Material[]; catalogue: Readonly<Record<string, Objective>>; mastery: CourseMastery; today: string; onDone: () => void; onCancel: () => void }) {
   const { updateExam, configs } = useOrca();
   const budget = exam.scope?.budget;
   const days = remainingDays(today, exam.date);
@@ -65,20 +67,23 @@ export function CramSetup({ exam, course, candidates, materials, catalogue, toda
     if (parseHours(text) !== null) setPerDay(Object.fromEntries(days.map((d) => [d, text])));
   };
 
-  const { inScope } = splitByMaterials(candidates, picked, catalogue);
+  // Weak spots follow their topic when files are picked, so a pick never drops one the exam covers.
+  const weak = new Set(candidates.filter((id) => !NOT_WEAK.has(mastery.objectives.get(id)?.status ?? "unseen")));
+  const { inScope } = splitByMaterials(candidates, picked, catalogue, weak);
   const confirm = () => {
     if (!hoursOk) return;
-    const base: ExamScope = scopeFromSetup(exam.scope, candidates, words, picked, catalogue) ?? { objectives: [], sources: [] };
+    const base: ExamScope = scopeFromSetup(exam.scope, candidates, words, picked, catalogue, weak) ?? { objectives: [], sources: [] };
     // What feels shaky stays in the student's words; Claude maps it to objectives in the first session.
     const { worries: _old, ...rest } = base;
     void _old;
     const scope: ExamScope = worries.trim() ? { ...rest, worries: worries.trim() } : rest;
     // The days before today keep the hours they had (what the plan's "behind" compares with); the rest are the rows.
-    const past = Object.fromEntries(Object.entries(stored ?? {}).filter(([d]) => d < today && d < exam.date));
+    const since = exam.cramming && budget && exam.date >= today ? budget.since : new Date().toISOString();
+    const past = Object.fromEntries(Object.entries(stored ?? {}).filter(([d]) => d >= since.slice(0, 10) && d < today && d < exam.date));
     const entered = Object.fromEntries(days.map((d, i) => [d, hoursByDay[i] ?? 0]));
     updateExam(exam.id, {
       cramming: true,
-      scope: { ...scope, budget: budgetFromPerDay({ ...past, ...entered }, exam.cramming && budget ? budget.since : new Date().toISOString()) },
+      scope: { ...scope, budget: budgetFromPerDay({ ...past, ...entered }, since) },
     });
     onDone();
   };

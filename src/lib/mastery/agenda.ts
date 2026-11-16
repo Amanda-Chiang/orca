@@ -103,7 +103,7 @@ export function examInWindow(
   currentTopic: (topicId: string) => string = (id) => id,
 ): { topicIds: readonly string[] } | null {
   const next = exams
-    .filter((e) => e.courseId === courseId && (e.cramming || (e.date >= today && addDays(e.date, -AGENDA_RULES.examWindowDays) <= today)))
+    .filter((e) => e.courseId === courseId && e.date >= today && (e.cramming || addDays(e.date, -AGENDA_RULES.examWindowDays) <= today))
     .sort((a, b) => Number(!!b.cramming) - Number(!!a.cramming) || a.date.localeCompare(b.date))[0];
   return next ? { topicIds: [...new Set(next.topicIds.map(currentTopic))] } : null;
 }

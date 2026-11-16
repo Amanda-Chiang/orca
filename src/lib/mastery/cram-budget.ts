@@ -106,6 +106,8 @@ export function mergeBudget(base: CramBudget | null | undefined, input: CramBudg
     for (const d of input.daysOut ?? []) perDay[d] = 0;
   }
   if (input.today !== undefined) perDay[today] = input.today;
-  for (const d of Object.keys(perDay)) if (d >= examDate) delete perDay[d];
+  // Days on or after the exam, and days before this cram started (left over from an earlier date), are dropped.
+  const startDay = since.slice(0, 10);
+  for (const d of Object.keys(perDay)) if (d >= examDate || d < startDay) delete perDay[d];
   return budgetFromPerDay(perDay, since);
 }

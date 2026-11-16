@@ -191,3 +191,11 @@ test("a topic is done when every in-scope objective is verified, in progress onc
   assert.deepEqual(covered(cramPlan({ ...base, touchedObjectiveIds: ["a1", "d1"] })), { A: "in-progress", B: "untouched", C: "done", D: "untouched" }, "an out-of-scope objective doesn't count");
   assert.deepEqual(covered(cramPlan({ ...base, touchedObjectiveIds: ["c1"] })), { A: "untouched", B: "untouched", C: "done", D: "untouched" }, "done stays done");
 });
+
+test("days before the cram started don't count as behind or show in the schedule (left over from an earlier exam date)", () => {
+  // The budget still names 11-10 to 11-12 from an earlier test, but this cram started on the 15th.
+  const stale = { ...budget, since: "2026-11-15T09:00:00.000Z", perDay: { "2026-11-10": 4, "2026-11-11": 4, "2026-11-12": 3, "2026-11-15": 1, "2026-11-16": 1, "2026-11-17": 1 } };
+  const plan = cramPlan({ ...base, today: "2026-11-17", examDate: "2026-11-19", budget: stale, spentMinutes: { beforeToday: 120, today: 0 } });
+  assert.equal(plan.behindMinutes, 0, "only the 15th and 16th were asked for (2 hours), and 2 hours were spent");
+  assert.deepEqual(plan.days.map((d) => d.day), ["2026-11-15", "2026-11-16", "2026-11-17"]);
+});
