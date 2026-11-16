@@ -46,7 +46,10 @@ export const INSTRUCTIONS =
   "ask what the professor said it covers, whether there's a practice exam or study guide " +
   "(add_material: pasted text, or file true for an upload link; past and practice exams are held " +
   "back), and what the student is worried about (flag_check with strength struggled); then record " +
-  "the scope with set_exam (cramming true when they're cramming). When the student names which " +
+  "the scope with set_exam (cramming true when they're cramming). When an exam's scope has worries " +
+  "(what the student said feels shaky at cram setup, in their words), match them to objectives at the " +
+  "start of the first session, flag those with flag_check (strength struggled) and tell the student " +
+  "which ones you'll start with; with no worries, check first and let the misses find the weak spots. When the student names which " +
   "lectures or files the exam covers, map them to the course's materials by filename (course_state " +
   "detail full lists materials, and each objective's materialIds) and record the scope with weight 0 " +
   "for objectives taught only elsewhere (evidence professor, quote \"not in the files the exam " +
@@ -129,6 +132,8 @@ export interface ScopeSummary {
   excluded: number;
   sources: ScopeSignal[];
   budget?: CramBudget;
+  /** What the student said feels shaky at cram setup, in their words. */
+  worries?: string;
 }
 
 /** A material of the course (not removed), so Claude can map "lectures 11 to 16" to files. */

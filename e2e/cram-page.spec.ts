@@ -1,4 +1,4 @@
-import { admin, daysAgo, expect, F, FIXTURE_STATE, fixtureMaterial, ids, objective, seedState, stored, test } from "./fixture";
+import { admin, daysAgo, expect, F, FIXTURE_STATE, fixtureMaterial, ids, objective, seedState, stored, struggled, test } from "./fixture";
 import type { AnswerEvent } from "../src/lib/mastery/types";
 import { NOT_IN_FILES } from "../src/lib/course/exam-card";
 
@@ -30,6 +30,8 @@ test("setup picks the files and the hours for each day, one at 0; the page then 
     ...FIXTURE_STATE,
     materials: [...FIXTURE_STATE.materials, deck2, pastExam],
     objectives: { [F.course]: { ...FIXTURE_STATE.objectives[F.course], [id.overflow]: objective(id.overflow, F.twosComplement, "Detect overflow", { materialId: id.deck2 }) } },
+    // A struggled flag (as Claude's flag_check leaves one), so that objective is a weak spot.
+    evidence: [struggled(F.course, F.twosComplement, F.signExtend, daysAgo(1))],
   });
   const examId = crypto.randomUUID();
   const seeded = await admin()
@@ -80,8 +82,7 @@ test("setup picks the files and the hours for each day, one at 0; the page then 
   await expect(setup.locator("[data-part=cram-confirm]")).toBeDisabled();
   await hoursOn(inDays(4)).fill("3");
   await expect(setup.locator("[data-part=cram-confirm]")).toBeEnabled();
-  await setup.getByRole("button", { name: "Objectives you're worried about" }).click();
-  await page.getByRole("option", { name: "Sign-extend a number" }).getByRole("checkbox").check();
+  await setup.locator("[data-part=cram-worries]").fill("Sign extension");
   await setup.locator("[data-part=cram-confirm]").click();
   await expect(setup).toBeHidden();
 
@@ -110,7 +111,7 @@ test("setup picks the files and the hours for each day, one at 0; the page then 
   await expect(row).toContainText("Two's Complement");
   await expect(row.locator("[data-part=cram-topic-verified]")).toHaveText("0/2 verified");
   await expect(row.locator("[data-part=cram-topic-minutes]")).toHaveText("120 min today");
-  // The worry is a struggled flag, so that objective is a weak spot under its topic.
+  // The flagged objective is a weak spot under its topic.
   await expect(row.locator("[data-part=cram-weak-spot]")).toHaveCount(1);
   await expect(row.locator("[data-part=cram-weak-spot]")).toContainText("Sign-extend a number · Learning");
   await page.keyboard.press("Escape");
