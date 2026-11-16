@@ -6,10 +6,7 @@ import { DEFAULT_CONFIG, type Course, type Exam, type ExamScope, type Material, 
 import { hoursFromDuration, perDayHours, remainingDays, weekdayName } from "@/lib/course/cram-page";
 import { scopeFromSetup, splitByMaterials } from "@/lib/course/exam-card";
 import { HOUR_STEP, budgetFromPerDay, isHalfHours, perDayOf } from "@/lib/mastery/cram-budget";
-import { canFlagHard } from "@/lib/mastery/flags";
-import type { CourseMastery } from "@/lib/mastery/course-mastery";
 import { Button } from "@/components/ui/Button";
-import { MultiSelect } from "@/components/ui/MultiSelect";
 import { useOrca } from "@/lib/store";
 
 /** The most a professor's quote holds (the connector's limit for a scope quote). */
@@ -35,14 +32,14 @@ const parseHours = (text: string): number | null => {
  * Cram setup (cram mode contract, section 6 and its per-day addendum), on the cram page: the
  * professor's words (saved as `professor` evidence on the scope), the files the exam covers (the
  * materials picked: objectives taught only elsewhere weigh 0), a link to add a practice exam held
- * back, the objectives the student worries about (a manual struggled flag each), and the hours
+ * back, what feels shaky in the student's own words (Claude maps it to objectives), and the hours
  * they can put in on each remaining day (half-hour steps, 0 for a day off; "Same for every day"
  * fills every row); the budget stores the days, with the total derived. Confirm sets the exam
  * cramming with its budget (`since` = now, kept with the past days' hours when the scope of a
  * running cram is edited).
  */
-export function CramSetup({ exam, course, candidates, materials, catalogue, mastery, today, onDone, onCancel }: { exam: Exam; course: Course; candidates: readonly string[]; materials: readonly Material[]; catalogue: Readonly<Record<string, Objective>>; mastery: CourseMastery; today: string; onDone: () => void; onCancel: () => void }) {
-  const { updateExam, flagObjectives, configs } = useOrca();
+export function CramSetup({ exam, course, candidates, materials, catalogue, today, onDone, onCancel }: { exam: Exam; course: Course; candidates: readonly string[]; materials: readonly Material[]; catalogue: Readonly<Record<string, Objective>>; today: string; onDone: () => void; onCancel: () => void }) {
+  const { updateExam, configs } = useOrca();
   const budget = exam.scope?.budget;
   const days = remainingDays(today, exam.date);
   // Starts from the quote already on the scope, so Edit scope shows what was said.
@@ -52,7 +49,7 @@ export function CramSetup({ exam, course, candidates, materials, catalogue, mast
     const stored = (exam.scope?.materialIds ?? []).filter((id) => known.has(id));
     return stored.length ? stored : materials.filter((m) => !m.heldBack && PICKED_TYPES.has(m.type)).map((m) => m.id);
   });
-  const [worries, setWorries] = useState<string[]>([]);
+  const [worries, setWorries] = useState(() => exam.scope?.worries ?? "");
   // The budget's hours by day (a budget saved before per-day budgets gets its spread); the past days' hours are kept as they were.
   const stored = budget ? perDayOf(budget, exam.date) : null;
   // What a day starts from when the budget doesn't name it: the course's exam review duration over the days left, else the budget's own average.
@@ -69,13 +66,13 @@ export function CramSetup({ exam, course, candidates, materials, catalogue, mast
   };
 
   const { inScope } = splitByMaterials(candidates, picked, catalogue);
-  const options = candidates.map((id) => ({ id, name: catalogue[id]?.name ?? id }));
   const confirm = () => {
     if (!hoursOk) return;
-    // A worry is a struggled flag (manual); one already being learned needs no second flag.
-    const toFlag = worries.filter((id) => canFlagHard(mastery.objectives.get(id)?.status ?? "unseen"));
-    if (toFlag.length) flagObjectives(course.id, toFlag);
-    const scope: ExamScope = scopeFromSetup(exam.scope, candidates, words, picked, catalogue) ?? { objectives: [], sources: [] };
+    const base: ExamScope = scopeFromSetup(exam.scope, candidates, words, picked, catalogue) ?? { objectives: [], sources: [] };
+    // What feels shaky stays in the student's words; Claude maps it to objectives in the first session.
+    const { worries: _old, ...rest } = base;
+    void _old;
+    const scope: ExamScope = worries.trim() ? { ...rest, worries: worries.trim() } : rest;
     // The days before today keep the hours they had (what the plan's "behind" compares with); the rest are the rows.
     const past = Object.fromEntries(Object.entries(stored ?? {}).filter(([d]) => d < today && d < exam.date));
     const entered = Object.fromEntries(days.map((d, i) => [d, hoursByDay[i] ?? 0]));
@@ -153,21 +150,20 @@ export function CramSetup({ exam, course, candidates, materials, catalogue, mast
         <span className="text-wisteria-deep"> (kept hidden for a practice test)</span>
       </p>
 
-      <div className="flex flex-col gap-[6px]">
-        <span className="text-[15px] font-bold text-prussian">Anything you&apos;re worried about?</span>
-        {options.length ? (
-          <MultiSelect
-            options={options}
-            chosen={worries}
-            onToggle={(id) => setWorries((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]))}
-            label="Objectives you're worried about"
-            noun="objective"
-            className="w-[320px] max-w-full"
-          />
-        ) : (
-          <p className="text-[14px] font-medium text-wisteria-deep">This exam has no objectives in scope yet.</p>
-        )}
-      </div>
+      <label className="flex flex-col gap-[6px]">
+        <span className="text-[15px] font-bold text-prussian">
+          Anything feel shaky? <span className="font-medium text-wisteria-deep">(optional)</span>
+        </span>
+        <textarea
+          value={worries}
+          onChange={(e) => setWorries(e.target.value)}
+          maxLength={WORDS_MAX}
+          rows={2}
+          placeholder="e.g. Thevenin equivalents, anything with op-amps. Not sure? Leave it: Claude checks first."
+          data-part="cram-worries"
+          className="min-h-[64px] w-full resize-y rounded-[16px] border-2 border-alice-deep bg-parchment px-[16px] py-[12px] text-[16px] text-prussian outline-none focus:border-wisteria"
+        />
+      </label>
 
       <fieldset className="flex flex-col gap-[6px]">
         <legend className="text-[15px] font-bold text-prussian">How much time each day?</legend>
