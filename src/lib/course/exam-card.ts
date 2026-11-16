@@ -56,29 +56,29 @@ export const NOT_IN_FILES = "not in the files the exam covers";
  * The objectives the cram setup starts from: every live objective of the exam's topics (its scope
  * set aside, so a narrowed scope can be widened again), split by the materials picked. With
  * nothing picked everything is in scope; else an objective is in scope when the material that
- * created it, or one its signals name, was picked. An objective no material teaches (one Claude
- * flagged from the chat, say), or a weak spot (`weak`), follows its topic: in scope when another
- * objective of the topic is taught in a picked file, so a file pick never zeroes a weak spot of a
- * topic the exam covers.
+ * created it, or one its signals name, was picked. A weak spot (`weak`) stays in when any objective
+ * of its topic is taught in a picked file, so a file pick never zeroes a weak spot of a topic the
+ * exam covers; an objective no material teaches follows the majority of its topic: in when at least
+ * half of the topic's taught objectives are in (owner, 2026-11-16: one op-amp objective in a picked
+ * file mustn't pull the whole topic in).
  */
 export function splitByMaterials(candidates: readonly string[], picked: readonly string[], catalogue: Readonly<Record<string, Objective>>, weak: ReadonlySet<string> = new Set()): { inScope: string[]; excluded: string[] } {
   if (!picked.length) return { inScope: [...candidates], excluded: [] };
   const chosen = new Set(picked);
   const taught = new Set<string>();
-  const topicsIn = new Set<string>();
+  const lines: ScopeObjective[] = [];
   for (const id of candidates) {
     const o = catalogue[id];
-    if (o && objectiveMaterialIds(o).some((m) => chosen.has(m))) {
-      taught.add(id);
-      topicsIn.add(o.topicId);
-    }
+    if (!o) continue;
+    if (objectiveMaterialIds(o).some((m) => chosen.has(m))) taught.add(id);
+    lines.push({ id, topicId: o.topicId, materialIds: objectiveMaterialIds(o), weak: weak.has(id) });
   }
+  const follows = followers(lines, (id) => taught.has(id));
   const inScope: string[] = [];
   const excluded: string[] = [];
   for (const id of candidates) {
     const o = catalogue[id];
-    const follows = !!o && (weak.has(id) || objectiveMaterialIds(o).length === 0) && topicsIn.has(o.topicId);
-    (taught.has(id) || follows ? inScope : excluded).push(id);
+    (taught.has(id) || (!!o && follows.has(id)) ? inScope : excluded).push(id);
   }
   return { inScope, excluded };
 }
@@ -127,22 +127,45 @@ export interface ScopeObjective {
 /**
  * A file-scoped scope (one with `materialIds`) with the zeros a file pick shouldn't make put back:
  * an objective weighed 0 only because it isn't in the picked files (no evidence but the "not in the
- * files" note) goes back to 1 when it's taught in no material or is a weak spot, and another
- * objective of its topic is in scope. A professor's own exclusion (any other quote) stands. As
+ * files" note) goes back to 1 when `followers` says it follows its topic in (a weak spot of a topic
+ * with anything in scope; an untaught objective of a topic mostly in scope). A professor's own exclusion (any other quote) stands. As
  * `splitByMaterials` splits a new pick; this repairs scopes saved before, or sent by Claude.
  */
 export function protectScope(scope: ExamScope, objectives: readonly ScopeObjective[]): { scope: ExamScope; raised: string[] } {
   if (!scope.materialIds?.length) return { scope, raised: [] };
   const weight = new Map(scope.objectives.map((o) => [o.objectiveId, o.weight]));
-  const topicsIn = new Set(objectives.filter((o) => (weight.get(o.id) ?? 1) > 0).map((o) => o.topicId));
-  const byId = new Map(objectives.map((o) => [o.id, o]));
+  const follows = followers(objectives, (id) => (weight.get(id) ?? 1) > 0);
   const raised: string[] = [];
   const next = scope.objectives.map((entry) => {
-    const o = byId.get(entry.objectiveId);
-    if (entry.weight > 0 || !o || !topicsIn.has(o.topicId) || !(o.weak || o.materialIds.length === 0)) return entry;
+    if (entry.weight > 0 || !follows.has(entry.objectiveId)) return entry;
     if (!entry.evidence.every((ev) => !ev.quote || ev.quote === NOT_IN_FILES)) return entry;
     raised.push(entry.objectiveId);
     return { ...entry, weight: 1, evidence: entry.evidence.filter((ev) => ev.quote !== NOT_IN_FILES) };
   });
   return raised.length ? { scope: { ...scope, objectives: next }, raised } : { scope, raised };
+}
+
+/**
+ * The objectives that follow their topic into scope: a weak spot when any objective of its topic is
+ * in (`isIn`); an objective no material teaches when at least half of its topic's taught objectives
+ * are in. Objectives that are in already aren't listed.
+ */
+function followers(objectives: readonly ScopeObjective[], isIn: (id: string) => boolean): Set<string> {
+  const byTopic = new Map<string, { any: boolean; taught: number; taughtIn: number }>();
+  for (const o of objectives) {
+    const t = byTopic.get(o.topicId) ?? { any: false, taught: 0, taughtIn: 0 };
+    if (isIn(o.id)) t.any = true;
+    if (o.materialIds.length) {
+      t.taught++;
+      if (isIn(o.id)) t.taughtIn++;
+    }
+    byTopic.set(o.topicId, t);
+  }
+  const out = new Set<string>();
+  for (const o of objectives) {
+    if (isIn(o.id)) continue;
+    const t = byTopic.get(o.topicId)!;
+    if (o.weak ? t.any : o.materialIds.length === 0 && t.taught > 0 && t.taughtIn * 2 >= t.taught) out.add(o.id);
+  }
+  return out;
 }
