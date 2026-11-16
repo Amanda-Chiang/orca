@@ -207,9 +207,9 @@ test("in a cram Orca makes no model calls: prose is handed back for Claude to gr
   const exam = toolText(await call(page, url, "set_exam", { courseId: F.course, title: "Final", date: far, topicIds: [], cramming: true })) as { id: string; mode: string };
   expect(exam.mode).toBe("exam-week");
   // No budget yet: the plan assumes 2 hours a study day (12 days: 24 hours) and says so.
-  const assumed = toolText(await call(page, url, "course_state", { courseId: F.course, detail: "summary" })) as { mode: string; cramming: string; plan: { defaulted: boolean; hoursLeft: number; behindMinutes: number } };
+  const assumed = toolText(await call(page, url, "course_state", { courseId: F.course, detail: "summary" })) as { mode: string; cramming: string; plan: { defaulted: boolean; hoursLeft: number; cut: string[] } };
   expect(assumed).toMatchObject({ mode: "exam-week", cramming: exam.id });
-  expect(assumed.plan).toMatchObject({ defaulted: true, hoursLeft: 24, behindMinutes: 0 });
+  expect(assumed.plan).toMatchObject({ defaulted: true, hoursLeft: 24, cut: [] });
   // Full: the course's materials, and each objective's materialIds, so Claude can map "lectures 11 to 16" to files.
   const full = toolText(await call(page, url, "course_state", { courseId: F.course })) as { materials: unknown[]; objectives: Array<{ id: string; materialIds: string[] }>; exams: Array<{ scope: unknown }> };
   expect(full.materials).toEqual([{ id: F.material, filename: fixtureMaterial(F.course).filename, type: "Lecture", heldBack: false }]);

@@ -260,7 +260,7 @@ export function connectorTools(db: OrcaSupabase, ownerId: string, now: () => Dat
     // The budget resets at the student's next local midnight (src/lib/jobs/budget.ts counts their day).
     const resetsAt = new Date(dayStartIn(timezone, at).getTime() + 86_400_000).toISOString();
     // The cram plan, coverage and top errors (contract section 6) read the agenda's effective weights: course × scope inside the window.
-    const cram = await cramFields(db, ownerId, { courseId, at, timezone, today, exams: examLines, topics: liveTopics, objectives: lines, weights: await effectiveWeights(courseId, examLines, today) });
+    const cram = await cramFields(db, ownerId, { courseId, at, timezone, today, exams: examLines, topics: liveTopics, objectives: lines, weights: await effectiveWeights(courseId, examLines, today), vault: vaultLines });
     // A summary carries each exam's scope by its size (a full scope lists every objective with its evidence: too much for a check-in).
     const summarised = (e: ExamLine): ExamLine => {
       const { scope, ...rest } = e;

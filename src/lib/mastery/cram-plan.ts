@@ -42,6 +42,8 @@ export interface CramPlanInput {
   touchedObjectiveIds: string[];
   /** The budget was assumed (`defaultBudget`), not set by the student. */
   defaulted?: boolean;
+  /** The vault's practice and past exams, to be sat timed on days of the cram (`minutes`: the exam's length when known, else MOCK_MINUTES). */
+  mocks?: Array<{ materialId: string; name: string; minutes?: number }>;
 }
 
 /** How far a topic has got in the cram: done when every in-scope objective is verified or mastered; in progress once any of them has evidence since the cram started; else untouched. */
@@ -59,6 +61,8 @@ export interface CramPlanDay {
   past: boolean;
   /** Minutes studied that day, when the caller knows them (`spentByDay`); null otherwise. */
   spentMinutes: number | null;
+  /** A practice test placed on this day, timed; its minutes come out of the day before the topics. */
+  mock: { materialId: string; name: string; minutes: number } | null;
   /** A past day: whether what was studied reached the hours planned for it; null for today and later, and when the minutes aren't known. */
   met: boolean | null;
 }
@@ -92,12 +96,23 @@ export interface CramPlan {
   minutesToday: number;
   /** The same as `minutesToday`, kept for readers of the first plan (it was the average over the study days left). */
   minutesPerDay: number;
-  /** max(0, the budget's hours for the days before today × 60 − minutes spent on them). Whole minutes. */
-  behindMinutes: number;
+  /**
+   * Topics the time left can't cover, lowest priority first to go (owner, 2026-11-16: a backlog, not
+   * a timetable): missed time never piles up as debt, it moves topics here. Empty when everything fits.
+   */
+  cut: string[];
+  /**
+   * The cram's first block while nothing in scope has been answered since it started: a sweep, one
+   * question per topic in `topicIds`, so the misses find the weak spots before teaching (the ALD
+   * cram's "diagnostic first"). Its minutes come out of today before the topics. Null otherwise.
+   */
+  diagnostic: { minutes: number; topicIds: string[] } | null;
+  /** A practice test placed on today (also on today's entry in `days`); null otherwise. */
+  mockToday: { materialId: string; name: string; minutes: number } | null;
   /** Objectives verified or mastered over objectives in scope (weight > 0). */
   verified: { done: number; total: number; share: number };
   topics: CramPlanTopic[];
-  /** Topics with minutesToday > 0, largest first. */
+  /** Today's queue, in the order to do it: weak spots first, then the heaviest; one topic after another, each until its share is used (owner, 2026-11-16: no slicing the day into 5-minute pieces). */
   today: Array<{ topicId: string; minutes: number }>;
   /**
    * The schedule: every day from the start of the cram to the day before the exam (the budget's
@@ -107,7 +122,7 @@ export interface CramPlan {
    * scope as it stands, with whether they were met when the minutes studied are known.
    */
   days: CramPlanDay[];
-  /** "9 days to the exam. Done: A, B. Today: C, D. Verified: 60%." (day of: "Exam day. Light review only, nothing new."; behind: " 20 minutes behind: D gets shortened." appended) */
+  /** "9 days to the exam. Done: A. Today: a quick sweep, then C, then D. Verified: 60%. Practice test: Mon. If time runs short: E." (day of: "Exam day. Light review only, nothing new.") */
   line: string;
   /** The budget was assumed: DEFAULT_HOURS_PER_DAY a study day from today, nothing spent. Claude says so and asks. */
   defaulted: boolean;
@@ -135,62 +150,124 @@ const toFive = (minutes: number) => Math.round(minutes / 5) * 5;
 /** The nominal minutes an unverified objective needs, at weight 1 (the schedule's unit of need). */
 export const MINUTES_PER_UNVERIFIED = 60;
 
+/** A practice test's minutes when its length isn't known. */
+export const MOCK_MINUTES = 60;
+/** A diagnostic sweep: about this many minutes a topic, within the bounds below. */
+const SWEEP_MINUTES_PER_TOPIC = 3;
+const SWEEP_MIN = 10;
+const SWEEP_MAX = 30;
+
+/** The topics in the order to work through them: ones with weak spots first, then the largest need, then the plan's order. */
+function rankTopics(topics: readonly CramPlanTopic[], need: readonly number[]): number[] {
+  return topics.map((_, i) => i).sort((a, b) => Number(topics[b].weakSpots.length > 0) - Number(topics[a].weakSpots.length > 0) || need[b] - need[a] || a - b);
+}
+
+/** What's left to lay out: a first pass that covers every topic once, then a second pass of review with the time to spare. */
+interface Passes {
+  first: number[];
+  second: number[];
+}
+
 /**
- * Lay the topics' remaining need out over `days`, in order: the topics are ranked once (ones with
- * weak spots first, then the largest need, then the plan's order) and each day's minutes go to them
- * in that order, each taking what it still needs up to what's left of the day, rounded to 5
- * minutes. A topic's need shrinks day by day, so the schedule works through the scope one topic
- * after another. `need` is changed in place: what each topic still needs afterwards.
+ * Lay the topics' remaining need out over `days`, in order: each day's minutes go to the topics in
+ * rank order (`ranked`), first pass before second, each taking what it still needs up to what's left
+ * of the day, rounded to 5 minutes. A need shrinks day by day, so the cram works through the scope
+ * one topic after another, covers every topic once before going back over any (the ALD cram's
+ * order), and only then spends the spare time. `need` is changed in place.
  */
-function scheduleDays(days: ReadonlyArray<{ day: string; minutes: number }>, topics: readonly CramPlanTopic[], need: number[]): Map<string, Array<{ topicId: string; minutes: number }>> {
+function scheduleDays(days: ReadonlyArray<{ day: string; minutes: number }>, topics: readonly CramPlanTopic[], need: Passes, ranked: readonly number[]): Map<string, Array<{ topicId: string; minutes: number }>> {
   const out = new Map<string, Array<{ topicId: string; minutes: number }>>();
-  const ranked = topics.map((_, i) => i).sort((a, b) => Number(topics[b].weakSpots.length > 0) - Number(topics[a].weakSpots.length > 0) || need[b] - need[a] || a - b);
   for (const { day, minutes } of days) {
     const planned: Array<{ topicId: string; minutes: number }> = [];
     let left = minutes;
-    for (const i of ranked) {
-      if (left < 5) break;
-      const take = toFive(Math.min(need[i], left));
-      if (take <= 0) continue;
-      planned.push({ topicId: topics[i].id, minutes: take });
-      need[i] = Math.max(0, need[i] - take);
-      left -= take;
+    for (const pass of [need.first, need.second]) {
+      for (const i of ranked) {
+        if (left < 5) break;
+        const take = toFive(Math.min(pass[i], left));
+        if (take <= 0) continue;
+        const same = planned.find((p) => p.topicId === topics[i].id);
+        if (same) same.minutes += take;
+        else planned.push({ topicId: topics[i].id, minutes: take });
+        pass[i] = Math.max(0, pass[i] - take);
+        left -= take;
+      }
     }
     out.set(day, planned);
   }
   return out;
 }
 
-/** The topics' nominal need, in minutes: MINUTES_PER_UNVERIFIED for each unverified objective at its weight (weight × unverified share), scaled so the needs sum to `minutes`. */
-function needsFor(topics: readonly CramPlanTopic[], minutes: number): number[] {
-  const nominal = topics.map((t) => (t.weight > 0 && !t.done ? t.weight * t.unverifiedShare * MINUTES_PER_UNVERIFIED : 0));
+/** Each topic's nominal need: MINUTES_PER_UNVERIFIED for each unverified objective at its weight. */
+const nominalNeeds = (topics: readonly CramPlanTopic[]) => topics.map((t) => (t.weight > 0 && !t.done ? t.weight * t.unverifiedShare * MINUTES_PER_UNVERIFIED : 0));
+
+/**
+ * What each topic gets of `minutes`: when everything fits, its nominal need in a first pass and the
+ * spare time as review in a second, in proportion; when it doesn't, the topics in rank order take
+ * their full need until the time runs out, and the rest get nothing (they're `cut`). Priority
+ * decides, not an even squeeze.
+ */
+function needsFor(topics: readonly CramPlanTopic[], minutes: number, ranked: readonly number[]): { need: Passes; cut: number[] } {
+  const nominal = nominalNeeds(topics);
   const sum = nominal.reduce((a, b) => a + b, 0);
-  return nominal.map((n) => (sum > 0 && minutes > 0 ? (n * minutes) / sum : 0));
+  const none = nominal.map(() => 0);
+  if (sum <= 0 || minutes <= 0) return { need: { first: none, second: [...none] }, cut: [] };
+  if (sum <= minutes) return { need: { first: nominal, second: nominal.map((n) => (n * (minutes - sum)) / sum) }, cut: [] };
+  const need = nominal.map(() => 0);
+  const cut: number[] = [];
+  let left = minutes;
+  for (const i of ranked) {
+    if (nominal[i] <= 0) continue;
+    if (left < 5) {
+      cut.push(i);
+      continue;
+    }
+    need[i] = Math.min(nominal[i], left);
+    left -= need[i];
+  }
+  return { need: { first: need, second: nominal.map(() => 0) }, cut };
+}
+
+const shortDay = (day: string) => new Date(Date.UTC(...ymd(day))).toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" });
+
+/**
+ * Where the practice tests go: the last study day before the exam for the first, and for a second
+ * the study day halfway through the cram; further ones aren't placed. A day takes one test.
+ */
+function placeMocks(mocks: NonNullable<CramPlanInput["mocks"]>, studyDays: readonly string[]): Map<string, { materialId: string; name: string; minutes: number }> {
+  const placed = new Map<string, { materialId: string; name: string; minutes: number }>();
+  if (!mocks.length || !studyDays.length) return placed;
+  const slots = [studyDays[studyDays.length - 1], studyDays[Math.floor((studyDays.length - 1) / 2)]];
+  mocks.forEach((m, i) => {
+    const day = slots[i];
+    if (day === undefined || placed.has(day)) return;
+    placed.set(day, { materialId: m.materialId, name: m.name, minutes: m.minutes ?? MOCK_MINUTES });
+  });
+  return placed;
 }
 
 export function cramPlan(input: CramPlanInput): CramPlan {
   const { today, examDate, budget, spentMinutes } = input;
-  const perDay = perDayOf(budget, examDate);
-  const days = Object.keys(perDay).sort();
+  const startDay = budget.since.slice(0, 10);
+  // The cram's days: from the day it started to the day before the exam (days left over from an earlier date aren't part of it).
+  const perDayAll = perDayOf(budget, examDate);
+  const days = Object.keys(perDayAll).filter((d) => d >= startDay && d < examDate).sort();
+  const perDay = Object.fromEntries(days.map((d) => [d, perDayAll[d]]));
   const daysLeft = Math.max(0, daysBetween(today, examDate));
-  // Each day's own hours: a day the budget doesn't name (the exam moved later) has none.
-  const studyDays = days.filter((d) => d >= today && d < examDate && perDay[d] > 0);
-  const hoursAhead = days.filter((d) => d >= today && d < examDate).reduce((sum, d) => sum + perDay[d], 0);
+  const studyDays = days.filter((d) => d >= today && perDay[d] > 0);
+  const hoursAhead = days.filter((d) => d >= today).reduce((sum, d) => sum + perDay[d], 0);
   const hoursLeft = Math.max(0, hoursAhead - spentMinutes.today / 60);
   const minutesToday = daysLeft === 0 ? 0 : Math.max(0, (perDay[today] ?? 0) * 60 - spentMinutes.today);
-  // Behind: what the budget asked for on the days of this cram before today (from the day it started, before the exam), less what was spent on them.
-  const startDay = budget.since.slice(0, 10);
-  const hoursBefore = days.filter((d) => d >= startDay && d < today && d < examDate).reduce((sum, d) => sum + perDay[d], 0);
-  const behindMinutes = Math.max(0, Math.round(hoursBefore * 60 - spentMinutes.beforeToday));
 
   const touched = new Set(input.touchedObjectiveIds);
   let done = 0;
   let total = 0;
+  let anyTouched = false;
   const topics: CramPlanTopic[] = input.topics.map((t) => {
     const inScope = t.objectives.filter((o) => o.weight > 0);
     const verified = inScope.filter((o) => VERIFIED.has(o.status)).length;
     done += verified;
     total += inScope.length;
+    if (inScope.some((o) => touched.has(o.id))) anyTouched = true;
     const isDone = inScope.length > 0 && verified === inScope.length;
     return {
       id: t.id,
@@ -203,64 +280,74 @@ export function cramPlan(input: CramPlanInput): CramPlan {
       covered: isDone ? "done" : inScope.some((o) => touched.has(o.id)) ? "in-progress" : "untouched",
     };
   });
+  const open = topics.filter((t) => t.weight > 0 && !t.done);
 
-  // Today's minutes split by weight × unverifiedShare across the topics still to do, rounded to 5 minutes
-  // (under 5 dropped). A day out is a day off: nothing is allocated.
-  const shares = topics.map((t) => (t.weight > 0 && !t.done ? t.weight * t.unverifiedShare : 0));
-  const sumShares = shares.reduce((a, b) => a + b, 0);
-  if (minutesToday > 0 && sumShares > 0) {
-    topics.forEach((t, i) => {
-      t.minutesToday = toFive((minutesToday * shares[i]) / sumShares);
-    });
+  // Practice tests on their days (only days still ahead; a past one has been sat or skipped).
+  const mocks = placeMocks(input.mocks ?? [], studyDays);
+  const mockMinutes = (day: string) => Math.min(mocks.get(day)?.minutes ?? 0, perDay[day] * 60);
+  const mockToday = mocks.get(today) ?? null;
+
+  // Diagnostic first: nothing in scope answered since the cram started, so today opens with a sweep.
+  const sweepTopics = !anyTouched && done === 0 && minutesToday > 0 ? open.map((t) => t.id) : [];
+  const sweep = sweepTopics.length ? Math.min(minutesToday, Math.max(SWEEP_MIN, Math.min(SWEEP_MAX, toFive(sweepTopics.length * SWEEP_MINUTES_PER_TOPIC)))) : 0;
+  const diagnostic = sweep > 0 ? { minutes: sweep, topicIds: sweepTopics } : null;
+
+  // What's left for topics: today's minutes less the sweep and today's test, then the later days less theirs.
+  const todayTopicMinutes = Math.max(0, minutesToday - sweep - (mockToday ? mockMinutes(today) : 0));
+  const later = days.filter((d) => d > today).map((d) => ({ day: d, minutes: Math.max(0, perDay[d] * 60 - mockMinutes(d)) }));
+  const ahead = todayTopicMinutes + later.reduce((sum, d) => sum + d.minutes, 0);
+  const ranked = rankTopics(topics, nominalNeeds(topics));
+  const { need, cut } = needsFor(topics, ahead, ranked);
+
+  // Today is a queue: the ranked topics take their share in turn until today's minutes are used.
+  const todayPlanned = scheduleDays([{ day: today, minutes: todayTopicMinutes }], topics, need, ranked).get(today) ?? [];
+  for (const t of todayPlanned) {
+    const topic = topics.find((x) => x.id === t.topicId);
+    if (topic) topic.minutesToday = t.minutes;
   }
-  const todayList = topics
-    .filter((t) => t.minutesToday > 0)
-    .sort((a, b) => b.minutesToday - a.minutesToday)
-    .map((t) => ({ topicId: t.id, minutes: t.minutesToday }));
-
-  // The schedule. Today holds today's split; the days after it walk through the need left once today's
-  // split is taken out, with the needs scaled to the minutes ahead (today's left and the later days' hours),
-  // so the days fill the budget and cover the scope. The days before today get the same walk from the
-  // start of the cram, scaled to the whole budget: what was planned for them, as derivable now.
-  // Days left over from before this cram started (an earlier test, an exam moved) aren't part of it.
-  const dayList = days.filter((d) => d >= startDay && d < examDate);
-  const later = dayList.filter((d) => d > today).map((d) => ({ day: d, minutes: perDay[d] * 60 }));
-  const ahead = needsFor(topics, minutesToday + later.reduce((sum, d) => sum + d.minutes, 0));
-  topics.forEach((t, i) => {
-    ahead[i] = Math.max(0, ahead[i] - t.minutesToday);
-  });
-  const laterPlanned = scheduleDays(later, topics, ahead);
-  const before = dayList.filter((d) => d < today).map((d) => ({ day: d, minutes: perDay[d] * 60 }));
-  const beforePlanned = scheduleDays(before, topics, needsFor(topics, dayList.reduce((sum, d) => sum + perDay[d] * 60, 0)));
+  const laterPlanned = scheduleDays(later, topics, need, ranked);
+  // The days before today get the same walk from the start of the cram, over the whole budget: what was planned for them, as derivable now.
+  const before = days.filter((d) => d < today).map((d) => ({ day: d, minutes: perDay[d] * 60 }));
+  const beforeRanked = rankTopics(topics, nominalNeeds(topics));
+  const beforePlanned = scheduleDays(before, topics, needsFor(topics, days.reduce((sum, d) => sum + perDay[d] * 60, 0), beforeRanked).need, beforeRanked);
   const spentByDay = input.spentByDay;
-  const schedule: CramPlanDay[] = dayList.map((day) => {
+  const schedule: CramPlanDay[] = days.map((day) => {
     const past = day < today;
     const spent = spentByDay ? (spentByDay[day] ?? 0) : null;
+    const mock = mocks.get(day);
     return {
       day,
       hours: perDay[day],
-      topics: day === today ? todayList : past ? (beforePlanned.get(day) ?? []) : (laterPlanned.get(day) ?? []),
+      topics: day === today ? todayPlanned : past ? (beforePlanned.get(day) ?? []) : (laterPlanned.get(day) ?? []),
       today: day === today,
       past,
       spentMinutes: spent,
       met: past && spent !== null ? spent >= perDay[day] * 60 : null,
+      mock: mock ? { ...mock, minutes: mockMinutes(day) } : null,
     };
   });
 
   const share = total ? done / total : 0;
   const nameOf = new Map(topics.map((t) => [t.id, t.name]));
+  const cutIds = cut.map((i) => topics[i].id).reverse();
   let line: string;
   if (daysLeft === 0) line = "Exam day. Light review only, nothing new.";
   else {
     const doneNames = topics.filter((t) => t.done).map((t) => t.name);
-    const todayNames = todayList.map((t) => nameOf.get(t.topicId) ?? t.topicId);
+    const steps = [
+      ...(diagnostic ? ["a quick sweep (one question per topic)"] : []),
+      ...(mockToday ? [`practice test ${mockToday.name}`] : []),
+      ...todayPlanned.map((t) => nameOf.get(t.topicId) ?? t.topicId),
+    ];
     line = `${daysLeft} ${daysLeft === 1 ? "day" : "days"} to the exam.`;
     if (doneNames.length) line += ` Done: ${doneNames.join(", ")}.`;
     // At most three named, so the line stays one sentence; the page and the plan list them all.
-    if (todayNames.length) line += ` Today: ${todayNames.slice(0, 3).join(", ")}${todayNames.length > 3 ? ` and ${todayNames.length - 3} more` : ""}.`;
+    if (steps.length) line += ` Today: ${steps.slice(0, 3).join(", then ")}${steps.length > 3 ? ` and ${steps.length - 3} more` : ""}.`;
     line += ` Verified: ${Math.round(share * 100)}%.`;
-    if (behindMinutes > 0) line += todayNames.length ? ` ${behindMinutes} minutes behind: ${todayNames[todayNames.length - 1]} gets shortened.` : ` ${behindMinutes} minutes behind.`;
+    const nextMock = [...mocks.keys()].sort().find((d) => d > today);
+    if (nextMock) line += ` Practice test: ${shortDay(nextMock)}.`;
+    if (cutIds.length) line += ` If time runs short: ${cutIds.slice(0, 3).map((id) => nameOf.get(id) ?? id).join(", ")}${cutIds.length > 3 ? ` and ${cutIds.length - 3} more` : ""}.`;
   }
 
-  return { daysLeft, studyDays, perDay, hoursLeft, minutesToday, minutesPerDay: minutesToday, behindMinutes, verified: { done, total, share }, topics, today: todayList, days: schedule, line, defaulted: input.defaulted ?? false };
+  return { daysLeft, studyDays, perDay, hoursLeft, minutesToday, minutesPerDay: minutesToday, cut: cutIds, diagnostic, mockToday, verified: { done, total, share }, topics, today: todayPlanned, days: schedule, line, defaulted: input.defaulted ?? false };
 }

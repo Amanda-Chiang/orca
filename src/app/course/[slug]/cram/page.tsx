@@ -40,7 +40,7 @@ const dayChip = (day: string) => {
  * words, the files the exam covers, Add material held back, worries, the hours for each day) until
  * the exam is cramming with a budget, then the plan: days left, the budget with its hours by day
  * (today highlighted), the line, the schedule (a column per day of the cram: its topics and
- * minutes, today highlighted, past days muted and marked met or short), the scope as topic rows
+ * minutes, today highlighted, past days muted with the minutes studied, practice tests on their days), the scope as topic rows
  * with their covered state and weak spots, today, the practice test, the vault, Study with Claude,
  * Edit scope and Stop cramming. The plan is computed here from the store, as the exam card's line
  * is; nothing about it is stored.
@@ -144,7 +144,6 @@ function CrammingView({ course, today, plan, topics, spentMinutes, objectiveName
       <motion.div variants={fadeUp} className="flex flex-wrap items-center gap-x-[14px] gap-y-[6px]" data-part="cram-header">
         <p className="text-[18px] font-bold text-prussian" data-part="cram-budget">
           {hoursText(plan.hoursLeft)} hours left of {hoursText(hours)}
-          {plan.behindMinutes > 0 && <span className="text-wisteria-deep"> · {plan.behindMinutes} minutes behind</span>}
         </p>
         <p className="text-[15px] font-semibold text-wisteria-deep" data-part="cram-plan">
           {plan.daysLeft === 0 ? "Exam day. Light review only, nothing new." : `${plan.daysLeft} ${plan.daysLeft === 1 ? "day" : "days"} to the exam · ${Math.round(plan.verified.share * 100)}% verified`}
@@ -169,17 +168,38 @@ function CrammingView({ course, today, plan, topics, spentMinutes, objectiveName
               <h2 className="text-[20px] font-bold text-prussian">Today</h2>
               {plan.daysLeft === 0 ? (
                 <p className="text-[14px] font-medium text-wisteria-deep">Light review only, nothing new.</p>
-              ) : plan.today.length === 0 ? (
+              ) : plan.today.length === 0 && !plan.diagnostic && !plan.mockToday ? (
                 <p className="text-[14px] font-medium text-wisteria-deep">Nothing planned today.</p>
               ) : (
-                <ul className="flex flex-col gap-[4px]">
-                  {plan.today.map((t) => (
+                // A queue, in order: the sweep first while nothing's been answered, today's practice test, then one topic after another.
+                <ol className="flex flex-col gap-[4px]">
+                  {plan.diagnostic && (
+                    <li className="flex justify-between gap-[8px] text-[15px] font-semibold text-prussian" data-part="cram-today-sweep">
+                      <span className="truncate">Quick sweep: one question per topic</span>
+                      <span className="shrink-0 text-wisteria-deep">{plan.diagnostic.minutes} min</span>
+                    </li>
+                  )}
+                  {plan.mockToday && (
+                    <li className="flex justify-between gap-[8px] text-[15px] font-semibold text-prussian" data-part="cram-today-mock">
+                      <span className="truncate">Practice test: {plan.mockToday.name}</span>
+                      <span className="shrink-0 text-wisteria-deep">{plan.mockToday.minutes} min</span>
+                    </li>
+                  )}
+                  {plan.today.map((t, i) => (
                     <li key={t.topicId} className="flex justify-between gap-[8px] text-[15px] font-semibold text-prussian" data-part="cram-today-topic" data-topic={t.topicId}>
-                      <span className="truncate">{topicName.get(t.topicId) ?? t.topicId}</span>
+                      <span className="truncate">
+                        {i > 0 || plan.diagnostic || plan.mockToday ? <span className="font-medium text-wisteria-deep">then </span> : null}
+                        {topicName.get(t.topicId) ?? t.topicId}
+                      </span>
                       <span className="shrink-0 text-wisteria-deep">{t.minutes} min</span>
                     </li>
                   ))}
-                </ul>
+                </ol>
+              )}
+              {plan.cut.length > 0 && plan.daysLeft > 0 && (
+                <p className="text-[13px] font-medium text-wisteria-deep" data-part="cram-cut">
+                  If time runs short: {plan.cut.map((id) => topicName.get(id) ?? id).join(", ")}
+                </p>
               )}
               <div className="flex flex-wrap items-center gap-[8px] pt-[4px]">
                 <Link href={`/session/${course.slug}?kind=quick`} data-part="cram-start-review" className={PILL}>
@@ -227,7 +247,12 @@ function CrammingView({ course, today, plan, topics, spentMinutes, objectiveName
                       </li>
                     ))}
                   </ul>
-                  <p className="text-[13px] font-medium text-wisteria-deep">Held back. No practice test yet: sit it timed once your weak spots are covered.</p>
+                  <p className="text-[13px] font-medium text-wisteria-deep" data-part="cram-mock-when">
+                    {(() => {
+                      const next = plan.days.find((d) => d.mock && !d.past);
+                      return next ? `Held back. Sit it timed on ${dayChip(next.day)}${next.today ? " (today)" : ""}: it's on the schedule.` : "Held back. No study day left to sit it on.";
+                    })()}
+                  </p>
                 </>
               ) : (
                 <p className="text-[13px] font-medium text-wisteria-deep">
@@ -338,12 +363,13 @@ function ScopePanel({ open, onClose, plan, topics, objectiveName, statusOf }: { 
 
 /**
  * One column of the schedule: the weekday, date and hours, then its topics with their minutes
- * (tinted by their covered state). Today is highlighted; a past day is muted and, when the minutes
- * studied on it are known, marked met or short.
+ * (tinted by their covered state) and a practice test placed on it. Today is highlighted; a past day
+ * is muted and shows the minutes studied on it when known (owner, 2026-11-16: nothing is late, so
+ * no "short" marks).
  */
 function ScheduleDay({ day, topicName, covered }: { day: CramPlanDay; topicName: (id: string) => string; covered: (id: string) => CramCovered }) {
   const frame = day.today ? "bg-wisteria/15 ring-wisteria" : day.past ? "bg-parchment ring-alice-deep opacity-60" : "bg-parchment ring-alice-deep";
-  const mark = !day.past ? null : day.met === null ? "Not tracked" : day.met ? "Met" : "Short";
+  const mark = !day.past || day.spentMinutes === null ? null : `Studied ${minutesText(day.spentMinutes)}`;
   return (
     <li
       className={`flex w-[128px] shrink-0 flex-col gap-[6px] rounded-[14px] px-[10px] py-[8px] ring-2 ring-inset ${frame}`}
@@ -361,6 +387,11 @@ function ScheduleDay({ day, topicName, covered }: { day: CramPlanDay; topicName:
           {day.today ? " · today" : ""}
         </p>
       </div>
+      {day.mock && (
+        <p className="rounded-[8px] bg-periwinkle px-[6px] py-[3px] text-[12px] font-bold leading-tight text-prussian" data-part="cram-day-mock">
+          Practice test · {day.mock.minutes} min
+        </p>
+      )}
       {day.topics.length > 0 ? (
         <ul className="flex flex-col gap-[4px]">
           {day.topics.slice(0, 4).map((t) => {
@@ -382,9 +413,8 @@ function ScheduleDay({ day, topicName, covered }: { day: CramPlanDay; topicName:
         <p className="text-[12px] font-medium text-wisteria-deep">{day.hours > 0 ? "Nothing planned" : ""}</p>
       )}
       {mark && (
-        <p className={`mt-auto text-[12px] font-bold ${day.met ? "text-wisteria-deep" : day.met === false ? "text-prussian" : "text-wisteria-deep"}`} data-part="cram-day-col-mark">
+        <p className="mt-auto text-[12px] font-bold text-wisteria-deep" data-part="cram-day-col-mark">
           {mark}
-          {day.spentMinutes !== null ? ` · ${minutesText(day.spentMinutes)}` : ""}
         </p>
       )}
     </li>
