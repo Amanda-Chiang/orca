@@ -109,9 +109,14 @@ export interface ScopedExam {
   scope: ExamScope | null;
 }
 
-/** Today is inside the exam's window: the student is cramming for it, or it's within `AGENDA_RULES.examWindowDays` (today included). */
+/** The student is cramming for the exam and it hasn't passed: a cram ends after its exam day, whatever the flag says. */
+export function cramsNow(exam: Pick<ScopedExam, "date" | "cramming">, today: string): boolean {
+  return exam.cramming && exam.date >= today;
+}
+
+/** Today is inside the exam's window: the student is cramming for it (and it hasn't passed), or it's within `AGENDA_RULES.examWindowDays` (today included). */
 export function inExamWindow(exam: Pick<ScopedExam, "date" | "cramming">, today: string): boolean {
-  return exam.cramming || (exam.date >= today && addDays(exam.date, -AGENDA_RULES.examWindowDays) <= today);
+  return cramsNow(exam, today) || (exam.date >= today && addDays(exam.date, -AGENDA_RULES.examWindowDays) <= today);
 }
 
 /**
@@ -119,7 +124,7 @@ export function inExamWindow(exam: Pick<ScopedExam, "date" | "cramming">, today:
  * `course_state.cramming` names), else the soonest exam within the window; null outside every window.
  */
 export function scopingExam<E extends ScopedExam>(exams: readonly E[], courseId: string, today: string): E | null {
-  const open = exams.filter((e) => e.courseId === courseId && inExamWindow(e, today)).sort((a, b) => Number(b.cramming) - Number(a.cramming) || a.date.localeCompare(b.date));
+  const open = exams.filter((e) => e.courseId === courseId && inExamWindow(e, today)).sort((a, b) => Number(cramsNow(b, today)) - Number(cramsNow(a, today)) || a.date.localeCompare(b.date));
   return open[0] ?? null;
 }
 

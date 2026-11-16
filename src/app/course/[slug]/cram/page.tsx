@@ -115,7 +115,7 @@ export default function CramPage({ params, searchParams }: PageProps<"/course/[s
           <motion.div variants={fadeUp} className="w-[600px]">
             <Card className="px-[28px] pb-[24px] pt-[24px]">
               {/* Mounted fresh per exam, so its fields start from the exam as it is then. */}
-              <CramSetup key={exam.id} exam={exam} course={course} candidates={candidates} materials={mine} catalogue={catalogue} today={today} onDone={() => setEditing(false)} onCancel={() => setEditing(false)} />
+              <CramSetup key={exam.id} exam={exam} course={course} candidates={candidates} materials={mine} catalogue={catalogue} mastery={m} today={today} onDone={() => setEditing(false)} onCancel={() => setEditing(false)} />
               {exam.cramming && !planned && <p className="mt-[12px] text-[13px] font-medium text-wisteria-deep">Cramming already, with no time budget yet: confirm to set one.</p>}
             </Card>
           </motion.div>

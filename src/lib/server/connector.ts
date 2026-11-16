@@ -12,8 +12,9 @@ import { cramFields } from "@/lib/server/connector/cram-plan";
 import { logEvidence } from "@/lib/server/connector/log-evidence";
 import { materialFor } from "@/lib/server/connector/material-for";
 import type { ExamScope, MaterialType, ObjectiveSignal } from "@/lib/data";
-import { objectiveMaterialIds } from "@/lib/course/exam-card";
-import { AGENDA_RULES } from "@/lib/mastery/agenda";
+import { objectiveMaterialIds, protectScope } from "@/lib/course/exam-card";
+import { AGENDA_RULES, addDays } from "@/lib/mastery/agenda";
+import { NOT_WEAK } from "@/lib/mastery/cram-plan";
 import { mergeBudget, withPerDay } from "@/lib/mastery/cram-budget";
 import { dayStartIn } from "@/lib/jobs/budget";
 import { startFlagTopUpJob } from "@/lib/server/jobs/start";
@@ -129,6 +130,16 @@ export function orcaOutcome(q: QuizQuestion, response: string): AnswerEvent["out
  */
 export function mergeScope(kept: ExamScope | null, input: ScopeInput, context: { today: string; examDate: string; now: string }): ExamScope {
   const { budget, ...rest } = input;
+  if (rest.patchObjectives && rest.objectives) {
+    // A patch: the named objectives replace their entries, every other one keeps its weight; sources join the exam's.
+    const { patchObjectives: _patch, objectives: changed, sources, ...others } = rest;
+    void _patch;
+    const byId = new Map((kept?.objectives ?? []).map((o) => [o.objectiveId, o]));
+    for (const o of changed) byId.set(o.objectiveId, o);
+    const patched: ExamScope = { ...(kept ?? { objectives: [], sources: [] }), ...others, objectives: [...byId.values()], sources: [...new Set([...(kept?.sources ?? []), ...(sources ?? [])])] };
+    if (budget) return { ...patched, budget: mergeBudget(kept?.budget, budget, context) };
+    return patched;
+  }
   const base: ExamScope = rest.objectives !== undefined ? { objectives: rest.objectives, sources: rest.sources ?? [], ...(kept?.worries ? { worries: kept.worries } : {}), ...(rest.format !== undefined ? { format: rest.format } : {}), ...(rest.materialIds !== undefined ? { materialIds: rest.materialIds } : {}) } : { ...(kept ?? { objectives: [], sources: [] }), ...(rest.format !== undefined ? { format: rest.format } : {}), ...(rest.materialIds !== undefined ? { materialIds: rest.materialIds } : {}) };
   if (budget) return { ...base, budget: mergeBudget(kept?.budget, budget, context) };
   // A scope resent without a budget keeps the exam's, so Edit scope from the chat doesn't lose the time budget.
@@ -161,7 +172,7 @@ export function connectorTools(db: OrcaSupabase, ownerId: string, now: () => Dat
     return data;
   };
 
-  const courseState = async (courseId: string, options: { detail?: "summary" | "full"; topicIds?: string[] } = {}): Promise<CourseState | null> => {
+  const courseState = async (courseId: string, options: { detail?: "summary" | "full"; topicIds?: string[]; asOf?: string } = {}): Promise<CourseState | null> => {
     const course = await owns(courseId);
     if (!course) return null;
     const [topics, objectives, questions, exams, profile, snapshots, feedback, runs, budget, materials] = await Promise.all([
@@ -223,11 +234,17 @@ export function connectorTools(db: OrcaSupabase, ownerId: string, now: () => Dat
       .map((l) => l.id);
 
     const timezone = profile.data?.timezone ?? "UTC";
-    const today = dayKeyIn(timezone)(at.toISOString());
-    const weekOut = new Date(at.getTime() + AGENDA_RULES.examWindowDays * 86_400_000).toISOString().slice(0, 10);
+    // asOf (testing): the exams, mode and plan as if today were that day; statuses stay as of now, and nothing is written.
+    const today = options.asOf ?? dayKeyIn(timezone)(at.toISOString());
+    const weekOut = options.asOf ? addDays(options.asOf, AGENDA_RULES.examWindowDays) : new Date(at.getTime() + AGENDA_RULES.examWindowDays * 86_400_000).toISOString().slice(0, 10);
+    // A file-scoped exam keeps the weak spots and unanchored objectives of the topics it covers (protectScope).
+    const scopeObjectives = lines.map((l) => ({ id: l.id, topicId: l.topicId, materialIds: l.materialIds, weak: !NOT_WEAK.has(l.status as ObjectiveStatus) }));
     // The exams table holds scope to an object (or null); its shape is the app's ExamScope. A budget saved before per-day budgets is shown with its hours by day.
-    const withDays = (scope: ExamScope | null, examDate: string): ExamScope | null => (scope?.budget ? { ...scope, budget: withPerDay(scope.budget, examDate) } : scope);
-    const examLines: ExamLine[] = (exams.data ?? []).map((e) => ({ id: e.id, title: e.title, date: e.date, topicIds: e.topic_ids, cramming: e.cramming, scope: withDays(e.scope as unknown as ExamScope | null, e.date), mode: examMode(e, today, weekOut) }));
+    const withDays = (raw: ExamScope | null, examDate: string): ExamScope | null => {
+      const scope = raw ? protectScope(raw, scopeObjectives).scope : raw;
+      return scope?.budget ? { ...scope, budget: withPerDay(scope.budget, examDate) } : scope;
+    };
+    const examLines: ExamLine[] = (exams.data ?? []).map((e) => ({ id: e.id, title: e.title, date: e.date, topicIds: e.topic_ids, cramming: e.cramming && e.date >= today, scope: withDays(e.scope as unknown as ExamScope | null, e.date), mode: examMode({ date: e.date, cramming: e.cramming && e.date >= today }, today, weekOut) }));
     // The topics of the exams in the window (the next week's, and one being crammed for whatever its date:
     // cramming is the window, contract section 5); an exam that names none covers every topic.
     const examFocus = [...new Set(examLines.filter((e) => e.cramming || (e.date >= today && e.date <= weekOut)).flatMap((e) => (e.topicIds.length ? e.topicIds : liveTopics.map((t) => t.id))))];
@@ -280,7 +297,7 @@ export function connectorTools(db: OrcaSupabase, ownerId: string, now: () => Dat
     const at = now();
     const today = dayKeyIn(profile.data?.timezone ?? "UTC")(at.toISOString());
     const weekOut = new Date(at.getTime() + AGENDA_RULES.examWindowDays * 86_400_000).toISOString().slice(0, 10);
-    return (exams.data ?? []).some((e) => examMode(e, today, weekOut) !== "normal");
+    return (exams.data ?? []).some((e) => examMode({ date: e.date, cramming: e.cramming && e.date >= today }, today, weekOut) !== "normal");
   };
   const CRAM_WRITES = "Orca writes no questions during a cram (an exam being crammed for, or within the week): write them with add_questions, anchored to material_for's pieces.";
 
@@ -616,10 +633,11 @@ export function connectorTools(db: OrcaSupabase, ownerId: string, now: () => Dat
 
     async setExam(courseId, exam): Promise<ExamLine | { error: string }> {
       if (!(await owns(courseId))) return { error: "No such course." };
-      const { data: topics, error: topicsError } = await db.from("topics").select("id").eq("owner_id", ownerId).eq("course_id", courseId).in("id", exam.topicIds.length ? exam.topicIds : ["00000000-0000-0000-0000-000000000000"]);
+      const askedTopics = exam.topicIds ?? [];
+      const { data: topics, error: topicsError } = await db.from("topics").select("id").eq("owner_id", ownerId).eq("course_id", courseId).in("id", askedTopics.length ? askedTopics : ["00000000-0000-0000-0000-000000000000"]);
       if (topicsError) throw new Error(`Couldn't read the topics: ${topicsError.message}`);
       const known = new Set((topics ?? []).map((t) => t.id));
-      const unknown = exam.topicIds.filter((id) => !known.has(id));
+      const unknown = askedTopics.filter((id) => !known.has(id));
       if (unknown.length) return { error: `These aren't topic ids in this course: ${unknown.join(", ")}. Use ids from course_state.` };
       // A scope names live objectives of this course (archived and merged ones are no longer live).
       if (exam.scope?.objectives?.length) {
@@ -639,22 +657,35 @@ export function connectorTools(db: OrcaSupabase, ownerId: string, now: () => Dat
         if (unknownMaterials.length) return { error: `These aren't material ids in this course: ${unknownMaterials.join(", ")}. Use ids from course_state's materials (detail "full").` };
       }
       // cramming and scope left out keep what the exam already has (false and null for a new one).
-      let kept: { cramming: boolean; scope: ExamScope | null } = { cramming: false, scope: null };
+      let kept: { cramming: boolean; scope: ExamScope | null; title?: string; date?: string; topicIds?: string[] } = { cramming: false, scope: null };
       if (exam.id) {
-        const { data: existing, error } = await db.from("exams").select("id, cramming, scope").eq("owner_id", ownerId).eq("course_id", courseId).eq("id", exam.id).maybeSingle();
+        const { data: existing, error } = await db.from("exams").select("id, title, date, topic_ids, cramming, scope").eq("owner_id", ownerId).eq("course_id", courseId).eq("id", exam.id).maybeSingle();
         if (error) throw new Error(`Couldn't read the exam: ${error.message}`);
         if (!existing) return { error: "No such exam in this course; use an id from course_state, or omit examId to add one." };
-        kept = { cramming: existing.cramming, scope: existing.scope as unknown as ExamScope | null };
+        kept = { cramming: existing.cramming, scope: existing.scope as unknown as ExamScope | null, title: existing.title, date: existing.date, topicIds: existing.topic_ids };
       }
       const at = now();
       const today = dayKeyIn((await db.from("profiles").select("timezone").eq("owner_id", ownerId).maybeSingle()).data?.timezone ?? "UTC")(at.toISOString());
+      const title = exam.title ?? kept.title;
+      const date = exam.date ?? kept.date;
+      const topicIds = exam.topicIds ?? kept.topicIds;
+      if (title === undefined || date === undefined || topicIds === undefined) return { error: "A new exam needs title, date and topicIds." };
       const cramming = exam.cramming ?? kept.cramming;
-      const scope = exam.scope ? mergeScope(kept.scope, exam.scope, { today, examDate: exam.date, now: at.toISOString() }) : kept.scope;
-      const row = { id: exam.id ?? crypto.randomUUID(), owner_id: ownerId, course_id: courseId, title: exam.title, date: exam.date, topic_ids: exam.topicIds, cramming, scope: scope as unknown as Json };
+      const merged = exam.scope ? mergeScope(kept.scope, exam.scope, { today, examDate: date, now: at.toISOString() }) : kept.scope;
+      // A file pick never zeroes a weak spot or an unanchored objective of a topic the exam covers (protectScope).
+      let scope = merged;
+      let note: string | undefined;
+      if (merged?.materialIds?.length) {
+        const state = await courseState(courseId, { detail: "full" });
+        const guarded = protectScope(merged, (state?.objectives ?? []).map((l) => ({ id: l.id, topicId: l.topicId, materialIds: l.materialIds, weak: !NOT_WEAK.has(l.status as ObjectiveStatus) })));
+        scope = guarded.scope;
+        if (guarded.raised.length) note = `Kept ${guarded.raised.length} objective(s) at weight 1: weak spots or objectives no file teaches, in topics the exam covers, aren't excluded by the file pick (${guarded.raised.join(", ")}).`;
+      }
+      const row = { id: exam.id ?? crypto.randomUUID(), owner_id: ownerId, course_id: courseId, title, date, topic_ids: topicIds, cramming, scope: scope as unknown as Json };
       const { error } = await db.from("exams").upsert(row);
       if (error) throw new Error(`Couldn't save the exam: ${error.message}`);
       const weekOut = new Date(at.getTime() + AGENDA_RULES.examWindowDays * 86_400_000).toISOString().slice(0, 10);
-      return { id: row.id, title: row.title, date: row.date, topicIds: row.topic_ids, cramming, scope, mode: examMode({ date: row.date, cramming }, today, weekOut) };
+      return { id: row.id, title: row.title, date: row.date, topicIds: row.topic_ids, cramming: cramming && row.date >= today, scope, mode: examMode({ date: row.date, cramming: cramming && row.date >= today }, today, weekOut), ...(note ? { note } : {}) };
     },
   };
 }
