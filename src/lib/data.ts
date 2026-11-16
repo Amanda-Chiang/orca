@@ -159,6 +159,11 @@ export interface ExamScope {
    * only elsewhere weigh 0. Absent when nothing was picked (everything in scope).
    */
   materialIds?: string[];
+  /**
+   * What the student said feels shaky, in their own words, from cram setup (at most 500 characters).
+   * Claude maps it to objectives in the first session and flags them; absent when nothing was said.
+   */
+  worries?: string;
 }
 
 export interface CalendarEvent {

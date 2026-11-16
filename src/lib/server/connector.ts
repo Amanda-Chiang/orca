@@ -129,7 +129,7 @@ export function orcaOutcome(q: QuizQuestion, response: string): AnswerEvent["out
  */
 export function mergeScope(kept: ExamScope | null, input: ScopeInput, context: { today: string; examDate: string; now: string }): ExamScope {
   const { budget, ...rest } = input;
-  const base: ExamScope = rest.objectives !== undefined ? { objectives: rest.objectives, sources: rest.sources ?? [], ...(rest.format !== undefined ? { format: rest.format } : {}), ...(rest.materialIds !== undefined ? { materialIds: rest.materialIds } : {}) } : { ...(kept ?? { objectives: [], sources: [] }), ...(rest.format !== undefined ? { format: rest.format } : {}), ...(rest.materialIds !== undefined ? { materialIds: rest.materialIds } : {}) };
+  const base: ExamScope = rest.objectives !== undefined ? { objectives: rest.objectives, sources: rest.sources ?? [], ...(kept?.worries ? { worries: kept.worries } : {}), ...(rest.format !== undefined ? { format: rest.format } : {}), ...(rest.materialIds !== undefined ? { materialIds: rest.materialIds } : {}) } : { ...(kept ?? { objectives: [], sources: [] }), ...(rest.format !== undefined ? { format: rest.format } : {}), ...(rest.materialIds !== undefined ? { materialIds: rest.materialIds } : {}) };
   if (budget) return { ...base, budget: mergeBudget(kept?.budget, budget, context) };
   // A scope resent without a budget keeps the exam's, so Edit scope from the chat doesn't lose the time budget.
   return kept?.budget ? { ...base, budget: kept.budget } : base;
@@ -151,7 +151,7 @@ export function scopeSummary(scope: ExamScope, topicIds: readonly string[], obje
     else excluded++;
   }
   // The budget with its hours by day (a budget saved before per-day budgets gets its spread), so Claude sees the days.
-  return { inScope, excluded, sources: scope.sources, ...(scope.budget ? { budget: examDate ? withPerDay(scope.budget, examDate) : scope.budget } : {}) };
+  return { inScope, excluded, sources: scope.sources, ...(scope.worries ? { worries: scope.worries } : {}), ...(scope.budget ? { budget: examDate ? withPerDay(scope.budget, examDate) : scope.budget } : {}) };
 }
 
 export function connectorTools(db: OrcaSupabase, ownerId: string, now: () => Date = () => new Date()): ConnectorTools {
