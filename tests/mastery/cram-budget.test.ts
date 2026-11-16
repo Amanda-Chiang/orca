@@ -53,3 +53,9 @@ test("set_exam's budget merges over the exam's: perDay by day, today for today, 
   // A budget saved the old way is spread before the merge.
   assert.deepEqual(mergeBudget({ hours: 4, daysOut: [], since: "2026-11-11T09:00:00.000Z" }, { today: 0 }, ctx).perDay, { "2026-11-11": 1, "2026-11-12": 0, "2026-11-13": 1, "2026-11-14": 1 });
 });
+
+test("mergeBudget drops days before the cram started, as well as days on or after the exam", () => {
+  const base = budgetFromPerDay({ "2026-11-10": 4, "2026-11-11": 4, "2026-11-15": 1 }, "2026-11-15T09:00:00.000Z");
+  const merged = mergeBudget(base, { today: 2 }, { today: "2026-11-16", examDate: "2026-11-18", now: "2026-11-16T09:00:00.000Z" });
+  assert.deepEqual(merged.perDay, { "2026-11-15": 1, "2026-11-16": 2 });
+});

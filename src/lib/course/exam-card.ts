@@ -6,9 +6,9 @@ import type { Exam, ExamScope, Objective, Topic } from "../data.ts";
 import { SCOPE_STRENGTH } from "./scope.ts";
 import { survivingTopic } from "./weights.ts";
 
-/** The exam the card shows: the cramming exam (soonest first), else the soonest exam on or after today; null without one. */
+/** The exam the card shows: the cramming exam (soonest first), else the soonest exam on or after today; null without one. A past exam is done, cramming or not. */
 export function cardExam<E extends Pick<Exam, "courseId" | "date" | "cramming">>(exams: readonly E[], courseId: string, today: string): E | null {
-  const mine = exams.filter((e) => e.courseId === courseId && (e.cramming || e.date >= today)).sort((a, b) => Number(b.cramming) - Number(a.cramming) || a.date.localeCompare(b.date));
+  const mine = exams.filter((e) => e.courseId === courseId && e.date >= today).sort((a, b) => Number(b.cramming) - Number(a.cramming) || a.date.localeCompare(b.date));
   return mine[0] ?? null;
 }
 
@@ -56,16 +56,29 @@ export const NOT_IN_FILES = "not in the files the exam covers";
  * The objectives the cram setup starts from: every live objective of the exam's topics (its scope
  * set aside, so a narrowed scope can be widened again), split by the materials picked. With
  * nothing picked everything is in scope; else an objective is in scope when the material that
- * created it, or one its signals name, was picked.
+ * created it, or one its signals name, was picked. An objective no material teaches (one Claude
+ * flagged from the chat, say), or a weak spot (`weak`), follows its topic: in scope when another
+ * objective of the topic is taught in a picked file, so a file pick never zeroes a weak spot of a
+ * topic the exam covers.
  */
-export function splitByMaterials(candidates: readonly string[], picked: readonly string[], catalogue: Readonly<Record<string, Objective>>): { inScope: string[]; excluded: string[] } {
+export function splitByMaterials(candidates: readonly string[], picked: readonly string[], catalogue: Readonly<Record<string, Objective>>, weak: ReadonlySet<string> = new Set()): { inScope: string[]; excluded: string[] } {
   if (!picked.length) return { inScope: [...candidates], excluded: [] };
   const chosen = new Set(picked);
+  const taught = new Set<string>();
+  const topicsIn = new Set<string>();
+  for (const id of candidates) {
+    const o = catalogue[id];
+    if (o && objectiveMaterialIds(o).some((m) => chosen.has(m))) {
+      taught.add(id);
+      topicsIn.add(o.topicId);
+    }
+  }
   const inScope: string[] = [];
   const excluded: string[] = [];
   for (const id of candidates) {
     const o = catalogue[id];
-    (o && objectiveMaterialIds(o).some((m) => chosen.has(m)) ? inScope : excluded).push(id);
+    const follows = !!o && (weak.has(id) || objectiveMaterialIds(o).length === 0) && topicsIn.has(o.topicId);
+    (taught.has(id) || follows ? inScope : excluded).push(id);
   }
   return { inScope, excluded };
 }
@@ -78,12 +91,12 @@ export function splitByMaterials(candidates: readonly string[], picked: readonly
  * format and the sources are kept; `professor` joins the sources; the picked materials are stored
  * (none when nothing was picked). Without words and without a pick, the scope is left as it is.
  */
-export function scopeFromSetup(existing: ExamScope | null, candidates: readonly string[], words: string, picked: readonly string[] = [], catalogue: Readonly<Record<string, Objective>> = {}): ExamScope | null {
+export function scopeFromSetup(existing: ExamScope | null, candidates: readonly string[], words: string, picked: readonly string[] = [], catalogue: Readonly<Record<string, Objective>> = {}, weak: ReadonlySet<string> = new Set()): ExamScope | null {
   const quote = words.trim();
   if (!quote && !picked.length) return existing;
   const said = quote ? [{ signal: "professor" as const, strength: SCOPE_STRENGTH.professor, quote }] : [];
   const notInFiles = { signal: "professor" as const, strength: SCOPE_STRENGTH.professor, quote: NOT_IN_FILES };
-  const { inScope, excluded } = splitByMaterials(candidates, picked, catalogue);
+  const { inScope, excluded } = splitByMaterials(candidates, picked, catalogue, weak);
   const chosen = new Set(inScope);
   const out = new Set(excluded);
   const was = new Map((existing?.objectives ?? []).map((o) => [o.objectiveId, o]));
@@ -101,4 +114,35 @@ export function scopeFromSetup(existing: ExamScope | null, candidates: readonly 
     sources: [...new Set([...(existing?.sources ?? []), "professor" as const])],
     ...(picked.length ? { materialIds: [...new Set(picked)] } : {}),
   };
+}
+
+/** What `protectScope` reads of an objective: its topic, the materials it's taught in, and whether it's a weak spot. */
+export interface ScopeObjective {
+  id: string;
+  topicId: string;
+  materialIds: readonly string[];
+  weak: boolean;
+}
+
+/**
+ * A file-scoped scope (one with `materialIds`) with the zeros a file pick shouldn't make put back:
+ * an objective weighed 0 only because it isn't in the picked files (no evidence but the "not in the
+ * files" note) goes back to 1 when it's taught in no material or is a weak spot, and another
+ * objective of its topic is in scope. A professor's own exclusion (any other quote) stands. As
+ * `splitByMaterials` splits a new pick; this repairs scopes saved before, or sent by Claude.
+ */
+export function protectScope(scope: ExamScope, objectives: readonly ScopeObjective[]): { scope: ExamScope; raised: string[] } {
+  if (!scope.materialIds?.length) return { scope, raised: [] };
+  const weight = new Map(scope.objectives.map((o) => [o.objectiveId, o.weight]));
+  const topicsIn = new Set(objectives.filter((o) => (weight.get(o.id) ?? 1) > 0).map((o) => o.topicId));
+  const byId = new Map(objectives.map((o) => [o.id, o]));
+  const raised: string[] = [];
+  const next = scope.objectives.map((entry) => {
+    const o = byId.get(entry.objectiveId);
+    if (entry.weight > 0 || !o || !topicsIn.has(o.topicId) || !(o.weak || o.materialIds.length === 0)) return entry;
+    if (!entry.evidence.every((ev) => !ev.quote || ev.quote === NOT_IN_FILES)) return entry;
+    raised.push(entry.objectiveId);
+    return { ...entry, weight: 1, evidence: entry.evidence.filter((ev) => ev.quote !== NOT_IN_FILES) };
+  });
+  return raised.length ? { scope: { ...scope, objectives: next }, raised } : { scope, raised };
 }

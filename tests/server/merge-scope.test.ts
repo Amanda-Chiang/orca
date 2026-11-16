@@ -31,3 +31,14 @@ test("a budget-only scope keeps the exam's objectives, sources and materials and
   const total = mergeScope(null, { objectives: [], sources: [], budget: { hours: 6, daysOut: [], since: "2026-11-12T09:00:00.000Z" } }, ctx);
   assert.deepEqual(total.budget, { hours: 6, daysOut: [], since: "2026-11-12T09:00:00.000Z", perDay: { "2026-11-12": 2, "2026-11-13": 2, "2026-11-14": 2 } });
 });
+
+test("patchObjectives changes only the objectives named; the rest keep their weights, sources join, the budget stays", async () => {
+  const { mergeScope } = await import("../../src/lib/server/connector.ts");
+  const OTHER = "f0000000-0000-4000-8000-000000000002";
+  const two: ExamScope = { ...kept, objectives: [...kept.objectives, { objectiveId: OTHER, weight: 0, evidence: [] }] };
+  const out = mergeScope(two, { objectives: [{ objectiveId: OTHER, weight: 1, evidence: [] }], sources: ["guess"], patchObjectives: true }, ctx);
+  assert.deepEqual(out.objectives.map((o) => [o.objectiveId, o.weight]), [[OBJ, 2], [OTHER, 1]]);
+  assert.deepEqual(out.sources, ["professor", "guess"]);
+  assert.deepEqual(out.materialIds, ["m1"]);
+  assert.deepEqual(out.budget, kept.budget);
+});

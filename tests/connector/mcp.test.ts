@@ -95,8 +95,9 @@ function fakeTools() {
     async setExam(courseId, exam) {
       if (courseId !== COURSE) return { error: "No such course." };
       // As the server does: the budget merges over the exam's (none here), objectives left out keep the exam's (none here); today is the 10th.
-      const scope = exam.scope ? mergeScopeForTest(exam.scope, exam.date) : null;
-      const saved: ExamLine = { id: exam.id ?? "b0000000-0000-4000-8000-000000000001", title: exam.title, date: exam.date, topicIds: exam.topicIds, cramming: exam.cramming ?? false, scope, mode: exam.cramming ? "exam-week" : "normal" };
+      const date = exam.date ?? "2026-11-20";
+      const scope = exam.scope ? mergeScopeForTest(exam.scope, date) : null;
+      const saved: ExamLine = { id: exam.id ?? "b0000000-0000-4000-8000-000000000001", title: exam.title ?? "Exam", date, topicIds: exam.topicIds ?? [], cramming: exam.cramming ?? false, scope, mode: exam.cramming ? "exam-week" : "normal" };
       exams.push(saved);
       return saved;
     },

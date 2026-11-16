@@ -53,7 +53,9 @@ export const INSTRUCTIONS =
   "lectures or files the exam covers, map them to the course's materials by filename (course_state " +
   "detail full lists materials, and each objective's materialIds) and record the scope with weight 0 " +
   "for objectives taught only elsewhere (evidence professor, quote \"not in the files the exam " +
-  "covers\"), passing scope.materialIds. Call set_exam too when the " +
+  "covers\"), passing scope.materialIds; an objective no file teaches, or a weak spot, follows its topic (in " +
+  "scope when the topic is), and Orca keeps it in. To turn a few objectives on or off, send just those with " +
+  "scope.patchObjectives true. To change an exam's scope or budget, leave its date out. Call set_exam too when the " +
   "student says what an exam covers or when it's cancelled. 3) Check first: before explaining, ask " +
   "one question at a time from next_questions (it picks what's due, then exam focus, then the " +
   "heaviest unflagged objectives; pass objectiveIds or topicIds to steer it). Before revealing an " +
@@ -79,7 +81,7 @@ export const INSTRUCTIONS =
   "send a one-line progress note unasked: what's verified, what's still weak, what's next.";
 
 /** An exam scope as set_exam takes it: the budget is an input merged over the exam's (src/lib/mastery/cram-budget.ts `mergeBudget`), and `objectives` and `sources` left out keep the exam's. */
-export type ScopeInput = Omit<ExamScope, "budget" | "objectives" | "sources"> & { objectives?: ExamScope["objectives"]; sources?: ScopeSignal[]; budget?: CramBudgetInput };
+export type ScopeInput = Omit<ExamScope, "budget" | "objectives" | "sources"> & { objectives?: ExamScope["objectives"]; sources?: ScopeSignal[]; budget?: CramBudgetInput; patchObjectives?: boolean };
 export type { CramBudgetInput };
 
 /* ── Tool results: plain data the implementations return; the protocol wraps them ── */
@@ -122,6 +124,8 @@ export interface ExamLine {
   scopeSummary?: ScopeSummary | null;
   /** The mode this exam puts the course in: day-of today, exam-week while cramming or within 7 days, else normal. */
   mode: CourseMode;
+  /** From set_exam: what Orca changed in what was sent, and why. */
+  note?: string;
 }
 
 /** An exam's scope by its counts (course_state detail summary): over the live objectives of the exam's topics, as the exam card counts them. */
@@ -369,7 +373,7 @@ export interface FlagCheckResult {
 export interface ConnectorTools {
   courses(): Promise<CourseSummary[]>;
   /** The course in full, or a summary without the objective lines (or only some topics' objectives). Null: no such course. */
-  courseState(courseId: string, options?: { detail?: "summary" | "full"; topicIds?: string[] }): Promise<CourseState | null>;
+  courseState(courseId: string, options?: { detail?: "summary" | "full"; topicIds?: string[]; asOf?: string }): Promise<CourseState | null>;
   /** The next questions to ask (unanswered first, then least recently seen), writing some when none exist. Null: no such course. */
   nextQuestions(courseId: string, options: { objectiveIds?: string[]; topicIds?: string[]; count: number; write: boolean }): Promise<NextQuestions | null>;
   /** Remove an exam. */
@@ -380,7 +384,7 @@ export interface ConnectorTools {
   checkAnswer(courseId: string, questionId: string, response: string, sessionId: string, report?: Partial<AnswerReport>): Promise<CheckedAnswer | SelfGradeNeeded | { error: string }>;
   /** An answer Claude graded against the key: recorded with the help it reports (none = full credit). `response`, when given, is the student's words, cleaned and screened. */
   recordAnswer(courseId: string, questionId: string, outcome: Outcome, sessionId: string, response: string | undefined, report: AnswerReport): Promise<RecordedAnswer | { error: string }>;
-  setExam(courseId: string, exam: { id?: string; title: string; date: string; topicIds: string[]; cramming?: boolean; scope?: ScopeInput }): Promise<ExamLine | { error: string }>;
+  setExam(courseId: string, exam: { id?: string; title?: string; date?: string; topicIds?: string[]; cramming?: boolean; scope?: ScopeInput }): Promise<ExamLine | { error: string }>;
   /** One flag per known live objective: check (source connector) or struggled (source connector-struggled). `said` arrives cleaned and screened. */
   flagCheck(courseId: string, objectiveIds: string[], said: string, strength: FlagStrength): Promise<FlagCheckResult | { error: string }>;
   /** The anchored pages of some objectives, never from a held-back or removed material. Null: no such course. */
@@ -440,6 +444,7 @@ export const TOOLS = [
         courseId: { ...UUID, description: "The course to describe. Omit to list the courses." },
         detail: { type: "string", enum: ["summary", "full"], description: "summary: no objective or material lines, exams' scopes by size; full (default): every objective, the materials, full scopes." },
         topicIds: { type: "array", items: { type: "string" }, description: "With full: only these topics' objectives." },
+        asOf: { type: "string", description: "Testing only: YYYY-MM-DD, within 60 days of today. The exams, mode and cram plan are worked out as if today were that day (statuses and recall stay as of now); nothing is written. Use it to check how a cram plays out on later days instead of editing a real exam's date." },
       },
       additionalProperties: false,
     },
@@ -478,9 +483,9 @@ export const TOOLS = [
       properties: {
         courseId: UUID,
         examId: { ...UUID, description: "An existing exam to change or remove; omit to add one." },
-        title: { type: "string", description: "What the student calls it, e.g. Midterm, Final." },
-        date: { type: "string", description: "YYYY-MM-DD." },
-        topicIds: { type: "array", items: { type: "string" }, description: "Topic ids it covers; empty for every topic." },
+        title: { type: "string", description: "What the student calls it, e.g. Midterm, Final. With examId, omit to keep it." },
+        date: { type: "string", description: "YYYY-MM-DD. With examId, omit to keep the exam's date (don't resend it just to change the scope or budget)." },
+        topicIds: { type: "array", items: { type: "string" }, description: "Topic ids it covers; empty for every topic. With examId, omit to keep them." },
         cramming: { type: "boolean", description: "The student is cramming for it: Orca treats it as this week's exam whatever the date. Omit to leave as is." },
         scope: {
           type: "object",
@@ -524,6 +529,7 @@ export const TOOLS = [
               additionalProperties: false,
             },
             sources: { type: "array", items: { type: "string", enum: SCOPE_SIGNALS }, maxItems: 6, description: "Where the scope came from, for the exam card." },
+            patchObjectives: { type: "boolean", description: "true: objectives lists only the ones to change; each replaces that objective's entry and every other objective keeps its weight (sources optional, added to the exam's). Use it to turn a few objectives on or off without resending the whole list." },
             budget: {
               type: "object",
               description:
@@ -810,9 +816,12 @@ async function screenText(tools: ConnectorTools, raw: string, maxChars: number, 
 /** An exam scope as set_exam takes it: ids, weights, evidence (quotes screened), format, sources and the budget checked field by field; objectives and sources may be left out together (the exam's are kept). */
 async function parseScope(tools: ConnectorTools, raw: unknown): Promise<{ scope: ScopeInput } | { error: string }> {
   if (!isObject(raw)) return { error: "scope is an object: objectives, sources and optionally format, budget and materialIds." };
+  if (raw.patchObjectives !== undefined && typeof raw.patchObjectives !== "boolean") return { error: "scope.patchObjectives is true or false." };
+  const patch = raw.patchObjectives === true;
+  if (patch && !Array.isArray(raw.objectives)) return { error: "scope.patchObjectives needs scope.objectives: the ones to change." };
   const keepScope = raw.objectives === undefined && raw.sources === undefined;
   if (!keepScope && (!Array.isArray(raw.objectives) || raw.objectives.length > 400)) return { error: "scope.objectives is a list of up to 400 { objectiveId, weight, evidence } (left out with sources, the exam's are kept)." };
-  if (!keepScope && (!Array.isArray(raw.sources) || raw.sources.length > 6 || !raw.sources.every((x) => isOneOf(SCOPE_SIGNALS, x)))) return { error: `scope.sources is a list of ${SCOPE_SIGNALS.join(", ")}.` };
+  if (!keepScope && !(patch && raw.sources === undefined) && (!Array.isArray(raw.sources) || raw.sources.length > 6 || !raw.sources.every((x) => isOneOf(SCOPE_SIGNALS, x)))) return { error: `scope.sources is a list of ${SCOPE_SIGNALS.join(", ")}.` };
   const objectives: ExamScope["objectives"] = [];
   for (const [i, o] of ((raw.objectives as unknown[] | undefined) ?? []).entries()) {
     if (!isObject(o) || !isUuid(o.objectiveId)) return { error: `scope.objectives[${i}].objectiveId must be an objective id from course_state.` };
@@ -879,6 +888,7 @@ async function parseScope(tools: ConnectorTools, raw: unknown): Promise<{ scope:
     if (!Array.isArray(raw.materialIds) || raw.materialIds.length > MATERIALS_MAX || !raw.materialIds.every(isUuid)) return { error: `scope.materialIds is a list of up to ${MATERIALS_MAX} material ids from course_state.` };
     materialIds = [...new Set(raw.materialIds as string[])];
   }
+  if (patch) return { scope: { objectives, patchObjectives: true, ...(raw.sources !== undefined ? { sources: [...new Set(raw.sources as ScopeSignal[])] } : {}), ...(format !== undefined ? { format } : {}), ...(budget !== undefined ? { budget } : {}), ...(materialIds !== undefined ? { materialIds } : {}) } };
   return { scope: { ...(keepScope ? {} : { objectives, sources: [...new Set(raw.sources as ScopeSignal[])] }), ...(format !== undefined ? { format } : {}), ...(budget !== undefined ? { budget } : {}), ...(materialIds !== undefined ? { materialIds } : {}) } };
 }
 
@@ -980,7 +990,8 @@ async function callTool(params: Record<string, unknown>, tools: ConnectorTools, 
         if (!isUuid(args.courseId)) return toolText({ error: "courseId must be a course id from course_state." }, true);
         if (args.detail !== undefined && args.detail !== "summary" && args.detail !== "full") return toolText({ error: "detail is summary or full." }, true);
         if (args.topicIds !== undefined && (!Array.isArray(args.topicIds) || !args.topicIds.every(isUuid))) return toolText({ error: "topicIds is a list of topic ids from course_state." }, true);
-        const state = await tools.courseState(args.courseId, { detail: (args.detail as "summary" | "full" | undefined) ?? "full", ...(args.topicIds !== undefined ? { topicIds: args.topicIds as string[] } : {}) });
+        if (args.asOf !== undefined && (typeof args.asOf !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(args.asOf) || Number.isNaN(Date.parse(args.asOf)) || Math.abs(Date.parse(args.asOf) - Date.now()) > 61 * 86_400_000)) return toolText({ error: "asOf is a day, YYYY-MM-DD, within 60 days of today." }, true);
+        const state = await tools.courseState(args.courseId, { detail: (args.detail as "summary" | "full" | undefined) ?? "full", ...(args.topicIds !== undefined ? { topicIds: args.topicIds as string[] } : {}), ...(typeof args.asOf === "string" ? { asOf: args.asOf } : {}) });
         return state ? toolText(state) : toolText({ error: "No such course." }, true);
       }
       case "next_questions": {
@@ -1000,10 +1011,12 @@ async function callTool(params: Record<string, unknown>, tools: ConnectorTools, 
           const gone = await tools.removeExam(args.courseId, args.examId);
           return toolText(gone, "error" in gone);
         }
-        if (typeof args.title !== "string" || args.title.trim().length === 0 || args.title.length > 120) return toolText({ error: "title is 1 to 120 characters." }, true);
-        if (typeof args.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(args.date) || Number.isNaN(Date.parse(args.date))) return toolText({ error: "date is YYYY-MM-DD." }, true);
-        if (!Array.isArray(args.topicIds) || !args.topicIds.every(isUuid)) return toolText({ error: "topicIds is a list of topic ids from course_state (empty for the whole course)." }, true);
         if (args.examId !== undefined && !isUuid(args.examId)) return toolText({ error: "examId must be an exam id from course_state." }, true);
+        // Changing an exam, title, date and topicIds left out keep what it has (so a budget-only update can't move the date); a new exam needs all three.
+        const changing = args.examId !== undefined;
+        if ((!changing || args.title !== undefined) && (typeof args.title !== "string" || args.title.trim().length === 0 || args.title.length > 120)) return toolText({ error: "title is 1 to 120 characters." }, true);
+        if ((!changing || args.date !== undefined) && (typeof args.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(args.date) || Number.isNaN(Date.parse(args.date)))) return toolText({ error: "date is YYYY-MM-DD." }, true);
+        if ((!changing || args.topicIds !== undefined) && (!Array.isArray(args.topicIds) || !args.topicIds.every(isUuid))) return toolText({ error: "topicIds is a list of topic ids from course_state (empty for the whole course)." }, true);
         if (args.cramming !== undefined && typeof args.cramming !== "boolean") return toolText({ error: "cramming is true or false." }, true);
         let scope: ScopeInput | undefined;
         if (args.scope !== undefined) {
@@ -1013,9 +1026,9 @@ async function callTool(params: Record<string, unknown>, tools: ConnectorTools, 
         }
         const exam = await tools.setExam(args.courseId, {
           ...(args.examId !== undefined ? { id: args.examId } : {}),
-          title: args.title.trim(),
-          date: args.date,
-          topicIds: args.topicIds,
+          ...(typeof args.title === "string" ? { title: args.title.trim() } : {}),
+          ...(typeof args.date === "string" ? { date: args.date } : {}),
+          ...(Array.isArray(args.topicIds) ? { topicIds: args.topicIds as string[] } : {}),
           ...(args.cramming !== undefined ? { cramming: args.cramming } : {}),
           ...(scope !== undefined ? { scope } : {}),
         });
