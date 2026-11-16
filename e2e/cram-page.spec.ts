@@ -110,14 +110,18 @@ test("setup picks the files and the hours for each day, one at 0; the page then 
   await expect(row).toHaveAttribute("data-topic", F.twosComplement);
   await expect(row).toContainText("Two's Complement");
   await expect(row.locator("[data-part=cram-topic-verified]")).toHaveText("0/2 verified");
-  await expect(row.locator("[data-part=cram-topic-minutes]")).toHaveText("120 min today");
+  // Nothing answered since the cram started: a 10-minute sweep opens the day, so the topic has the other 110.
+  await expect(row.locator("[data-part=cram-topic-minutes]")).toHaveText("110 min today");
   // The flagged objective is a weak spot under its topic.
   await expect(row.locator("[data-part=cram-weak-spot]")).toHaveCount(1);
   await expect(row.locator("[data-part=cram-weak-spot]")).toContainText("Sign-extend a number · Learning");
   await page.keyboard.press("Escape");
   await expect(page.locator("[data-part=cram-scope]")).toHaveCount(0);
-  await expect(cram.locator("[data-part=cram-today] [data-part=cram-today-topic]")).toHaveText("Two's Complement120 min");
-  await expect(cram.locator("[data-part=cram-mock]")).toContainText("No practice test yet");
+  await expect(cram.locator("[data-part=cram-today] [data-part=cram-today-sweep]")).toHaveText("Quick sweep: one question per topic10 min");
+  await expect(cram.locator("[data-part=cram-today] [data-part=cram-today-topic]")).toHaveText("then Two's Complement110 min");
+  // The held-back exam is on the schedule: the last study day before the exam.
+  await expect(cram.locator("[data-part=cram-mock]")).toContainText("Sit it timed on");
+  await expect(cram.locator(`[data-part=cram-day-col][data-day="${inDays(4)}"] [data-part=cram-day-mock]`)).toBeVisible();
   await expect(cram.locator("[data-part=cram-vault] [data-part=cram-vault-item]")).toHaveText([PAST_EXAM]);
   await expect(cram.locator("[data-part=study-with-claude]")).toHaveAttribute("href", "/settings#connector");
 
@@ -194,23 +198,18 @@ test("the schedule shows a column per day of the cram with its hours and topics,
   await expect(cols.nth(2)).not.toHaveAttribute("data-today", "1");
   await expect(cols.nth(0)).toHaveAttribute("data-past", "1");
   await expect(cols.nth(0)).toHaveAttribute("data-met", "1");
-  await expect(cols.nth(0).locator("[data-part=cram-day-col-mark]")).toHaveText("Met · 60 min");
+  // A past day shows what was studied, never "short".
+  await expect(cols.nth(0).locator("[data-part=cram-day-col-mark]")).toHaveText("Studied 60 min");
   await expect(cols.nth(1).locator("[data-part=cram-day-col-mark]")).toHaveCount(0);
   await expect(cols.nth(0).locator("[data-part=cram-day-col-hours]")).toHaveText("1 h");
   await expect(cols.nth(1).locator("[data-part=cram-day-col-hours]")).toHaveText("2 h · today");
   await expect(cols.nth(2).locator("[data-part=cram-day-col-hours]")).toHaveText("0.5 h");
-  // Today's column is today's split (the two topics by weight × unverified share: Two's Complement 80, Boolean Algebra 40);
-  // tomorrow works through what's left, the weak spot (Boolean Algebra, missed) first; yesterday carries the walk from the start.
-  const topicsOf = async (col: ReturnType<typeof cols.nth>) => col.locator("[data-part=cram-day-topic]").evaluateAll((els) => els.map((el) => [el.getAttribute("data-topic"), el.textContent]));
-  expect(await topicsOf(cols.nth(1))).toEqual([
-    [F.twosComplement, "Two's Complement80 min"],
-    [F.booleanAlgebra, "Boolean Algebra40 min"],
-  ]);
-  expect(await topicsOf(cols.nth(2))).toEqual([
-    [F.booleanAlgebra, "Boolean Algebra10 min"],
-    [F.twosComplement, "Two's Complement20 min"],
-  ]);
-  expect(await topicsOf(cols.nth(0))).toEqual([[F.booleanAlgebra, "Boolean Algebra60 min"]]);
+  // Today is a queue, the weak spot (Boolean Algebra, missed) first, filling today's 2 hours; yesterday carries the walk from the start, weak spot first too.
+  const topicsOf = async (col: ReturnType<typeof cols.nth>) => col.locator("[data-part=cram-day-topic]").evaluateAll((els) => els.map((el) => [el.getAttribute("data-topic"), Number((el.textContent ?? "").match(/(\d+) min/)?.[1] ?? 0)] as const));
+  const todayTopics = await topicsOf(cols.nth(1));
+  expect(todayTopics[0][0]).toBe(F.booleanAlgebra);
+  expect(todayTopics.reduce((sum, t) => sum + t[1], 0)).toBe(120);
+  expect((await topicsOf(cols.nth(0)))[0][0]).toBe(F.booleanAlgebra);
   // The covered state: Boolean Algebra has an answer since the cram started, Two's Complement nothing yet.
   await cram.locator("[data-part=cram-scope-open]").click();
   const ba = page.locator(`[data-part=cram-scope] [data-part=cram-topic][data-topic="${F.booleanAlgebra}"]`);

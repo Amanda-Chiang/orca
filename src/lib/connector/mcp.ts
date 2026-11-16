@@ -30,8 +30,15 @@ export const INSTRUCTIONS =
   "you need objective ids); it says what's due, the next exam's topics (examFocus), the course's " +
   "mode, which exam is being crammed for (cramming), the vault, whether Orca's daily model budget " +
   "is spent (budget) and whether questions are being written (writing). When plan isn't null (an " +
-  "exam is being crammed for), start the session by saying plan.line as is, then follow plan.today's " +
-  "order, weak spots first. When plan.defaulted is true the student set no time budget and Orca " +
+  "exam is being crammed for), start the session by saying plan.line as is, then work through it as a " +
+  "queue, one topic at a time, in this order: when plan.diagnostic isn't null, first a sweep (one " +
+  "question per topic in plan.diagnostic.topicIds, from next_questions with that topicId and count 1, " +
+  "no teaching yet; the misses are the weak spots); when plan.mockToday isn't null, the practice test " +
+  "(open that vault file only now, timed at its minutes, then grade it and record each problem with " +
+  "log_evidence); then plan.today's topics in order, each taught and checked until it's verified or " +
+  "its minutes are used, before the next. Never call the student behind or late: missed time only " +
+  "moves topics to plan.cut, which you name as what goes if time runs short. Time with you counts as " +
+  "study when you record answers, work or signals. When plan.defaulted is true the student set no time budget and Orca " +
   "assumed 2 hours a study day: say so and ask if it's different (set_exam with scope.budget). The " +
   "budget is hours per day (scope.budget.perDay, YYYY-MM-DD to hours in half-hour steps, 0 for a " +
   "day off): when the student says how much time they have today or on a named day, save it with " +

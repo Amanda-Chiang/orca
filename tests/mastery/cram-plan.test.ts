@@ -55,34 +55,56 @@ test("today's minutes are today's hours less what's spent today; hours left coun
   assert.equal(cramPlan({ ...base, examDate: "2026-11-21", today: "2026-11-19" }).minutesToday, 0);
 });
 
-test("behind minutes compare what was spent before today with the hours the budget asked for on those days", () => {
-  assert.equal(cramPlan(base).behindMinutes, 0, "nothing expected on the first day");
-  // Day 4: three hours asked for on the 10th to the 12th.
-  const later = { ...base, today: "2026-11-13" };
-  assert.equal(cramPlan({ ...later, spentMinutes: { beforeToday: 160, today: 0 } }).behindMinutes, 20);
-  assert.equal(cramPlan({ ...later, spentMinutes: { beforeToday: 160, today: 60 } }).behindMinutes, 20, "today's study doesn't catch up yesterday");
-  assert.equal(cramPlan({ ...later, spentMinutes: { beforeToday: 200, today: 0 } }).behindMinutes, 0, "ahead is not behind");
-  // A day out before today asked for nothing: 4.5 hours by the 16th.
-  assert.equal(cramPlan({ ...base, today: "2026-11-16", spentMinutes: { beforeToday: 180, today: 0 } }).behindMinutes, 90);
+test("missed time is never debt: it moves the lowest-priority topics to cut once the time left can't cover them", () => {
+  assert.deepEqual(cramPlan(base).cut, [], "everything fits");
+  // One hour left for A (weak, 60 needed), E (180) and B (60): A first, then E takes the rest; B is cut.
+  const short = cramPlan({ ...base, topics: withE, today: "2026-11-18", spentMinutes: { beforeToday: 0, today: 0 } });
+  assert.deepEqual(short.today, [{ topicId: "A", minutes: 60 }]);
+  assert.deepEqual(short.cut, ["B", "E"]);
+  assert.match(short.line, /If time runs short: Buses, Encoders\.$/);
+  assert.ok(!("behindMinutes" in short), "no behind minutes");
 });
 
-test("today's minutes split by weight × unverified share, rounded to 5, dropping small topics; done topics get 0", () => {
-  // 60 minutes today. Shares: A 2 × 0.5 = 1, B 1 × 1 = 1, C done, D out of scope.
+test("today is a queue: the ranked topics take their share one after another, weak spots first; done and out-of-scope topics get nothing", () => {
   const plan = cramPlan(base);
   const byId = Object.fromEntries(plan.topics.map((t) => [t.id, t]));
-  assert.deepEqual([byId.A.minutesToday, byId.B.minutesToday, byId.C.minutesToday, byId.D.minutesToday], [30, 30, 0, 0]);
   assert.deepEqual([byId.A.weight, byId.A.unverifiedShare, byId.A.done], [2, 0.5, false]);
   assert.deepEqual([byId.C.weight, byId.C.unverifiedShare, byId.C.done], [2, 0, true]);
   assert.deepEqual([byId.D.weight, byId.D.done], [0, false]);
   assert.deepEqual(plan.verified, { done: 3, total: 5, share: 0.6 });
-  assert.deepEqual(plan.today, [{ topicId: "A", minutes: 30 }, { topicId: "B", minutes: 30 }]);
-  // A heavier topic takes more, and a sliver under 5 minutes is dropped.
-  const heavy = cramPlan({ ...base, topics: [{ id: "A", name: "Adders", objectives: [obj("a1", "learning", 9)] }, { id: "B", name: "Buses", objectives: [obj("b1", "unseen", 0.3)] }] });
-  assert.deepEqual(heavy.today, [{ topicId: "A", minutes: 60 }]);
-  assert.equal(heavy.topics.find((t) => t.id === "B")!.minutesToday, 0);
+  // Adders (the weak spot) has the hour; Buses waits for tomorrow rather than splitting it.
+  assert.deepEqual(plan.today, [{ topicId: "A", minutes: 60 }]);
+  assert.deepEqual([byId.A.minutesToday, byId.B.minutesToday, byId.C.minutesToday, byId.D.minutesToday], [60, 0, 0, 0]);
+  assert.deepEqual(dayOf(plan, "2026-11-11").topics, [{ topicId: "B", minutes: 60 }], "every topic is covered once before any is gone over again");
+  // A longer day runs on to the next topic once the first has its share.
+  const long = cramPlan({ ...base, budget: { ...budget, perDay: { ...perDay, "2026-11-10": 3 } } });
+  assert.deepEqual(long.today.map((t) => t.topicId), ["A", "B"]);
   // A day out today: nothing is allocated.
   const off = cramPlan({ ...base, budget: { ...budget, perDay: { ...perDay, "2026-11-10": 0 } } });
   assert.deepEqual(off.today, []);
+});
+
+test("diagnostic first: with nothing in scope verified or answered since the cram started, today opens with a sweep, one question per open topic", () => {
+  const fresh: CramPlanInput["topics"] = [{ id: "X", name: "Xors", objectives: [obj("x1", "unseen"), obj("x2", "learning")] }, { id: "Y", name: "Ymux", objectives: [obj("y1", "unseen")] }];
+  const plan = cramPlan({ ...base, topics: fresh });
+  assert.deepEqual(plan.diagnostic, { minutes: 10, topicIds: ["X", "Y"] });
+  assert.deepEqual(plan.today, [{ topicId: "X", minutes: 50 }]);
+  assert.equal(plan.line, "9 days to the exam. Today: a quick sweep (one question per topic), then Xors. Verified: 0%.");
+  assert.equal(cramPlan({ ...base, topics: fresh, touchedObjectiveIds: ["y1"] }).diagnostic, null, "answered something: no sweep");
+  assert.equal(cramPlan(base).diagnostic, null, "something verified: no sweep");
+});
+
+test("practice tests go on study days: the first on the last one before the exam, a second halfway; their minutes come first that day", () => {
+  const mocks = [{ materialId: "m1", name: "Practice 1.pdf" }, { materialId: "m2", name: "2018 midterm.pdf", minutes: 50 }];
+  const plan = cramPlan({ ...base, mocks });
+  assert.deepEqual(plan.days.filter((d) => d.mock).map((d) => [d.day, d.mock?.name, d.mock?.minutes]), [["2026-11-13", "2018 midterm.pdf", 50], ["2026-11-18", "Practice 1.pdf", 60]]);
+  assert.equal(dayOf(plan, "2026-11-13").topics.reduce((sum, t) => sum + t.minutes, 0), 10, "the day's other 10 minutes");
+  assert.deepEqual(dayOf(plan, "2026-11-18").topics, []);
+  assert.match(plan.line, /Practice test: Fri\./);
+  const onTheDay = cramPlan({ ...base, mocks, today: "2026-11-18" });
+  assert.deepEqual(onTheDay.mockToday, { materialId: "m1", name: "Practice 1.pdf", minutes: 60 });
+  assert.match(onTheDay.line, /Today: practice test Practice 1\.pdf\./);
+  assert.equal(cramPlan(base).mockToday, null);
 });
 
 test("weak spots are the in-scope objectives in rotation or waiting on a check", () => {
@@ -93,14 +115,14 @@ test("weak spots are the in-scope objectives in rotation or waiting on a check",
   assert.deepEqual(plan.topics[0].weakSpots, ["l", "m", "f", "c"]);
 });
 
-test("the line: its normal form names what's done and today's topics, the behind form names the shortened topic, and exam day says so", () => {
-  assert.equal(cramPlan(base).line, "9 days to the exam. Done: Counters. Today: Adders, Buses. Verified: 60%.");
-  assert.equal(cramPlan({ ...base, today: "2026-11-13", spentMinutes: { beforeToday: 160, today: 0 } }).line, "6 days to the exam. Done: Counters. Today: Adders, Buses. Verified: 60%. 20 minutes behind: Buses gets shortened.");
-  assert.equal(cramPlan({ ...base, today: "2026-11-15", spentMinutes: { beforeToday: 100, today: 0 } }).line, "4 days to the exam. Done: Counters. Verified: 60%. 170 minutes behind.");
+test("the line names what's done and today's queue, never time behind, and exam day says so", () => {
+  assert.equal(cramPlan(base).line, "9 days to the exam. Done: Counters. Today: Adders. Verified: 60%.");
+  assert.equal(cramPlan({ ...base, today: "2026-11-13", spentMinutes: { beforeToday: 0, today: 0 } }).line, "6 days to the exam. Done: Counters. Today: Adders. Verified: 60%.", "nothing studied before today: no debt");
+  assert.equal(cramPlan({ ...base, today: "2026-11-15" }).line, "4 days to the exam. Done: Counters. Verified: 60%.", "a day off");
   assert.equal(cramPlan({ ...base, today: "2026-11-19" }).line, "Exam day. Light review only, nothing new.");
   assert.equal(cramPlan({ ...base, today: "2026-11-18" }).line.slice(0, 18), "1 day to the exam.");
   const nothingDone = cramPlan({ ...base, topics: topics.filter((t) => t.id !== "C") });
-  assert.equal(nothingDone.line, "9 days to the exam. Today: Adders, Buses. Verified: 33%.");
+  assert.equal(nothingDone.line, "9 days to the exam. Today: Adders. Verified: 33%.");
 });
 
 test("the plan is deterministic", () => {
@@ -117,7 +139,7 @@ test("a plan says when its budget was assumed: 2 hours for every study day from 
   assert.equal(plan.defaulted, true);
   assert.equal(plan.hoursLeft, 18);
   assert.equal(plan.minutesToday, 120);
-  assert.equal(plan.behindMinutes, 0);
+  assert.deepEqual(plan.cut, []);
 });
 
 /* ── The schedule (schedule addendum) ── */
@@ -140,34 +162,30 @@ test("the schedule has a column for every day of the budget, today flagged, the 
   assert.equal(cramPlan({ ...base, examDate: "2026-11-21" }).days.length, 9);
 });
 
-test("the days after today walk through what's left, weak spots first then the heaviest, one topic after another, until the budget is used", () => {
+test("the days after today cover every topic once, weak spots first then the heaviest, then spend the spare time going back over them", () => {
   const plan = cramPlan({ ...base, topics: withE });
-  // Today's split is proportional (E 3 unseen of 3, A 1 of 2, B 1 of 1: shares 3, 1, 1 of 60 minutes).
-  assert.deepEqual(plan.today, [{ topicId: "E", minutes: 35 }, { topicId: "A", minutes: 10 }, { topicId: "B", minutes: 10 }]);
-  // The need: 60 minutes per unverified objective at its weight (A 60, B 60, E 180: 300) stretched over the 7.5 hours (450 minutes), less today's split.
-  // From tomorrow: Adders (the weak spot) first, then Encoders (the heaviest), then Buses, each finished before the next starts.
+  // The need: 60 minutes per unverified objective at its weight (A 60, E 180, B 60: 300) of the 7.5 hours; the other 150 go to a second pass in proportion.
+  assert.deepEqual(plan.today, [{ topicId: "A", minutes: 60 }]);
   assert.deepEqual(
     plan.days.filter((d) => !d.today).map((d) => [d.day, d.topics]),
     [
-      ["2026-11-11", [{ topicId: "A", minutes: 60 }]],
-      ["2026-11-12", [{ topicId: "A", minutes: 20 }, { topicId: "E", minutes: 40 }]],
+      ["2026-11-11", [{ topicId: "E", minutes: 60 }]],
+      ["2026-11-12", [{ topicId: "E", minutes: 60 }]],
       ["2026-11-13", [{ topicId: "E", minutes: 60 }]],
-      ["2026-11-14", [{ topicId: "E", minutes: 30 }]],
+      ["2026-11-14", [{ topicId: "B", minutes: 30 }]],
       ["2026-11-15", []],
-      ["2026-11-16", [{ topicId: "E", minutes: 60 }]],
-      ["2026-11-17", [{ topicId: "E", minutes: 45 }, { topicId: "B", minutes: 15 }]],
-      ["2026-11-18", [{ topicId: "B", minutes: 60 }]],
+      ["2026-11-16", [{ topicId: "B", minutes: 30 }, { topicId: "A", minutes: 30 }]],
+      ["2026-11-17", [{ topicId: "E", minutes: 60 }]],
+      ["2026-11-18", [{ topicId: "E", minutes: 30 }, { topicId: "B", minutes: 30 }]],
     ],
   );
-  // Every later day's minutes are its hours (the needs are scaled to the time ahead); a day at 0 gets nothing.
   for (const d of plan.days.filter((d) => !d.today)) assert.equal(d.topics.reduce((sum, t) => sum + t.minutes, 0), d.hours * 60, d.day);
-  // Done and out-of-scope topics are never scheduled.
   assert.ok(plan.days.every((d) => d.topics.every((t) => t.topicId !== "C" && t.topicId !== "D")));
-  // Short of time, the need is squeezed into the hours: a one-day cram with an hour covers the scope in proportion, weak spot first.
+  // Short of time, priority decides: the weak spot, then the heaviest; the rest is cut, not squeezed.
   const squeezed = cramPlan({ ...base, topics: withE, examDate: "2026-11-12", budget: { hours: 1.5, daysOut: [], since: SINCE, perDay: { "2026-11-10": 0.5, "2026-11-11": 1 } } });
-  assert.deepEqual(squeezed.today, [{ topicId: "E", minutes: 20 }, { topicId: "A", minutes: 5 }, { topicId: "B", minutes: 5 }]);
-  assert.deepEqual(dayOf(squeezed, "2026-11-11").topics, [{ topicId: "A", minutes: 15 }, { topicId: "E", minutes: 35 }, { topicId: "B", minutes: 10 }]);
-  // Nothing left to do: empty columns.
+  assert.deepEqual(squeezed.today, [{ topicId: "A", minutes: 30 }]);
+  assert.deepEqual(dayOf(squeezed, "2026-11-11").topics, [{ topicId: "A", minutes: 30 }, { topicId: "E", minutes: 30 }]);
+  assert.deepEqual(squeezed.cut, ["B"]);
   const allDone = cramPlan({ ...base, topics: [topics[2]] });
   assert.ok(allDone.days.every((d) => d.topics.length === 0));
 });
@@ -175,7 +193,7 @@ test("the days after today walk through what's left, weak spots first then the h
 test("past days carry the walk from the start of the cram, with whether they were met when the minutes studied are known", () => {
   const later = { ...base, topics: withE, today: "2026-11-13", spentMinutes: { beforeToday: 130, today: 20 } };
   const unknown = cramPlan(later);
-  assert.deepEqual(unknown.days.slice(0, 3).map((d) => d.topics), [[{ topicId: "A", minutes: 60 }], [{ topicId: "A", minutes: 30 }, { topicId: "E", minutes: 30 }], [{ topicId: "E", minutes: 60 }]]);
+  assert.deepEqual(unknown.days.slice(0, 3).map((d) => d.topics), [[{ topicId: "A", minutes: 60 }], [{ topicId: "E", minutes: 60 }], [{ topicId: "E", minutes: 60 }]]);
   assert.ok(unknown.days.every((d) => d.spentMinutes === null && d.met === null), "not known: no mark");
   const known = cramPlan({ ...later, spentByDay: { "2026-11-10": 60, "2026-11-11": 40, "2026-11-13": 20 } });
   assert.deepEqual(known.days.slice(0, 4).map((d) => [d.spentMinutes, d.met]), [[60, true], [40, false], [0, false], [20, null]]);
@@ -192,10 +210,10 @@ test("a topic is done when every in-scope objective is verified, in progress onc
   assert.deepEqual(covered(cramPlan({ ...base, touchedObjectiveIds: ["c1"] })), { A: "untouched", B: "untouched", C: "done", D: "untouched" }, "done stays done");
 });
 
-test("days before the cram started don't count as behind or show in the schedule (left over from an earlier exam date)", () => {
+test("days before the cram started aren't part of it: no columns, no hours (left over from an earlier exam date)", () => {
   // The budget still names 11-10 to 11-12 from an earlier test, but this cram started on the 15th.
   const stale = { ...budget, since: "2026-11-15T09:00:00.000Z", perDay: { "2026-11-10": 4, "2026-11-11": 4, "2026-11-12": 3, "2026-11-15": 1, "2026-11-16": 1, "2026-11-17": 1 } };
   const plan = cramPlan({ ...base, today: "2026-11-17", examDate: "2026-11-19", budget: stale, spentMinutes: { beforeToday: 120, today: 0 } });
-  assert.equal(plan.behindMinutes, 0, "only the 15th and 16th were asked for (2 hours), and 2 hours were spent");
+  assert.equal(plan.hoursLeft, 1, "only today is left");
   assert.deepEqual(plan.days.map((d) => d.day), ["2026-11-15", "2026-11-16", "2026-11-17"]);
 });

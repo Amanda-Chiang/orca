@@ -51,6 +51,42 @@ export function spentMinutesInOrca(results: readonly QuizResult[], courseId: str
   return spent;
 }
 
+/** A pause longer than this between Claude's connector events ends a study stretch (owner, 2026-11-16: Claude sessions count as study). */
+export const CONNECTOR_GAP_MINUTES = 30;
+/** What one event at the end of a stretch counts for (the question it answered took some time too). */
+export const CONNECTOR_TAIL_MINUTES = 5;
+
+/** An evidence event as the connector estimate reads it: when, and whether it came through Claude. */
+export interface ConnectorActivity {
+  at: string;
+  /** "connector" on an answer, work or signal Claude recorded. */
+  source?: string | null;
+  /** "connector" or "connector-struggled" on a flag Claude raised. */
+  flagSource?: string | null;
+}
+
+/**
+ * Minutes of study with Claude, by the student's day, from the connector's evidence: the events are
+ * cut into stretches wherever CONNECTOR_GAP_MINUTES pass without one, and each stretch counts from its
+ * first event to its last plus CONNECTOR_TAIL_MINUTES. A stretch counts on the day it started.
+ */
+export function connectorMinutesByDay(events: readonly ConnectorActivity[], dayOf: (iso: string) => string): Map<string, number> {
+  const times = events
+    .filter((e) => e.source === "connector" || (e.flagSource ?? "").startsWith("connector"))
+    .map((e) => ({ t: Date.parse(e.at), at: e.at }))
+    .sort((a, b) => a.t - b.t);
+  const byDay = new Map<string, number>();
+  let i = 0;
+  while (i < times.length) {
+    let j = i;
+    while (j + 1 < times.length && times[j + 1].t - times[j].t <= CONNECTOR_GAP_MINUTES * 60_000) j++;
+    const day = dayOf(times[i].at);
+    byDay.set(day, (byDay.get(day) ?? 0) + (times[j].t - times[i].t) / 60_000 + CONNECTOR_TAIL_MINUTES);
+    i = j + 1;
+  }
+  return byDay;
+}
+
 /** Minutes of finished sessions in this course since `since`, by the student's day (the plan's `spentByDay`; "in Orca", as `spentMinutesInOrca`). */
 export function spentMinutesByDayInOrca(results: readonly QuizResult[], courseId: string, since: string, dayOf: (iso: string) => string): Record<string, number> {
   const byDay: Record<string, number> = {};

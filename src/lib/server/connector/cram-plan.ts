@@ -10,6 +10,7 @@
  * have evidence since the cram started (the topics' `covered`).
  */
 import type { CourseState, CoverageLine, ExamLine, ObjectiveLine, TopError } from "@/lib/connector/mcp";
+import { connectorMinutesByDay as sharedConnectorMinutes } from "@/lib/course/cram-page";
 import { scopingExam } from "@/lib/course/weights";
 import { ERROR_TYPES } from "@/lib/grading";
 import { cramPlan, defaultBudget, type CramPlanInput, type SpentMinutes } from "@/lib/mastery/cram-plan";
@@ -17,8 +18,6 @@ import { dayKeyIn } from "@/lib/mastery/objective-state";
 import type { ErrorType, ObjectiveStatus } from "@/lib/mastery/types";
 import type { OrcaSupabase } from "@/lib/supabase/server";
 
-/** The connector estimate counts at most this much of a day's chat as study (contract section 6). */
-export const CONNECTOR_MINUTES_PER_DAY_CAP = 120;
 /** topErrors look back this far when no cram sets `budget.since`. */
 export const TOP_ERRORS_DAYS = 30;
 const TOP_ERRORS_LIMIT = 6;
@@ -36,27 +35,13 @@ export interface CramFieldsInput {
   objectives: readonly ObjectiveLine[];
   /** The agenda's effective weights (course × scope inside the window), by objective id. */
   weights: ReadonlyMap<string, number>;
+  /** The vault (held-back exams): the practice tests the plan places on days. */
+  vault?: ReadonlyArray<{ materialId: string; filename: string }>;
 }
 
-/**
- * Minutes of connector study estimated from its evidence, by day (the student's): the span from the
- * first to the last connector-sourced event, capped. A day with one event counts 0.
- */
-export function connectorMinutesByDay(events: ReadonlyArray<{ at: string; source: string | null }>, timezone: string): Map<string, number> {
-  const dayKey = dayKeyIn(timezone);
-  const spans = new Map<string, { first: number; last: number }>();
-  for (const e of events) {
-    if (e.source !== "connector") continue;
-    const t = Date.parse(e.at);
-    const day = dayKey(e.at);
-    const span = spans.get(day);
-    if (!span) spans.set(day, { first: t, last: t });
-    else {
-      span.first = Math.min(span.first, t);
-      span.last = Math.max(span.last, t);
-    }
-  }
-  return new Map([...spans].map(([day, { first, last }]) => [day, Math.min(CONNECTOR_MINUTES_PER_DAY_CAP, (last - first) / 60_000)]));
+/** Minutes of study with Claude by the student's day: `connectorMinutesByDay` (stretches of connector evidence), as the cram page counts it. */
+export function connectorMinutesByDay(events: ReadonlyArray<{ at: string; source: string | null; flag_source?: string | null }>, timezone: string): Map<string, number> {
+  return sharedConnectorMinutes(events.map((e) => ({ at: e.at, source: e.source, flagSource: e.flag_source ?? null })), dayKeyIn(timezone));
 }
 
 /** The connector estimate over every day. */
@@ -134,6 +119,12 @@ function coverageOf(topics: CramPlanInput["topics"]): CoverageLine {
   return { verified, total, share: total ? verified / total : 0, byTopic };
 }
 
+/** The vault's exams as the plan's practice tests, with the exam's length when its scope knows it. */
+function mocksOf(exam: ExamLine, input: CramFieldsInput): NonNullable<CramPlanInput["mocks"]> {
+  const minutes = exam.scope?.format?.minutes;
+  return (input.vault ?? []).map((v) => ({ materialId: v.materialId, name: v.filename, ...(minutes ? { minutes } : {}) }));
+}
+
 export async function cramFields(db: OrcaSupabase, ownerId: string, input: CramFieldsInput): Promise<Pick<CourseState, "plan" | "coverage" | "topErrors">> {
   const scoped = input.exams.map((e) => ({ ...e, courseId: input.courseId, scope: e.scope ?? null }));
   const scoping = scopingExam(scoped, input.courseId, input.today);
@@ -143,7 +134,7 @@ export async function cramFields(db: OrcaSupabase, ownerId: string, input: CramF
 
   const [sessions, events] = await Promise.all([
     budget ? db.from("session_results").select("finished_at, seconds").eq("owner_id", ownerId).eq("course_id", input.courseId).gte("finished_at", since) : Promise.resolve({ data: [], error: null }),
-    db.from("evidence_events").select("at, kind, source, error_type, objective_id").eq("owner_id", ownerId).eq("course_id", input.courseId).gte("at", since),
+    db.from("evidence_events").select("at, kind, source, flag_source, error_type, objective_id").eq("owner_id", ownerId).eq("course_id", input.courseId).gte("at", since),
   ]);
   for (const r of [sessions, events]) if (r.error) throw new Error(`Couldn't read the course: ${r.error.message}`);
 
@@ -151,11 +142,11 @@ export async function cramFields(db: OrcaSupabase, ownerId: string, input: CramF
   let plan: CourseState["plan"] = null;
   if (cramming && budget) {
     const spentByDay = spentMinutesByDay(sessions.data ?? [], events.data ?? [], input.timezone);
-    plan = cramPlan({ today: input.today, examDate: cramming.date, budget, topics: planTopics(cramming, input), spentMinutes: spentMinutesSplit(sessions.data ?? [], events.data ?? [], input.timezone, input.today), spentByDay, touchedObjectiveIds: touchedSince(events.data ?? [], budget.since) });
+    plan = cramPlan({ today: input.today, examDate: cramming.date, budget, topics: planTopics(cramming, input), spentMinutes: spentMinutesSplit(sessions.data ?? [], events.data ?? [], input.timezone, input.today), spentByDay, touchedObjectiveIds: touchedSince(events.data ?? [], budget.since), mocks: mocksOf(cramming, input) });
   } else if (cramming) {
     // No budget set yet: the plan assumes one (2 hours a study day from now, nothing spent, nothing touched) and says so, so Claude can ask.
     const assumed = defaultBudget(input.today, cramming.date, input.at.toISOString());
-    plan = cramPlan({ today: input.today, examDate: cramming.date, budget: assumed, topics: planTopics(cramming, input), spentMinutes: { beforeToday: 0, today: 0 }, spentByDay: {}, touchedObjectiveIds: [], defaulted: true });
+    plan = cramPlan({ today: input.today, examDate: cramming.date, budget: assumed, topics: planTopics(cramming, input), spentMinutes: { beforeToday: 0, today: 0 }, spentByDay: {}, touchedObjectiveIds: [], defaulted: true, mocks: mocksOf(cramming, input) });
   }
   return { plan, coverage, topErrors: topErrorsOf(events.data ?? []) };
 }
