@@ -1,7 +1,7 @@
 import { type Page } from "@playwright/test";
 import type { QuizQuestion } from "../src/lib/data";
 import { fakeCalls, fakeModel } from "./fake-model";
-import { expect, test, F, FIXTURE_STATE, fixtureMaterial, ids, seedState, stored } from "./fixture";
+import { expect, test, F, FIXTURE_STATE, fixtureMaterial, ids, seedPages, seedState, stored } from "./fixture";
 
 /**
  * The Claude connector, end to end: the link minted in Settings, then the MCP route as Claude
@@ -310,4 +310,51 @@ test("a made-up link is refused, and GET isn't served", async ({ page }) => {
   expect(bogus.body!.error!.message).toMatch(/isn't valid/);
   const got = await page.request.get("/api/mcp/" + "x".repeat(43));
   expect(got.status()).toBe(405);
+});
+
+test("the exam map: Claude reads a held-back exam (never the reserved one), stores the rules and the problem types, and the cram page shows them", async ({ page, student }) => {
+  const id = ids("fall25", "fall23");
+  const fall25 = { ...fixtureMaterial(F.course), id: id.fall25, filename: "Fall25 Quiz 2.pdf", type: "Practice exam" as const, heldBack: true };
+  const fall23 = { ...fixtureMaterial(F.course), id: id.fall23, filename: "Fall23 Quiz 2.pdf", type: "Past exam" as const, heldBack: true };
+  await seedState(student, { ...FIXTURE_STATE, materials: [...FIXTURE_STATE.materials, fall25, fall23] });
+  await seedPages(student, { [id.fall25]: [{ n: 1, text: "Problem 1: sign-extend 0b1011 to 8 bits." }], [id.fall23]: [{ n: 1, text: "Problem 1: convert -5 to two's complement." }] });
+  await page.goto("/settings?section=connections");
+  const card = page.locator('[data-part="claude-connector"]');
+  await card.locator('[data-part="connector-create"]').click();
+  const url = (await card.locator('[data-part="connector-url"]').textContent())!.trim();
+
+  const soon = new Date(Date.now() + 5 * 86_400_000).toISOString().slice(0, 10);
+  const exam = toolText(await call(page, url, "set_exam", { courseId: F.course, title: "Quiz 2", date: soon, topicIds: [], cramming: true, scope: { reservedMaterialId: id.fall23, rules: { notes: "none", calculator: "simple", minutes: 75 } } })) as { id: string };
+
+  // The vault is hidden from the student, not from the tutor; the reserved exam stays unread until it's sat.
+  const read = toolText(await call(page, url, "vault_material", { courseId: F.course, materialId: id.fall25 })) as { doNotReveal: boolean; pages: Array<{ text: string }>; totalPages: number };
+  expect(read.doNotReveal).toBe(true);
+  expect(read.pages[0].text).toContain("sign-extend");
+  expect(read.totalPages).toBe(1);
+  const refused = await call(page, url, "vault_material", { courseId: F.course, materialId: id.fall23 });
+  expect(refused.body!.result!.isError).toBe(true);
+  expect((toolText(await call(page, url, "vault_material", { courseId: F.course, materialId: id.fall23, forMock: true })) as { pages: unknown[] }).pages).toHaveLength(1);
+  // A lecture isn't in the vault.
+  expect((await call(page, url, "vault_material", { courseId: F.course, materialId: F.material })).body!.result!.isError).toBe(true);
+
+  // Claude maps what it read; a later budget-only update keeps the map.
+  const mapped = await call(page, url, "set_exam", { courseId: F.course, examId: exam.id, scope: { problemTypes: [{ id: "sign-extension", name: "Sign-extend a number", objectiveIds: [F.signExtend], materialIds: [id.fall25] }] } });
+  expect(mapped.body!.result!.isError).toBeFalsy();
+  await call(page, url, "set_exam", { courseId: F.course, examId: exam.id, scope: { budget: { today: 1 } } });
+  const state = toolText(await call(page, url, "course_state", { courseId: F.course, detail: "summary" })) as { vault: Array<{ materialId: string; reserved: boolean }>; exams: Array<{ scopeSummary: { rules: unknown; reservedMaterialId: string; examMap: { examsMapped: number; uncertain: boolean; types: Array<{ id: string; exams: number }> } } }> };
+  expect(state.vault.map((v) => [v.materialId, v.reserved]).sort()).toEqual([[id.fall25, false], [id.fall23, true]].sort());
+  expect(state.exams[0].scopeSummary.rules).toEqual({ notes: "none", calculator: "simple", minutes: 75 });
+  expect(state.exams[0].scopeSummary.examMap).toMatchObject({ examsMapped: 1, uncertain: true, types: [{ id: "sign-extension", exams: 1 }] });
+
+  await page.goto(`/course/${FIXTURE_STATE.courses[0].slug}/cram`);
+  const map = page.locator("[data-part=cram-exam-map]");
+  await expect(map).toHaveAttribute("data-mapped", "1");
+  await expect(map.locator("[data-part=cram-rules]")).toHaveText("Closed book · simple calculator · 75 min");
+  await expect(map.locator("[data-part=cram-problem-type]")).toHaveText(["Sign-extend a numberon 1 of 1 exam"]);
+  await expect(map.locator("[data-part=cram-map-uncertain]")).toBeVisible();
+  // The reserved exam is marked; reserving the other one moves the mark and is saved.
+  await expect(page.locator('[data-part=cram-vault-item][data-reserved="1"]')).toContainText("Fall23 Quiz 2.pdf");
+  await page.locator("[data-part=cram-vault-item]", { hasText: "Fall25 Quiz 2.pdf" }).locator("[data-part=cram-reserve]").click();
+  await expect(page.locator('[data-part=cram-vault-item][data-reserved="1"]')).toContainText("Fall25 Quiz 2.pdf");
+  expect((await stored(page, student)).exams.find((e) => e.id === exam.id)!.scope?.reservedMaterialId).toBe(id.fall25);
 });

@@ -10,7 +10,8 @@
  */
 
 import { SCOPE_STRENGTH } from "../course/scope.ts";
-import { MATERIAL_TYPES, type CramBudget, type ExamScope, type MaterialType, type ScopeEvidence, type ScopeSignal } from "../data.ts";
+import { MATERIAL_TYPES, type CramBudget, type ExamRules, type ExamScope, type MaterialType, type ProblemType, type ScopeEvidence, type ScopeSignal } from "../data.ts";
+import type { ExamMap } from "../course/exam-map.ts";
 import { BUDGET_DAYS_MAX, HOURS_PER_DAY_MAX, HOUR_STEP, isDay, isHalfHours, type CramBudgetInput } from "../mastery/cram-budget.ts";
 import type { CramPlan } from "../mastery/cram-plan.ts";
 import type { ErrorType, FlagStrength, Help, SignalEvent, WorkEvent } from "../mastery/types.ts";
@@ -19,7 +20,7 @@ import type { ScreenHit } from "../untrusted/screen.ts";
 
 export const PROTOCOL_VERSION = "2025-06-18";
 const KNOWN_VERSIONS = new Set(["2025-06-18", "2025-03-26", "2024-11-05"]);
-export const SERVER_INFO = { name: "orca", version: "0.4" } as const;
+export const SERVER_INFO = { name: "orca", version: "0.5" } as const;
 
 /** What Claude is told when it connects: the study session as a script; the tool descriptions do the rest. */
 export const INSTRUCTIONS =
@@ -34,7 +35,7 @@ export const INSTRUCTIONS =
   "queue, one topic at a time, in this order: when plan.diagnostic isn't null, first a sweep (one " +
   "question per topic in plan.diagnostic.topicIds, from next_questions with that topicId and count 1, " +
   "no teaching yet; the misses are the weak spots); when plan.mockToday isn't null, the practice test " +
-  "(open that vault file only now, timed at its minutes, then grade it and record each problem with " +
+  "(vault_material with forMock true, given as written and timed at its minutes, then grade it and record each problem with " +
   "log_evidence); then plan.today's topics in order, each taught and checked until it's verified or " +
   "its minutes are used, before the next. Never call the student behind or late: missed time only " +
   "moves topics to plan.cut, which you name as what goes if time runs short. Time with you counts as " +
@@ -49,7 +50,16 @@ export const INSTRUCTIONS =
   "the eve (mode day-of, or plan.daysLeft is 1 or less), mention " +
   "topErrors: the kinds of mistake the student makes most. Follow mode: normal, a " +
   "short review of what's due; exam-week, work through the exam's scope, heaviest first; day-of, a " +
-  "quick pass over what's weak and nothing new. 2) Setup: when an exam is near and has no scope, " +
+  "quick pass over what's weak and nothing new. 2) Exam map first: before planning or teaching for an " +
+  "exam, ask for EVERY past and practice exam the student has (add_material holds them back) and for " +
+  "the exam's rules (closed book? formula sheet? calculator? how long? how it's graded), and store the " +
+  "rules as scope.rules. With two or more exams in the vault, agree which one to reserve " +
+  "(scope.reservedMaterialId) so one timed score survives. Read the others with vault_material, then " +
+  "record what kinds of problem they ask as scope.problemTypes, each with the objectives it uses and " +
+  "the exams it's on. Plan from that map: teach the types that recur across exams first, at the " +
+  "exams' difficulty, and say so when scopeSummary.examMap.uncertain is true (fewer than three exams " +
+  "read: a type on none of them can still appear). An exam with a vault but no problemTypes hasn't " +
+  "been mapped: do that before anything else. Setup: when an exam is near and has no scope, " +
   "ask what the professor said it covers, whether there's a practice exam or study guide " +
   "(add_material: pasted text, or file true for an upload link; past and practice exams are held " +
   "back), and what the student is worried about (flag_check with strength struggled); then record " +
@@ -82,13 +92,16 @@ export const INSTRUCTIONS =
   "what the student did (got-it, lost, asked-answer, asked-harder), with log_evidence. 6) When " +
   "next_questions returns pending, Orca is writing questions: teach from the material meanwhile " +
   "and ask again after retryAfterSeconds, or write them yourself. When budget.ok is false, say so: " +
-  "Orca can't write or grade prose until it resets (resetsAt). 7) Never open, quote or ask from a " +
-  "vault item: it's the student's practice test. Name it and say when to sit it. 8) Call flag_check " +
+  "Orca can't write or grade prose until it resets (resetsAt). 7) The vault is hidden from the " +
+  "student, not from you: read every held-back exam with vault_material to plan, but never show, " +
+  "quote or walk through its problems or solutions; write your own problems of the same kinds. The " +
+  "reserved exam (vault[].reserved) you don't read either until the student sits it timed. 8) Call flag_check " +
   "only for objectives the student asked about or got wrong in this chat. 9) Every few answers, " +
   "send a one-line progress note unasked: what's verified, what's still weak, what's next.";
 
 /** An exam scope as set_exam takes it: the budget is an input merged over the exam's (src/lib/mastery/cram-budget.ts `mergeBudget`), and `objectives` and `sources` left out keep the exam's. */
-export type ScopeInput = Omit<ExamScope, "budget" | "objectives" | "sources"> & { objectives?: ExamScope["objectives"]; sources?: ScopeSignal[]; budget?: CramBudgetInput; patchObjectives?: boolean };
+/** `reservedMaterialId` null clears the reservation. */
+export type ScopeInput = Omit<ExamScope, "budget" | "objectives" | "sources" | "reservedMaterialId"> & { objectives?: ExamScope["objectives"]; sources?: ScopeSignal[]; budget?: CramBudgetInput; patchObjectives?: boolean; reservedMaterialId?: string | null };
 export type { CramBudgetInput };
 
 /* ── Tool results: plain data the implementations return; the protocol wraps them ── */
@@ -145,6 +158,10 @@ export interface ScopeSummary {
   budget?: CramBudget;
   /** What the student said feels shaky at cram setup, in their words. */
   worries?: string;
+  rules?: ExamRules;
+  /** The exam map: problem types by how many of the mapped past exams ask them; absent until you write scope.problemTypes. */
+  examMap?: ExamMap;
+  reservedMaterialId?: string;
 }
 
 /** A material of the course (not removed), so Claude can map "lectures 11 to 16" to files. */
@@ -161,6 +178,21 @@ export interface VaultLine {
   materialId: string;
   filename: string;
   type: MaterialType;
+  /** Kept unread, even by you, until the student sits it timed (an exam's scope.reservedMaterialId). */
+  reserved: boolean;
+}
+
+/** A held-back exam's pages, for the tutor's planning only. */
+export interface VaultMaterial {
+  materialId: string;
+  filename: string;
+  type: MaterialType;
+  pages: Array<{ n: number; text: string }>;
+  /** The page to ask for next (`fromPage`) when the file has more; absent at the end. */
+  nextPage?: number;
+  totalPages: number;
+  doNotReveal: true;
+  note: string;
 }
 
 export interface TopicLine {
@@ -396,6 +428,8 @@ export interface ConnectorTools {
   flagCheck(courseId: string, objectiveIds: string[], said: string, strength: FlagStrength): Promise<FlagCheckResult | { error: string }>;
   /** The anchored pages of some objectives, never from a held-back or removed material. Null: no such course. */
   materialFor(courseId: string, objectiveIds: string[]): Promise<MaterialFor | null>;
+  /** A held-back exam's pages for planning (never the reserved one unless `forMock`); an error when it isn't in the vault. */
+  vaultMaterial(courseId: string, materialId: string, options: { fromPage?: number; forMock?: boolean }): Promise<VaultMaterial | { error: string }>;
   /** Store questions Claude wrote (validated like generated ones, source claude). */
   addQuestions(courseId: string, questions: AddQuestion[]): Promise<AddQuestionsResult | { error: string }>;
   /** Add pasted text as material, or hand back a link to upload a file. */
@@ -415,6 +449,10 @@ const BASES = ["official-solution", "known-answer", "claude"] as const satisfies
 const SIGNALS = ["got-it", "lost", "asked-answer", "asked-harder"] as const satisfies readonly SignalEvent["signal"][];
 const SCOPE_SIGNALS = ["practice-exam", "professor", "study-guide", "homework", "lecture-emphasis", "guess"] as const satisfies readonly ScopeSignal[];
 const SCOPE_KINDS = ["Multiple choice", "True or false", "Short answer", "Problem"] as const;
+const RULE_NOTES = ["none", "sheet", "open"] as const;
+const RULE_CALCULATORS = ["none", "simple", "any"] as const;
+/** The most problem types an exam map holds. */
+const PROBLEM_TYPES_MAX = 40;
 type ScopeKind = (typeof SCOPE_KINDS)[number];
 const QUESTION_KINDS = ["Multiple choice", "True or false", "Short answer"] as const;
 /** The same bounds as a generated question (src/lib/pipeline/schemas.ts). */
@@ -536,6 +574,35 @@ export const TOOLS = [
               additionalProperties: false,
             },
             sources: { type: "array", items: { type: "string", enum: SCOPE_SIGNALS }, maxItems: 6, description: "Where the scope came from, for the exam card." },
+            rules: {
+              type: "object",
+              description: "The exam's rules, from the syllabus or the professor. Ask for them at setup: they change how to study (no formula sheet means the formulas are memorised).",
+              properties: {
+                notes: { type: "string", enum: RULE_NOTES, description: "none: closed book; sheet: a formula sheet; open: open book." },
+                calculator: { type: "string", enum: RULE_CALCULATORS },
+                minutes: { type: "integer", minimum: 1, maximum: 600, description: "How long the exam runs." },
+                text: { type: "string", maxLength: QUOTE_CHARS, description: "Anything else, in the syllabus's or professor's words (how it's graded, what's given)." },
+              },
+              additionalProperties: false,
+            },
+            problemTypes: {
+              type: "array",
+              maxItems: PROBLEM_TYPES_MAX,
+              description: "The exam map: the kinds of problem the past exams ask, from the exams you read with vault_material. Replaces the list, so send every type each time. Plan the cram from it: what recurs across exams is what to teach first.",
+              items: {
+                type: "object",
+                properties: {
+                  id: { type: "string", description: "A short slug you choose and keep, e.g. charge-sharing." },
+                  name: { type: "string", description: "What the problem asks, e.g. Charge sharing between two capacitors." },
+                  objectiveIds: { type: "array", items: UUID, maxItems: 40, description: "The objectives a problem of this kind uses (empty when none fits)." },
+                  materialIds: { type: "array", items: UUID, description: "The past or practice exams it appears on (material ids)." },
+                  note: { type: "string", maxLength: QUOTE_CHARS, description: "What it asks for and where points are lost; no problem text from a held-back exam." },
+                },
+                required: ["id", "name", "objectiveIds", "materialIds"],
+                additionalProperties: false,
+              },
+            },
+            reservedMaterialId: { type: ["string", "null"], description: "The one held-back exam to keep unread, even by you, until the student sits it timed (their measured score). With two or more past exams, reserve one before reading the rest; null clears it." },
             patchObjectives: { type: "boolean", description: "true: objectives lists only the ones to change; each replaces that objective's entry and every other objective keeps its weight (sources optional, added to the exam's). Use it to turn a few objectives on or off without resending the whole list." },
             budget: {
               type: "object",
@@ -660,6 +727,26 @@ export const TOOLS = [
         objectiveIds: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 10, description: "1 to 10 objective ids from course_state." },
       },
       required: ["courseId", "objectiveIds"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "vault_material",
+    description:
+      "A held-back past or practice exam, as text, for YOU to plan from: what kinds of problem the exam asks, how hard, " +
+      "in what notation. Read every exam in course_state's vault at the start of a cram, except the reserved one. Never " +
+      "show the student its problems or solutions, quote them, or teach by walking through them: write your own " +
+      "problems of the same kinds. The reserved exam is refused until the student sits it timed (forMock true). Up to 8 " +
+      "pages a call; pass fromPage (the result's nextPage) for the rest.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        courseId: UUID,
+        materialId: { ...UUID, description: "A material id from course_state's vault." },
+        fromPage: { type: "integer", minimum: 1, description: "The page to start from (default 1)." },
+        forMock: { type: "boolean", description: "true only when the student is sitting this exam timed now: the one case the reserved exam is returned." },
+      },
+      required: ["courseId", "materialId"],
       additionalProperties: false,
     },
   },
@@ -895,8 +982,50 @@ async function parseScope(tools: ConnectorTools, raw: unknown): Promise<{ scope:
     if (!Array.isArray(raw.materialIds) || raw.materialIds.length > MATERIALS_MAX || !raw.materialIds.every(isUuid)) return { error: `scope.materialIds is a list of up to ${MATERIALS_MAX} material ids from course_state.` };
     materialIds = [...new Set(raw.materialIds as string[])];
   }
-  if (patch) return { scope: { objectives, patchObjectives: true, ...(raw.sources !== undefined ? { sources: [...new Set(raw.sources as ScopeSignal[])] } : {}), ...(format !== undefined ? { format } : {}), ...(budget !== undefined ? { budget } : {}), ...(materialIds !== undefined ? { materialIds } : {}) } };
-  return { scope: { ...(keepScope ? {} : { objectives, sources: [...new Set(raw.sources as ScopeSignal[])] }), ...(format !== undefined ? { format } : {}), ...(budget !== undefined ? { budget } : {}), ...(materialIds !== undefined ? { materialIds } : {}) } };
+  let rules: ExamRules | undefined;
+  if (raw.rules !== undefined) {
+    const r = raw.rules;
+    if (!isObject(r)) return { error: "scope.rules is an object: notes, calculator, minutes, text." };
+    if (r.notes !== undefined && !isOneOf(RULE_NOTES, r.notes)) return { error: `scope.rules.notes is one of ${RULE_NOTES.join(", ")}.` };
+    if (r.calculator !== undefined && !isOneOf(RULE_CALCULATORS, r.calculator)) return { error: `scope.rules.calculator is one of ${RULE_CALCULATORS.join(", ")}.` };
+    if (r.minutes !== undefined && (typeof r.minutes !== "number" || !Number.isInteger(r.minutes) || r.minutes < 1 || r.minutes > 600)) return { error: "scope.rules.minutes is a whole number from 1 to 600." };
+    let text: string | undefined;
+    if (r.text !== undefined) {
+      if (typeof r.text !== "string" || r.text.length > QUOTE_CHARS) return { error: `scope.rules.text is at most ${QUOTE_CHARS} characters.` };
+      const screened = await screenText(tools, r.text, QUOTE_CHARS, "rules");
+      if (!screened.ok) return { error: screened.error };
+      text = screened.text ?? undefined;
+    }
+    rules = { ...(r.notes !== undefined ? { notes: r.notes } : {}), ...(r.calculator !== undefined ? { calculator: r.calculator } : {}), ...(r.minutes !== undefined ? { minutes: r.minutes as number } : {}), ...(text ? { text } : {}) };
+  }
+  let problemTypes: ProblemType[] | undefined;
+  if (raw.problemTypes !== undefined) {
+    if (!Array.isArray(raw.problemTypes) || raw.problemTypes.length > PROBLEM_TYPES_MAX) return { error: `scope.problemTypes is a list of up to ${PROBLEM_TYPES_MAX} { id, name, objectiveIds, materialIds, note? }.` };
+    problemTypes = [];
+    const seen = new Set<string>();
+    for (const [i, t] of raw.problemTypes.entries()) {
+      if (!isObject(t) || typeof t.id !== "string" || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(t.id)) return { error: `scope.problemTypes[${i}].id is a short slug you choose (lowercase letters, digits and dashes, at most 40), e.g. "charge-sharing".` };
+      if (seen.has(t.id)) return { error: `scope.problemTypes[${i}].id repeats "${t.id}".` };
+      seen.add(t.id);
+      if (typeof t.name !== "string" || t.name.trim().length === 0 || t.name.length > 120) return { error: `scope.problemTypes[${i}].name is 1 to 120 characters.` };
+      if (!Array.isArray(t.objectiveIds) || t.objectiveIds.length > 40 || !t.objectiveIds.every(isUuid)) return { error: `scope.problemTypes[${i}].objectiveIds is a list of up to 40 objective ids from course_state (empty when no objective fits).` };
+      if (!Array.isArray(t.materialIds) || t.materialIds.length > MATERIALS_MAX || !t.materialIds.every(isUuid)) return { error: `scope.problemTypes[${i}].materialIds is the list of exams (material ids from course_state's vault or materials) it appears on.` };
+      const name = await screenText(tools, t.name.trim(), 120, "problem type");
+      if (!name.ok) return { error: name.error };
+      let note: string | undefined;
+      if (t.note !== undefined) {
+        if (typeof t.note !== "string" || t.note.length > QUOTE_CHARS) return { error: `scope.problemTypes[${i}].note is at most ${QUOTE_CHARS} characters.` };
+        const screened = await screenText(tools, t.note, QUOTE_CHARS, "note");
+        if (!screened.ok) return { error: screened.error };
+        note = screened.text ?? undefined;
+      }
+      problemTypes.push({ id: t.id, name: name.text ?? t.name.trim(), objectiveIds: [...new Set(t.objectiveIds as string[])], materialIds: [...new Set(t.materialIds as string[])], ...(note ? { note } : {}) });
+    }
+  }
+  if (raw.reservedMaterialId !== undefined && raw.reservedMaterialId !== null && !isUuid(raw.reservedMaterialId)) return { error: "scope.reservedMaterialId is a material id from course_state's vault, or null to clear it." };
+  const extras = { ...(format !== undefined ? { format } : {}), ...(budget !== undefined ? { budget } : {}), ...(materialIds !== undefined ? { materialIds } : {}), ...(rules !== undefined ? { rules } : {}), ...(problemTypes !== undefined ? { problemTypes } : {}), ...(raw.reservedMaterialId !== undefined ? { reservedMaterialId: raw.reservedMaterialId as string | null } : {}) };
+  if (patch) return { scope: { objectives, patchObjectives: true, ...(raw.sources !== undefined ? { sources: [...new Set(raw.sources as ScopeSignal[])] } : {}), ...extras } };
+  return { scope: { ...(keepScope ? {} : { objectives, sources: [...new Set(raw.sources as ScopeSignal[])] }), ...extras } };
 }
 
 /** One question as add_questions takes it, checked field by field (the deeper checks, like a generated question's, are the implementation's). */
@@ -1099,6 +1228,14 @@ async function callTool(params: Record<string, unknown>, tools: ConnectorTools, 
         }
         const material = await tools.materialFor(args.courseId, [...new Set(args.objectiveIds as string[])]);
         return material ? toolText(material) : toolText({ error: "No such course." }, true);
+      }
+      case "vault_material": {
+        if (!isUuid(args.courseId)) return toolText({ error: "courseId must be a course id from course_state." }, true);
+        if (!isUuid(args.materialId)) return toolText({ error: "materialId must be a material id from course_state's vault." }, true);
+        if (args.fromPage !== undefined && (typeof args.fromPage !== "number" || !Number.isInteger(args.fromPage) || args.fromPage < 1)) return toolText({ error: "fromPage is a page number from 1." }, true);
+        if (args.forMock !== undefined && typeof args.forMock !== "boolean") return toolText({ error: "forMock is true or false." }, true);
+        const exam = await tools.vaultMaterial(args.courseId, args.materialId, { ...(typeof args.fromPage === "number" ? { fromPage: args.fromPage } : {}), ...(args.forMock === true ? { forMock: true } : {}) });
+        return toolText(exam, "error" in exam);
       }
       case "add_questions": {
         if (!isUuid(args.courseId)) return toolText({ error: "courseId must be a course id from course_state." }, true);

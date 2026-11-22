@@ -122,7 +122,9 @@ function coverageOf(topics: CramPlanInput["topics"]): CoverageLine {
 /** The vault's exams as the plan's practice tests, with the exam's length when its scope knows it. */
 function mocksOf(exam: ExamLine, input: CramFieldsInput): NonNullable<CramPlanInput["mocks"]> {
   const minutes = exam.scope?.format?.minutes;
-  return (input.vault ?? []).map((v) => ({ materialId: v.materialId, name: v.filename, ...(minutes ? { minutes } : {}) }));
+  // The reserved exam is the one to sit: it goes first, so it gets the last study day.
+  const reserved = exam.scope?.reservedMaterialId;
+  return [...(input.vault ?? [])].sort((a, b) => Number(b.materialId === reserved) - Number(a.materialId === reserved)).map((v) => ({ materialId: v.materialId, name: v.filename, ...(minutes ? { minutes } : {}) }));
 }
 
 export async function cramFields(db: OrcaSupabase, ownerId: string, input: CramFieldsInput): Promise<Pick<CourseState, "plan" | "coverage" | "topErrors">> {

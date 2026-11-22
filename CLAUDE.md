@@ -115,6 +115,17 @@ own courses (Data Structures, Fundamentals of Computer Systems) on the hosted pr
   `cram-mode`): an exam is *cramming* (a flag, from the exam card or `set_exam`) or within the 7-day window; Claude
   writes and grades during a cram, Orca stores, counts and schedules (connector v0.4, rules v4, migration
   `20261110130000`); past and practice exams are held back for a practice test. Details under "What exists".
+- **Since 2026-11-22: Orca as the tutor's memory and exam map** (plan
+  `docs/superpowers/plans/2026-11-22-tutor-memory-and-exam-map.md`; owner: Claude teaches, Orca makes sure it knows
+  what's on the exam, where the student is and what happened last time; connector-first, the app is setup and a
+  dashboard). Phase 1 is built (connector v0.5, twelve tools, no migration): `vault_material` gives the student's
+  Claude a held-back exam's pages for planning, marked do-not-reveal (hidden from the student isn't hidden from the
+  tutor; `src/lib/server/connector/vault-material.ts`); `scope.reservedMaterialId` keeps one exam unread even by
+  Claude until it's sat timed (`forMock`); `scope.problemTypes` is the exam map Claude writes (the kinds of problem
+  the past exams ask, each with its objectives and the exams it's on; `src/lib/course/exam-map.ts` orders them by
+  recurrence and marks fewer than three exams uncertain); `scope.rules` holds the exam's rules. The cram page shows
+  them ("What the exam asks", `cram-exam-map`) and a Reserve toggle per vault file. Phases 2 to 4 (a session
+  record, readiness per problem type, the tutor playbook) aren't built.
 - **Upload toasts** (2026-11-08, `src/components/layout/UploadToasts.tsx`, mounted in `providers.tsx`): an upload
   that finishes (done or failed) while the app is open, from any tab or device, pops a toast unless the student is on
   that course's uploads; uploads of one course finishing while its toast is up share it. One upload's toast opens
