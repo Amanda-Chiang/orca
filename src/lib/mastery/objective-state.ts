@@ -6,7 +6,7 @@
  */
 import { type Card, type Grade, Rating, type State, createEmptyCard, fsrs, generatorParameters } from "ts-fsrs";
 import { flagStrength } from "./flags.ts";
-import type { AnswerEvent, ConfusionEvent, EvidenceEvent, Help, ObjectiveState, ObjectiveStatus, Outcome, SignalEvent, WorkEvent } from "./types.ts";
+import type { AnswerEvent, ConfusionEvent, EvidenceEvent, Help, MarkEvent, ObjectiveState, ObjectiveStatus, Outcome, SignalEvent, WorkEvent } from "./types.ts";
 
 export const MASTERY_RULES = {
   /** Credited answers needed for mastery. */
@@ -39,6 +39,8 @@ export const MASTERY_RULES = {
    * shipped (move it, and record the new hash, if they ship later).
    */
   rotationSince: "2026-11-05T00:00:00.000Z",
+  /** A weak spot the student marked mastered (MarkEvent) gets its first spaced check this many days later (provisional; owner, 2026-11-22). */
+  markedCheckDays: 7,
 } as const;
 
 /**
@@ -52,8 +54,9 @@ export const MASTERY_RULES = {
  * version); record the new hash and golden accumulators there with the bump.
  * Version 4 (2026-11-10, cram mode): help (hint = assisted, shown = a miss), grader claude, work
  * and signal events, and the connector-struggled flag source.
+ * Version 5 (2026-11-22, owner): the student can mark a weak spot mastered (MarkEvent, markedCheckDays).
  */
-export const RULES_VERSION = 4;
+export const RULES_VERSION = 5;
 
 /** Deterministic (no fuzz), day-based (no same-day learning steps; sessions are daily), capped at 60 days. */
 export const FSRS_PARAMETERS = Object.freeze(
@@ -200,6 +203,8 @@ export interface ObjectiveAccumulator {
   checkOpen: boolean;
   /** Answered fully right by Orca's own grader at least once: what "verified" means (a self-marked correct proves nothing). */
   verifiedUnaided: boolean;
+  /** Mastered by the student's own mark (a MarkEvent), with no answer or flag since. */
+  markedByStudent: boolean;
 }
 
 export const EMPTY_ACCUMULATOR: ObjectiveAccumulator = Object.freeze({
@@ -224,6 +229,7 @@ export const EMPTY_ACCUMULATOR: ObjectiveAccumulator = Object.freeze({
   inRotation: false,
   checkOpen: false,
   verifiedUnaided: false,
+  markedByStudent: false,
 }) as ObjectiveAccumulator;
 
 function timeOf(e: Pick<EvidenceEvent, "id" | "at">) {
@@ -306,7 +312,7 @@ function applyAttempt(acc: ObjectiveAccumulator, e: GradedAttempt, options: Obje
   const before = acc.card === null ? createEmptyCard(new Date(t)) : toCard(acc.card);
   const card = capInterval(scheduler.next(before, new Date(t), gradeOf(e)).card, t);
   const stored = toStored(card);
-  const next: ObjectiveAccumulator = { ...acc, answered: acc.answered + 1, lastAt: e.at, card: stored, checkOpen: false };
+  const next: ObjectiveAccumulator = { ...acc, answered: acc.answered + 1, lastAt: e.at, card: stored, checkOpen: false, markedByStudent: false };
   if (e.outcome === "correct" && !assisted) next.verifiedUnaided = true;
   // Anything short of fully right is a weak point, wherever it was answered.
   if (e.outcome !== "correct") {
@@ -393,7 +399,7 @@ export function applyConfusion(acc: ObjectiveAccumulator, e: ConfusionEvent): Ob
   if (flagStrength(e) === "check") {
     if (!acc.inRotation) return { ...acc, lastAt: e.at, checkOpen: true };
     // The check is due now, or stays as overdue as it already was.
-    if (acc.mastered) return { ...acc, lastAt: e.at, checkDueAt: acc.checkDueAt !== null && Date.parse(acc.checkDueAt) < t ? acc.checkDueAt : e.at, retired: false };
+    if (acc.mastered) return { ...acc, lastAt: e.at, checkDueAt: acc.checkDueAt !== null && Date.parse(acc.checkDueAt) < t ? acc.checkDueAt : e.at, retired: false, markedByStudent: false };
     return { ...acc, lastAt: e.at };
   }
   return struggled(acc, e.at, t);
@@ -438,6 +444,36 @@ function struggled(acc: ObjectiveAccumulator, at: string, t: number): ObjectiveA
     missPending: false,
     missSessionId: null,
     retired: false,
+    markedByStudent: false,
+  };
+}
+
+/**
+ * The student marked it mastered (owner, 2026-11-22: "trust the student"): mastered and in rotation
+ * at once, mix-up and missed check cleared, its spaced check MASTERY_RULES.markedCheckDays later.
+ * Credit and FSRS's memory estimate are untouched (a mark isn't an answer). Already mastered and not
+ * fading: nothing changes but the time.
+ */
+export function applyMark(acc: ObjectiveAccumulator, e: MarkEvent): ObjectiveAccumulator {
+  const t = timeOf(e);
+  if (acc.lastAt !== null && t < Date.parse(acc.lastAt)) {
+    throw new Error(`Evidence ${e.id} is older than the last event applied to objective ${e.objectiveId}; rebuild its state from the log`);
+  }
+  const checkDue = acc.missPending || (acc.checkDueAt !== null && t >= Date.parse(acc.checkDueAt));
+  if (acc.mastered && !checkDue) return { ...acc, lastAt: e.at };
+  return {
+    ...acc,
+    lastAt: e.at,
+    inRotation: true,
+    checkOpen: false,
+    mastered: true,
+    mixedUp: false,
+    lastMissQuestion: null,
+    missPending: false,
+    missSessionId: null,
+    retired: false,
+    checkDueAt: new Date(t + MASTERY_RULES.markedCheckDays * 86_400_000).toISOString(),
+    markedByStudent: true,
   };
 }
 
@@ -452,6 +488,8 @@ export function applyEvidence(acc: ObjectiveAccumulator, e: EvidenceEvent, optio
       return applyWork(acc, e, options);
     case "signal":
       return applySignal(acc, e);
+    case "mark":
+      return applyMark(acc, e);
   }
 }
 
@@ -474,6 +512,8 @@ export function stateAt(objectiveId: string, acc: ObjectiveAccumulator, now: Dat
     spacedChecks: acc.spacedChecks,
     recall: acc.card === null ? null : scheduler.get_retrievability(toCard(acc.card), now, false),
     lastEvidenceAt: acc.lastAt,
+    // Snapshots folded before rules v5 lack the field (they're rebuilt as stale, but read safely meanwhile).
+    markedByStudent: acc.markedByStudent === true,
   };
 }
 

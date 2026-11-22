@@ -236,8 +236,11 @@ in the doc it affects (usually `docs/BACKEND-ROADMAP.md`) and move it to "Decide
 ### Mastery bar and "I know this"
 - Is "3 correct on 2 days" the right bar? (The same bar applies to every objective whatever its
   weight; see Decided.)
-- Should a student be able to mark "I know this"? (Proposal: it schedules one check tomorrow,
-  never mastery directly.)
+- ~~Should a student be able to mark "I know this"?~~ Decided by the owner 2026-11-22: **trust the
+  student.** The List view's status slider marks a topic's weak spots mastered at once (a `mark`
+  evidence event, rules v5), shown as "marked by you", with a spaced check
+  `MASTERY_RULES.markedCheckDays` (7, provisional) later; a miss there or a new flag brings it back.
+  Assumed: In progress can't be picked by hand; Needs review is a struggled flag on every weak spot.
 
 ### Weight formula constants
 - **Decided shape** (roadmap, "Weight signals and formula"): code computes weights from signals

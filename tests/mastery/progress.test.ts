@@ -13,6 +13,7 @@ const s = (objectiveId: string, status: ObjectiveStatus): ObjectiveState => ({
   spacedChecks: 0,
   recall: null,
   lastEvidenceAt: null,
+  markedByStudent: false,
 });
 const map = (...states: ObjectiveState[]) => new Map(states.map((x) => [x.objectiveId, x]));
 

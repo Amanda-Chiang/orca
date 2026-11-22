@@ -17,6 +17,8 @@ import { forStudent, ownsCourse, reply } from "@/lib/server/student";
  * A struggle flag (kind "confusion"): { kind, id, courseId, objectiveId, flagSource, materialId?,
  * page?, note? }. The browser sends homework (a reflection: material and note), slide (material and
  * page) and manual (neither) flags; markers and connector flags are written on the server.
+ * A mark (kind "mark"): { kind, id, courseId, objectiveId }, the student marking a weak spot
+ * mastered in the List view (owner, 2026-11-22; rules v5).
  *
  * The server stamps the time (a browser's clock can't be trusted for spacing) and takes the topic,
  * objective and tier from the question or objective rows, not from the request.
@@ -51,7 +53,8 @@ const Confusion = z
   .refine((b) => b.flagSource !== "homework" || (b.materialId !== null && b.note !== null), "A homework flag needs its upload and note.")
   .refine((b) => b.flagSource !== "slide" || (b.materialId !== null && b.page !== null), "A slide flag needs its upload and page.")
   .refine((b) => b.flagSource !== "manual" || (b.materialId === null && b.page === null), "A manual flag isn't about an upload.");
-const Body = z.union([Answer, Confusion]);
+const Mark = z.object({ kind: z.literal("mark"), id: uuid, courseId: uuid, objectiveId: uuid });
+const Body = z.union([Answer, Confusion, Mark]);
 
 export async function POST(request: Request) {
   return forStudent(request, async (student, db) => {
@@ -97,6 +100,11 @@ export async function POST(request: Request) {
         source: body.source,
         sessionId: body.sessionId,
       };
+    } else if (body.kind === "mark") {
+      const { data: objective, error } = await db.from("objectives").select("topic_id").eq("owner_id", student.id).eq("course_id", body.courseId).eq("id", body.objectiveId).maybeSingle();
+      if (error) throw new Error(`Couldn't read the objective: ${error.message}`);
+      if (!objective) return reply(404, { error: "No such objective in this course." });
+      event = { kind: "mark", id: body.id, at, courseId: body.courseId, topicId: objective.topic_id, objectiveId: body.objectiveId };
     } else {
       const [objective, material] = await Promise.all([
         db.from("objectives").select("topic_id").eq("owner_id", student.id).eq("course_id", body.courseId).eq("id", body.objectiveId).maybeSingle(),

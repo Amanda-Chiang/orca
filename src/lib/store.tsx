@@ -57,7 +57,7 @@ import {
 import type { LlmConfig } from "./llm";
 import { type AvatarId, DEFAULT_AVATAR } from "./avatars";
 import type { QuizQuestion } from "./data";
-import type { AnswerEvent, ConfusionEvent, EvidenceEvent } from "./mastery/types";
+import type { AnswerEvent, ConfusionEvent, EvidenceEvent, MarkEvent } from "./mastery/types";
 import type { CourseStructure } from "./course/ops";
 import { type CourseMastery, courseMastery } from "./mastery/course-mastery";
 import { type TodoCard, todoCards } from "./mastery/todo";
@@ -195,6 +195,8 @@ interface OrcaActions {
   recordReflection: (materialId: string, note: string, events: Array<Omit<ConfusionEvent, "id" | "at" | "kind" | "materialId" | "note" | "flagSource" | "page">>) => void;
   /** "This is hard": one struggled flag from `manual` per objective (random ids, so flagging again later is recorded again). */
   flagObjectives: (courseId: string, objectiveIds: readonly string[]) => void;
+  /** The List view's "mark as mastered": one mark per objective (rules v5: mastered at once, checked later). Not counted if it can't be saved. */
+  markMastered: (courseId: string, objectiveIds: readonly string[]) => void;
   /** Ask for questions for flagged objectives that have none (a flag top-up); nothing when they all have some. */
   requestQuestions: (courseId: string, objectiveIds: readonly string[]) => void;
   /** "Which slides were hard?": one struggle flag (source slide) per objective, on the first selected page that names it. */
@@ -796,6 +798,28 @@ export function OrcaProvider({ children }: { children: React.ReactNode }) {
     [saveFlags],
   );
 
+  const markMastered = useCallback<OrcaActions["markMastered"]>(
+    (courseId, objectiveIds) => {
+      const at = new Date().toISOString();
+      const catalogue = stateRef.current.objectives[courseId] ?? {};
+      const marks: MarkEvent[] = objectiveIds.map((objectiveId) => {
+        const o = catalogue[objectiveId];
+        if (!o) throw new Error(`Objective ${objectiveId} is not in course ${courseId}`);
+        return { kind: "mark", id: crypto.randomUUID(), at, courseId, topicId: o.topicId, objectiveId };
+      });
+      if (!marks.length) return;
+      const ids = new Set(marks.map((m) => m.id));
+      setState((s) => ({ ...s, evidence: [...s.evidence, ...marks] }));
+      save(
+        async () => {
+          for (const m of marks) await postEvidence(m, { kind: "mark", id: m.id, courseId, objectiveId: m.objectiveId });
+        },
+        { onFail: () => setState((s) => ({ ...s, evidence: s.evidence.filter((e) => !ids.has(e.id)) })) },
+      );
+    },
+    [save, postEvidence],
+  );
+
   const flagSlides = useCallback<OrcaActions["flagSlides"]>(
     (courseId, materialId, pages) => {
       // One flag per objective: overlapping pages name some objectives twice.
@@ -984,6 +1008,7 @@ export function OrcaProvider({ children }: { children: React.ReactNode }) {
       recordEvidence,
       recordReflection,
       flagObjectives,
+      markMastered,
       flagSlides,
       requestQuestions: requestFlagTopUp,
       setOnboarded,
@@ -999,7 +1024,7 @@ export function OrcaProvider({ children }: { children: React.ReactNode }) {
       dismissSaveError,
       reload,
     }),
-    [state, hydrated, status, loadError, saving, saveError, flagTopUpRun, addCourse, renameCourse, setConfig, clearConfigOverride, addExam, updateExam, removeExam, rateQuestion, saveProgress, setDefaults, addMaterial, recordQuiz, recordEvidence, recordReflection, flagObjectives, flagSlides, requestFlagTopUp, setOnboarded, markTipsSeen, skipTips, setName, setTimezone, setAvatar, setLlm, refresh, afterSaves, editStructure, dismissSaveError, reload],
+    [state, hydrated, status, loadError, saving, saveError, flagTopUpRun, addCourse, renameCourse, setConfig, clearConfigOverride, addExam, updateExam, removeExam, rateQuestion, saveProgress, setDefaults, addMaterial, recordQuiz, recordEvidence, recordReflection, flagObjectives, markMastered, flagSlides, requestFlagTopUp, setOnboarded, markTipsSeen, skipTips, setName, setTimezone, setAvatar, setLlm, refresh, afterSaves, editStructure, dismissSaveError, reload],
   );
 
   return <OrcaContext.Provider value={value}>{children}</OrcaContext.Provider>;

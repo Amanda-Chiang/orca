@@ -97,6 +97,8 @@ const RULES_HASHES: Record<number, string> = {
   // 2026-11-10 (cram mode): FLAG_STRENGTH gains connector-struggled; help (hint assisted, shown a miss),
   // grader claude, work and signal events (tests/mastery/cram-rules.test.ts).
   4: "e6ecc7ef35cee403314de08652aa8e7b427115b18ca2dd8ffe8c50754335f756",
+  // 2026-11-22 (owner): the student can mark a weak spot mastered (MarkEvent); markedCheckDays.
+  5: "f6da1fd47ff4d876a366429773ab31b51839c8176399c06e40ec8d2a968ece1f",
 };
 
 /**
@@ -171,6 +173,11 @@ const GOLDEN: Record<number, Golden> = {
 };
 // Version 4 changes nothing for a log without help, work or signals: the same accumulators as version 3.
 GOLDEN[4] = GOLDEN[3];
+// Version 5 adds markedByStudent; a log without marks leaves it false.
+GOLDEN[5] = {
+  beforeConfusion: { ...GOLDEN[3].beforeConfusion, markedByStudent: false },
+  end: { ...GOLDEN[3].end, markedByStudent: false },
+};
 
 // Version 1 was hashed before flag strengths existed; from version 2 they're part of the rules.
 const rulesHash = () => createHash("sha256").update(JSON.stringify({ rules: MASTERY_RULES, fsrs: FSRS_PARAMETERS, flags: FLAG_STRENGTH })).digest("hex");
@@ -297,6 +304,10 @@ GOLDEN_FLAGS[3] = {
   },
 };
 GOLDEN_FLAGS[4] = GOLDEN_FLAGS[3];
+GOLDEN_FLAGS[5] = {
+  beforeStruggled: { ...GOLDEN_FLAGS[3].beforeStruggled, markedByStudent: false },
+  end: { ...GOLDEN_FLAGS[3].end, markedByStudent: false },
+};
 
 test("the flags log reads check-due, verified, fading, mastered, fading, learning as it goes", () => {
   const statuses = FLAGS_LOG.map((e, i) => stateAt("o", replayObjective("o", FLAGS_LOG.slice(0, i + 1), GOLDEN_OPTIONS), new Date(Date.parse(e.at) + 60_000)).status);
