@@ -89,11 +89,6 @@ export function CramSetup({ exam, course, candidates, materials, catalogue, mast
 
   return (
     <div className="flex flex-col gap-[16px]" data-part="cram-setup">
-      <div className="flex flex-col gap-[6px]">
-        <h2 className="text-[28px] font-semibold text-prussian">Cram for {exam.title}</h2>
-        <p className="text-[15px] font-medium text-wisteria-deep">Tell Orca what the exam covers and how much time you have. Claude teaches from it, and Orca keeps score.</p>
-      </div>
-
       <label className="flex flex-col gap-[6px]">
         <span className="text-[15px] font-bold text-prussian">What did your professor say about it?</span>
         <textarea

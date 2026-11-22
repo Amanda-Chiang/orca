@@ -6,7 +6,7 @@ import type { Course } from "@/lib/data";
 import { cardExam, daysUntil, examObjectives } from "@/lib/course/exam-card";
 import type { CourseMastery } from "@/lib/mastery/course-mastery";
 import { Card } from "@/components/ui/Card";
-import { useConnectorStatus, useCramPlan } from "@/components/course/useCram";
+import { useConnectorStatus } from "@/components/course/useCram";
 import { useDayKey, useOrca } from "@/lib/store";
 import { useNow } from "@/hooks/useNow";
 import { fadeUp } from "@/lib/motion";
@@ -28,8 +28,8 @@ const sourceName: Record<string, string> = {
 /**
  * The course page's exam card (contract sections 5 and 6): the soonest upcoming exam (the one being
  * crammed for first), days left, how much of its scope is verified, and Cram for this exam, which
- * goes to the cram page's setup. While cramming: the plan line (to the page), Study with Claude,
- * Edit scope, Stop cramming.
+ * goes to the cram page's setup. While cramming: Open plan (the page), Study with Claude until the
+ * connector is set up, Edit scope, Stop cramming.
  */
 export function ExamCard({ course, mastery }: { course: Course; mastery: CourseMastery }) {
   const { exams, objectives, updateExam } = useOrca();
@@ -38,7 +38,6 @@ export function ExamCard({ course, mastery }: { course: Course; mastery: CourseM
   const today = dayKey(new Date(nowMs).toISOString());
   const exam = cardExam(exams, course.id, today);
   const connected = useConnectorStatus(Boolean(exam?.cramming));
-  const planned = useCramPlan(course, exam, mastery);
   if (!exam) return null;
   const catalogue = objectives[course.id] ?? {};
   const covered = examObjectives(exam, course.topics, catalogue);
@@ -59,22 +58,14 @@ export function ExamCard({ course, mastery }: { course: Course; mastery: CourseM
         <p className="text-[15px] font-semibold text-prussian" data-part="exam-days">
           {daysText(days)}
         </p>
-        <p className="text-[14px] font-medium text-wisteria-deep" data-part="exam-scope">
-          {covered.length} objective{covered.length === 1 ? "" : "s"} in scope · {share}% verified
-        </p>
-        {from.length > 0 && <p className="text-[13px] font-medium text-wisteria-deep">Scope from {from.join(" and ")}.</p>}
         {exam.cramming ? (
           <>
-            {/* The plan line, or, when cramming was set without a budget (set_exam, the Exams modal), the way to one. */}
-            <Link href={page} data-part="cram-plan" className="mt-[4px] text-[15px] font-semibold text-prussian underline decoration-alice-deep underline-offset-4">
-              {planned ? planned.plan.line : "No time budget yet: open the plan to set one."}
-            </Link>
+            {/* The plan, the scope and the verified share live on the cram page. */}
             <div className="mt-[4px] flex flex-wrap items-center gap-[8px]">
-              {connected ? (
-                <span className="text-[13px] font-medium text-wisteria-deep" data-part="study-with-claude">
-                  Study with Claude: it has this exam&apos;s scope.
-                </span>
-              ) : (
+              <Link href={page} data-part="cram-plan" className={PILL}>
+                Open plan
+              </Link>
+              {!connected && (
                 <Link href="/settings#connector" data-part="study-with-claude" className={PILL}>
                   Study with Claude
                 </Link>
@@ -88,9 +79,15 @@ export function ExamCard({ course, mastery }: { course: Course; mastery: CourseM
             </div>
           </>
         ) : (
-          <Link href={page} data-part="cram-start" className={`${PRIMARY} mt-[6px] self-start`}>
-            Cram for this exam
-          </Link>
+          <>
+            <p className="text-[14px] font-medium text-wisteria-deep" data-part="exam-scope">
+              {covered.length} objective{covered.length === 1 ? "" : "s"} in scope · {share}% verified
+            </p>
+            {from.length > 0 && <p className="text-[13px] font-medium text-wisteria-deep">Scope from {from.join(" and ")}.</p>}
+            <Link href={page} data-part="cram-start" className={`${PRIMARY} mt-[6px] self-start`}>
+              Cram for this exam
+            </Link>
+          </>
         )}
       </Card>
     </motion.div>

@@ -104,24 +104,26 @@ export default function CramPage({ params, searchParams }: PageProps<"/course/[s
       <header className="flex items-center gap-[12px] px-[24px] pt-[20px]">
         <BackButton href={`/course/${course.slug}`} />
         <div>
-          <h1 className="text-[40px] font-bold leading-none text-prussian">
-            {cramming ? "Cramming for " : "Cram for "}
-            {exam.title}
-          </h1>
+          <div className="flex items-center gap-[12px]">
+            <h1 className="text-[40px] font-bold leading-none text-prussian">
+              {cramming ? "Cramming for " : "Cram for "}
+              {exam.title}
+            </h1>
+            {/* The page's one way to add a past or practice exam (held back), in the setup and while cramming. */}
+            <Link
+              href={`/add-material?course=${course.slug}&type=Practice%20exam&holdBack=1`}
+              aria-label={ADD_EXAM_LABEL}
+              title={ADD_EXAM_LABEL}
+              data-part="cram-add-material"
+              className="pressable inline-flex h-[40px] w-[40px] shrink-0 items-center justify-center rounded-[15px] border-2 border-alice-deep bg-parchment text-prussian lip-3 lip-alice"
+            >
+              <IconUpload size={20} />
+            </Link>
+          </div>
           <p className="mt-[5px] text-[14px] font-medium text-wisteria-deep">
             {course.name} · {daysText(days)}
           </p>
         </div>
-        {/* The page's one way to add a past or practice exam (held back), in the setup and while cramming. */}
-        <Link
-          href={`/add-material?course=${course.slug}&type=Practice%20exam&holdBack=1`}
-          aria-label={ADD_EXAM_LABEL}
-          title={ADD_EXAM_LABEL}
-          data-part="cram-add-material"
-          className="pressable ml-auto inline-flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-[20px] border-2 border-alice-deep bg-parchment text-prussian lip-4 lip-alice"
-        >
-          <IconUpload size={24} />
-        </Link>
       </header>
 
       <motion.div variants={stagger(0.05, 0.08)} initial="hidden" animate="show" className="flex items-start gap-[12px] px-[24px] pb-[28px] pt-[20px]" data-part="cram-page" data-cramming={exam.cramming ? "1" : undefined}>
