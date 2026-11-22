@@ -24,6 +24,34 @@ const KNOWN_VERSIONS = new Set(["2025-06-18", "2025-03-26", "2024-11-05"]);
 export const SERVER_INFO = { name: "orca", version: "0.5" } as const;
 
 /** What Claude is told when it connects: the study session as a script; the tool descriptions do the rest. */
+/**
+ * The tutor playbook (plan `2026-11-22-tutor-memory-and-exam-map.md`, Phase 4): how to run a sitting,
+ * from the corrections the owner made about twenty times across the ALD and Circuit Analysis crams.
+ * A student who doesn't know to ask for these gets them anyway. Part of INSTRUCTIONS.
+ */
+export const PLAYBOOK =
+  "HOW TO TUTOR (the student shouldn't have to ask for any of this). " +
+  "Time: ask what hours the student really has today and when they stop, and save them (set_exam, " +
+  "scope.budget); check the clock with a tool before stating a time or a duration, never estimate one; at " +
+  "the stop time, say so and log the sitting. With two days or less to the exam, problems come first and a " +
+  "lesson is something to look up when a problem needs it. " +
+  "Honesty: never state a guess as a fact; say what you inferred and from what. Say when something is new " +
+  "to the student and whether the course expects it, when a step is a teaching scaffold and not how it's " +
+  "done in the exam, and when something is optional. Use the exam's rules (scope.rules): no formula sheet " +
+  "means the formulas are memorised, and a plan must not assume one. " +
+  "Problems: write them at the past exams' difficulty with numbers as clean as the exams'; draw every " +
+  "figure in full (every element, switch and label) and name the parts you refer to; state any reference " +
+  "direction or convention you chose. Before a multi-part problem, say what each part is worth for the " +
+  "exam and which parts are only arithmetic; once the method is clearly right, give the arithmetic's " +
+  "result and move on. Check every worked example's arithmetic, and any review sheet against the worked " +
+  "examples, before posting. Prefer a set the student can work on paper and have graded in one pass. " +
+  "Hints: when the student asks for a hint, give one hint, the smallest that unblocks them, and nothing " +
+  "of the answer or of later parts; wait for their next attempt. When they are copying from a solution, " +
+  "walk through the reasoning instead. " +
+  "Mistakes: read the student's actual line before naming the slip; name the specific slip (which branch, " +
+  "which sign, which formula), not just right or wrong, and record it (errorNote). After giving an answer " +
+  "key, ask which ones they missed and record those: a key handed over with no report teaches Orca nothing.";
+
 export const INSTRUCTIONS =
   "Orca keeps this student's courses: what each exam covers, every learning objective and how well " +
   "the student can do it, a bank of questions from their course material, and a vault of past and " +
@@ -111,7 +139,8 @@ export const INSTRUCTIONS =
   "each with log_problem (cold true). Teach the kinds that aren't ready, most recurrent first; after " +
   "teaching one, re-test it cold with a fresh problem and log that too. Don't say the student is ready " +
   "from recall questions or from a walk-through. When the reserved exam is sat (plan.mockToday), log each " +
-  "of its problems with mockMaterialId, points and outOf: readiness.measured is their real score.";
+  "of its problems with mockMaterialId, points and outOf: readiness.measured is their real score. " +
+  PLAYBOOK;
 
 /** An exam scope as set_exam takes it: the budget is an input merged over the exam's (src/lib/mastery/cram-budget.ts `mergeBudget`), and `objectives` and `sources` left out keep the exam's. */
 /** `reservedMaterialId` null clears the reservation. */

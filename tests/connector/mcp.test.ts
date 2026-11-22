@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { type AddMaterialInput, type AddQuestion, type AnswerReport, type ConnectorTools, type EvidenceEntry, type ExamLine, type ScopeInput, type SessionLine, INSTRUCTIONS, PROTOCOL_VERSION, SERVER_INFO, TOOLS, handleRpc } from "../../src/lib/connector/mcp.ts";
+import { type AddMaterialInput, type AddQuestion, type AnswerReport, type ConnectorTools, type EvidenceEntry, type ExamLine, type ScopeInput, type SessionLine, INSTRUCTIONS, PLAYBOOK, PROTOCOL_VERSION, SERVER_INFO, TOOLS, handleRpc } from "../../src/lib/connector/mcp.ts";
 import type { FlagStrength } from "../../src/lib/mastery/types.ts";
 import type { ScreenHit } from "../../src/lib/untrusted/screen.ts";
 import { mergeBudget } from "../../src/lib/mastery/cram-budget.ts";
@@ -721,4 +721,9 @@ test("log_problem records an exam-style attempt for a kind of problem, with a mo
   for (const change of bad) assert.equal(isError(await handleRpc(call("log_problem", { ...base, ...change }), tools, "s")), true, JSON.stringify(change));
   assert.equal(problems.length, 2, "refused calls record nothing");
   assert.match(INSTRUCTIONS, /log_problem/);
+});
+
+test("the tutor playbook is part of the instructions: time from the clock, hints one at a time, the specific slip, which ones were missed", () => {
+  assert.ok(INSTRUCTIONS.endsWith(PLAYBOOK));
+  for (const rule of [/check the clock/, /never state a guess as a fact/, /one hint/, /what each part is worth/, /which ones they missed/, /scope\.rules/, /problems come first/]) assert.match(PLAYBOOK, rule);
 });
