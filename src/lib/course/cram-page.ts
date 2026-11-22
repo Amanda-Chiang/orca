@@ -87,6 +87,17 @@ export function connectorMinutesByDay(events: readonly ConnectorActivity[], dayO
   return byDay;
 }
 
+/**
+ * A day's study with Claude: what Claude logged for it (log_session) when that's more than the
+ * estimate from its evidence, else the estimate. Logged time is the fuller record (homework and
+ * lessons leave no evidence); taking the larger of the two never counts a sitting twice.
+ */
+export function claudeMinutesByDay(estimated: ReadonlyMap<string, number>, logged: Readonly<Record<string, number>>): Map<string, number> {
+  const out = new Map(estimated);
+  for (const [day, minutes] of Object.entries(logged)) out.set(day, Math.max(out.get(day) ?? 0, minutes));
+  return out;
+}
+
 /** Minutes of finished sessions in this course since `since`, by the student's day (the plan's `spentByDay`; "in Orca", as `spentMinutesInOrca`). */
 export function spentMinutesByDayInOrca(results: readonly QuizResult[], courseId: string, since: string, dayOf: (iso: string) => string): Record<string, number> {
   const byDay: Record<string, number> = {};

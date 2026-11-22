@@ -470,6 +470,25 @@ isOneToOne: false
       referencedColumns: ["id","course_id"]
     }
                   ]
+                },"study_sessions": {
+                  Row: {
+                    "at": string,"bookmark": string | null,"course_id": string,"day": string,"exam_id": string | null,"id": string,"minutes": number,"next_steps": NonNullable<Json>,"owner_id": string,"summary": string,"worked": NonNullable<Json>
+                  }
+                  Insert: {
+                    "at"?: string,"bookmark"?: string | null,"course_id": string,"day": string,"exam_id"?: string | null,"id"?: string,"minutes": number,"next_steps"?: NonNullable<Json>,"owner_id": string,"summary": string,"worked"?: NonNullable<Json>
+                  }
+                  Update: {
+                    "at"?: string,"bookmark"?: string | null,"course_id"?: string,"day"?: string,"exam_id"?: string | null,"id"?: string,"minutes"?: number,"next_steps"?: NonNullable<Json>,"owner_id"?: string,"summary"?: string,"worked"?: NonNullable<Json>
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "study_sessions_course_id_owner_id_fkey"
+      columns: ["course_id","owner_id"]
+isOneToOne: false
+      referencedRelation: "courses"
+      referencedColumns: ["id","owner_id"]
+    }
+                  ]
                 },"topics": {
                   Row: {
                     "archived_with_material": boolean,"course_id": string,"created_at": string,"id": string,"material_id": string | null,"merged_into": string | null,"name": string,"owner_id": string,"pos_x": number,"pos_y": number,"review": string,"sort_order": number,"source": NonNullable<Json>,"summary": string | null,"uncertain": Json | null

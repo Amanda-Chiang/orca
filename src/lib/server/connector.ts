@@ -15,6 +15,7 @@ import type { ExamScope, MaterialType, ObjectiveSignal } from "@/lib/data";
 import { objectiveMaterialIds, protectScope } from "@/lib/course/exam-card";
 import { examMap } from "@/lib/course/exam-map";
 import { vaultMaterial } from "@/lib/server/connector/vault-material";
+import { logSession, recentSessions } from "@/lib/server/connector/study-sessions";
 import { AGENDA_RULES, addDays } from "@/lib/mastery/agenda";
 import { NOT_WEAK } from "@/lib/mastery/cram-plan";
 import { mergeBudget, withPerDay } from "@/lib/mastery/cram-budget";
@@ -289,6 +290,7 @@ export function connectorTools(db: OrcaSupabase, ownerId: string, now: () => Dat
       mode,
       cramming,
       ...cram,
+      lastSession: (await recentSessions(db, ownerId, courseId, 1))[0] ?? null,
     };
   };
 
@@ -570,6 +572,7 @@ export function connectorTools(db: OrcaSupabase, ownerId: string, now: () => Dat
     addQuestions: (courseId, questions) => addQuestions(db, ownerId, courseId, questions),
     addMaterial: (courseId, input) => addMaterial(db, ownerId, courseId, input),
     logEvidence: (courseId, objectiveId, entry, sessionId) => logEvidence(db, ownerId, courseId, objectiveId, entry, sessionId),
+    logSession: (courseId, entry) => logSession(db, ownerId, courseId, entry, now),
 
     async screened(hits) {
       await recordSecurityEvents(db, ownerId, "reflection_note", hits);

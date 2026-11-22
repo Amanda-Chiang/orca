@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { type AddMaterialInput, type AddQuestion, type AnswerReport, type ConnectorTools, type EvidenceEntry, type ExamLine, type ScopeInput, INSTRUCTIONS, PROTOCOL_VERSION, SERVER_INFO, TOOLS, handleRpc } from "../../src/lib/connector/mcp.ts";
+import { type AddMaterialInput, type AddQuestion, type AnswerReport, type ConnectorTools, type EvidenceEntry, type ExamLine, type ScopeInput, type SessionLine, INSTRUCTIONS, PROTOCOL_VERSION, SERVER_INFO, TOOLS, handleRpc } from "../../src/lib/connector/mcp.ts";
 import type { FlagStrength } from "../../src/lib/mastery/types.ts";
 import type { ScreenHit } from "../../src/lib/untrusted/screen.ts";
 import { mergeBudget } from "../../src/lib/mastery/cram-budget.ts";
@@ -17,6 +17,7 @@ function fakeTools() {
   const recorded: Array<{ questionId: string; outcome: string; session: string; response?: string; report: AnswerReport }> = [];
   const checked: Array<{ questionId: string; response: string; session: string; report?: Partial<AnswerReport> }> = [];
   const exams: ExamLine[] = [];
+  const sessions: SessionLine[] = [];
   const flagged: Array<{ objectiveIds: string[]; said: string; strength: FlagStrength }> = [];
   const screened: ScreenHit[][] = [];
   const materialAsked: string[][] = [];
@@ -61,6 +62,7 @@ function fakeTools() {
         plan: null,
         coverage: null,
         topErrors: [],
+        lastSession: sessions[sessions.length - 1] ?? null,
       };
     },
     async nextQuestions(courseId, { objectiveIds, count, write }) {
@@ -92,6 +94,12 @@ function fakeTools() {
       recorded.push({ questionId, outcome, session, ...(response ? { response } : {}), report });
       // The server's record_answer checks the words against a choice or exact key and says when its result won.
       return { recorded: true, objectiveId: OBJ, status: "learning", ...(response === "the stored key disagrees" ? { corrected: true as const } : {}) };
+    },
+    async logSession(courseId, entry) {
+      if (courseId !== COURSE) return { error: "No such course." };
+      const line: SessionLine = { id: `s${sessions.length + 1}`, at: "2026-11-16T20:00:00.000Z", day: "2026-11-16", minutes: entry.minutes, summary: entry.summary, worked: entry.worked, bookmark: entry.bookmark ?? null, next: entry.next ?? [] };
+      sessions.push(line);
+      return line;
     },
     async vaultMaterial(courseId, materialId, options) {
       if (courseId !== COURSE) return { error: "No such course." };
@@ -166,7 +174,7 @@ test("notifications get 202 and no body; ping and tools/list answer", async () =
   assert.deepEqual((await handleRpc(rpc("ping"), tools, "s")).body, { jsonrpc: "2.0", id: 1, result: {} });
   const list = await handleRpc(rpc("tools/list"), tools, "s");
   const names = (list.body as { result: { tools: Array<{ name: string }> } }).result.tools.map((t) => t.name);
-  assert.deepEqual(names, ["course_state", "next_questions", "set_exam", "questions_for", "check_answer", "record_answer", "flag_check", "material_for", "vault_material", "add_questions", "add_material", "log_evidence"]);
+  assert.deepEqual(names, ["course_state", "next_questions", "set_exam", "questions_for", "check_answer", "record_answer", "flag_check", "material_for", "vault_material", "add_questions", "add_material", "log_session", "log_evidence"]);
   for (const t of TOOLS) {
     assert.ok(t.description.length > 80, `${t.name} explains when to use it`);
     assert.equal(t.inputSchema.type, "object");
@@ -672,4 +680,21 @@ test("set_exam stores the exam's rules, its problem types and the reserved exam,
   ];
   for (const scope of bad) assert.equal(isError(await handleRpc(call("set_exam", { ...base, scope }), tools, "s")), true, JSON.stringify(scope));
   assert.equal(exams.length, 1, "refused calls store nothing");
+});
+
+/* ── The session record ── */
+
+test("log_session stores a sitting with its bookmark and ordered next steps; course_state opens the next chat with it; malformed ones are refused", async () => {
+  const { tools, COURSE, OBJ } = fakeTools();
+  const sitting = { courseId: COURSE, minutes: 140, summary: "HW08 E8 to E12 walked through and submitted.", worked: [{ what: "HW08 E8 to E12", outcome: "with-hints", errorNote: "flipped the divider fraction", objectiveIds: [OBJ], problemTypeId: "ac-divider" }, { what: "Drill 1" }], bookmark: "Lesson 7.5 half done; Practice 8 not tried", next: ["HW07 P4", "a switched RC circuit"] };
+  const logged = text(await handleRpc(call("log_session", sitting), tools, "s"));
+  assert.equal(logged.minutes, 140);
+  assert.deepEqual(logged.next, ["HW07 P4", "a switched RC circuit"]);
+  const state = text(await handleRpc(call("course_state", { courseId: COURSE, detail: "summary" }), tools, "s")) as { lastSession: SessionLine };
+  assert.equal(state.lastSession.bookmark, "Lesson 7.5 half done; Practice 8 not tried");
+  assert.deepEqual(state.lastSession.worked[0], { what: "HW08 E8 to E12", outcome: "with-hints", errorNote: "flipped the divider fraction", objectiveIds: [OBJ], problemTypeId: "ac-divider" });
+  const bad = [{ minutes: 0 }, { minutes: 1000 }, { minutes: 12.5 }, { summary: "" }, { worked: "HW08" }, { worked: [{ what: "" }] }, { worked: [{ what: "x", outcome: "fine" }] }, { worked: [{ what: "x", objectiveIds: ["nope"] }] }, { next: [""] }, { examId: "nope" }];
+  for (const change of bad) assert.equal(isError(await handleRpc(call("log_session", { ...sitting, ...change }), tools, "s")), true, JSON.stringify(change));
+  assert.match(INSTRUCTIONS, /log_session/);
+  assert.match(INSTRUCTIONS, /lastSession/);
 });
