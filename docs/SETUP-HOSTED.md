@@ -128,17 +128,25 @@ is set on Vercel**, so set it (above) or the sweep does nothing.
 
 **Auto-deploy (added 2026-10-25).** `.github/workflows/deploy.yml` deploys every change that
 reaches `main`: once CI on `main` passes, it pushes any new migration to the hosted project and
-merges `main` into `backend-implementation`, which Vercel builds. Its merge commit is authored as
-the owner, because Hobby builds only the account owner's commits. It needs two repository secrets
+merges `main` into `backend-implementation`, then deploys that branch to Vercel's production with
+the Vercel CLI (since 2026-11-22: the repository moved to `Amanda-Chiang/orca`, an account the
+Vercel project's owner doesn't control, so the project has no Git connection and builds nothing by
+itself; branch previews went with it). Its merge commit is authored as the Vercel project's owner,
+because Hobby refuses anyone else's commits. To redeploy without a change (after editing an
+environment variable, say): Actions → Deploy → Run workflow. It needs these repository secrets
 (GitHub → Settings → Secrets and variables → Actions → New repository secret):
 
 | Secret | Value |
 |---|---|
+| `VERCEL_TOKEN` | a token from vercel.com/account/tokens, made by the Vercel project's owner |
+| `VERCEL_ORG_ID` | the project's owner id (`team_…`); `orgId` in `.vercel/project.json` after `vercel link` |
+| `VERCEL_PROJECT_ID` | the project's id (`prj_…`; Project → Settings → General) |
 | `SUPABASE_ACCESS_TOKEN` | a personal access token from supabase.com/dashboard/account/tokens |
 | `SUPABASE_DB_PASSWORD` | the project's database password (Supabase → Connect → "Reset database password" if lost) |
 
-Both are set (since 2026-10-27). Without them, a change that adds a migration isn't deployed (the
-run fails and says why); changes without migrations deploy regardless. Optional repository variables `DEPLOY_AUTHOR_NAME`
+Without the three Vercel secrets nothing deploys (the run fails first and says why). The two
+Supabase ones are set (since 2026-10-27); without them, a change that adds a migration isn't
+deployed (the run fails and says why); changes without migrations deploy regardless. Optional repository variables `DEPLOY_AUTHOR_NAME`
 and `DEPLOY_AUTHOR_EMAIL` change whose name the deploy commits carry (default: the owner's).
 
 ## 6. The Claude Code cloud environment

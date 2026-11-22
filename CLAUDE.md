@@ -33,8 +33,10 @@ own courses (Data Structures, Fundamentals of Computer Systems) on the hosted pr
   gate below; merging into `main` is the deploy (Deploy, below). Never commit straight to `main`.
   `phase-4` was the shared working branch until then (PRs #1–#7 came from it); others may still push
   there, so never force-move it, and don't base new work on it (it carries unrelated commits).
-  `backend-implementation` is the **production branch** Vercel (project `orca`,
-  https://orca-lake-omega.vercel.app) builds; only the Deploy workflow pushes it. **Commit as whoever is running you**
+  `backend-implementation` is the **production branch**: the Deploy workflow pushes it (nobody else
+  does) and deploys it to Vercel (project `orca`, https://orca-lake-omega.vercel.app) with the
+  Vercel CLI. Since 2026-11-22 the repository is `Amanda-Chiang/orca` and the Vercel project has no
+  Git connection, so Vercel builds nothing by itself and there are no branch previews. **Commit as whoever is running you**
   (the machine's git config; never pass `-c user.name/user.email`). Vercel refuses to build a
   commit whose author email isn't on the owner's GitHub account, but it only checks the commit at
   the top of `backend-implementation`, and the Deploy workflow authors that merge commit as the
@@ -611,15 +613,15 @@ All 11 Figma screens are built. Where things live:
 - `docs/samples/ald/` — the real ALD decks for the extraction scorer, **not committed** (gitignored; removed from the
   history 2026-10-27 before the repo went public: course material isn't ours to publish; `docs/samples/README.md`).
   Tests use the generated stand-in deck `makeDeck()` in `tests/fixtures/pdf.ts`. `docs/OBJECTIVES-ALD.md` is the benchmark.
-- Deploy: Vercel (https://orca-lake-omega.vercel.app) builds `backend-implementation` (Production);
-  pushes to other branches get Preview deploys at most. **Nobody pushes there by hand any more:**
+- Deploy: Vercel (https://orca-lake-omega.vercel.app) serves `backend-implementation` (Production),
+  deployed by the Deploy workflow with the Vercel CLI (no Git connection, so no Preview deploys). **Nobody pushes there by hand any more:**
   `.github/workflows/deploy.yml` merges `main` into it (after pushing new migrations) whenever CI
   on `main` is green, so merging a PR into `main` is the deploy (`docs/SETUP-HOSTED.md` §5 lists
   the two secrets it needs for migrations). Production env vars (Vercel → Settings →
   Environments → Production): the Supabase three, `SITE_URL`, `ORCA_JOBS=trigger` with
   `TRIGGER_SECRET_KEY`, and the model key (`OPENAI_API_KEY`, or `ANTHROPIC_API_KEY`) with
-  `ORCA_MODEL` if not the default; without a key the upload page says "No AI connected". Changing an env var needs a new deploy (an empty
-  commit by the owner pushed to `backend-implementation`, or Redeploy on the deployment's page).
+  `ORCA_MODEL` if not the default; without a key the upload page says "No AI connected". Changing an env var needs a new deploy (Actions →
+  Deploy → Run workflow, or Redeploy on the deployment's page).
   Jobs run on Trigger.dev in production (since 2026-11-05; `TRIGGER_SECRET_KEY` is a Prod key of
   Amanda's project `proj_cafvbqanvngbcfvnpmqv`, also the default ref in `trigger.config.ts`). The
   Deploy workflow deploys `src/trigger/` there on every merge to `main` (the `TRIGGER_ACCESS_TOKEN`
