@@ -89,9 +89,26 @@ advice to the student's Claude, not something Orca can enforce.
 
 ### Alongside (small fixes from the change list)
 
-Numeric answers with units and tolerance (#9), "don't know" on multiple choice (#16), a compact
-`course_state` (#17), questions seeded for every in-scope topic (#18), a log of scope and budget
-edits (#19), a stop-time prompt (#20), problem-only copies of exams (#22).
+**Built (branch `small-fixes`):**
+- **Numeric answers with units (#9).** An exact answer like "2000 A/s" is a quantity, not an
+  expression: graded by value within 1% and by unit, SI prefixes converted ("2 kA/s", "2e3 A/s",
+  "2,000 A/s" all right); the right number with the unit missing or wrong is partly right
+  (`quantityOf`, `gradeExact` in `src/lib/grading.ts`).
+- **"I don't know" (#16).** `check_answer` takes it on a multiple-choice or exact question as a miss
+  with no guess (`isDontKnow`).
+- **A compact `course_state` (#17).** `detail: "weak"`: the summary plus only the weak-spot objectives.
+- **A log of scope and budget edits (#19).** `scope.history`: the last 30 edits, each with when, who
+  (the student in the app, or Claude through the connector) and what changed in words
+  (`src/lib/course/scope-history.ts`); `scopeSummary.history` shows the last five.
+
+**Not built, and why:**
+- **Seed questions for every in-scope topic (#18).** Orca makes no model calls in a cram, and with the
+  exam map the cram's problems are Claude's, at exam level; seeding recall questions would spend the
+  student's daily budget on the unit the plan no longer runs on.
+- **A stop-time prompt (#20).** Orca can't interrupt a chat; the playbook tells Claude to ask for the
+  stop time and call it.
+- **Problem-only copies of exams (#22).** Splitting problems from solutions needs a model pass over
+  each exam at upload; for a timed sitting Claude gives the problems as written (`forMock`).
 
 ## Status of the 22-item change list
 

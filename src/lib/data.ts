@@ -173,6 +173,17 @@ export interface ExamScope {
   problemTypes?: ProblemType[];
   /** The one held-back exam kept unread, even by Claude, until the student sits it timed: the cram's measured score. */
   reservedMaterialId?: string;
+  /** What changed on the scope and budget, and who changed it: the last 30 edits (`src/lib/course/scope-history.ts`). */
+  history?: ScopeEdit[];
+}
+
+/** One edit to an exam's scope or budget. */
+export interface ScopeEdit {
+  at: string;
+  /** The student in the app, or their Claude through the connector. */
+  by: "student" | "claude";
+  /** What changed, in words: "objectives excluded 63 → 37 (of 151 listed); budget 22 h → 16 h". */
+  what: string;
 }
 
 /** What an exam allows. Every field is optional: only what's known is stored. */

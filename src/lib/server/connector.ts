@@ -14,6 +14,7 @@ import { materialFor } from "@/lib/server/connector/material-for";
 import type { ExamScope, MaterialType, ObjectiveSignal } from "@/lib/data";
 import { objectiveMaterialIds, protectScope } from "@/lib/course/exam-card";
 import { examMap } from "@/lib/course/exam-map";
+import { withHistory } from "@/lib/course/scope-history";
 import { vaultMaterial } from "@/lib/server/connector/vault-material";
 import { logSession, recentSessions } from "@/lib/server/connector/study-sessions";
 import { logProblem, readinessFor } from "@/lib/server/connector/problem-attempts";
@@ -24,7 +25,7 @@ import { dayStartIn } from "@/lib/jobs/budget";
 import { startFlagTopUpJob } from "@/lib/server/jobs/start";
 import { rateLimit } from "@/lib/server/rate-limit";
 import type { QuizQuestion } from "@/lib/data";
-import { cleanAnswer, gradeExact, normaliseExact } from "@/lib/grading";
+import { cleanAnswer, gradeExact, isDontKnow, normaliseExact } from "@/lib/grading";
 import { gradeAnswer } from "@/lib/server/grade";
 import { dayKeyIn, stateAt } from "@/lib/mastery/objective-state";
 import { NewerRulesError, VersionConflictError, readCourseState, recordEvent } from "@/lib/mastery/snapshots";
@@ -120,6 +121,7 @@ export function pickOption(response: string, options: readonly string[]): number
  */
 export function orcaOutcome(q: QuizQuestion, response: string): AnswerEvent["outcome"] | null {
   if (q.kind !== "Short answer") {
+    if (isDontKnow(response)) return "incorrect";
     const picked = pickOption(response, q.options);
     return picked === null ? null : picked === q.answer ? "correct" : "incorrect";
   }
@@ -171,7 +173,7 @@ export function scopeSummary(scope: ExamScope, topicIds: readonly string[], obje
   }
   // The budget with its hours by day (a budget saved before per-day budgets gets its spread), so Claude sees the days.
   const map = examMap(scope);
-  return { inScope, excluded, sources: scope.sources, ...(scope.worries ? { worries: scope.worries } : {}), ...(scope.rules ? { rules: scope.rules } : {}), ...(map ? { examMap: map } : {}), ...(scope.reservedMaterialId ? { reservedMaterialId: scope.reservedMaterialId } : {}), ...(scope.budget ? { budget: examDate ? withPerDay(scope.budget, examDate) : scope.budget } : {}) };
+  return { inScope, excluded, sources: scope.sources, ...(scope.worries ? { worries: scope.worries } : {}), ...(scope.rules ? { rules: scope.rules } : {}), ...(map ? { examMap: map } : {}), ...(scope.reservedMaterialId ? { reservedMaterialId: scope.reservedMaterialId } : {}), ...(scope.history?.length ? { history: scope.history.slice(-5) } : {}), ...(scope.budget ? { budget: examDate ? withPerDay(scope.budget, examDate) : scope.budget } : {}) };
 }
 
 export function connectorTools(db: OrcaSupabase, ownerId: string, now: () => Date = () => new Date()): ConnectorTools {
@@ -181,7 +183,7 @@ export function connectorTools(db: OrcaSupabase, ownerId: string, now: () => Dat
     return data;
   };
 
-  const courseState = async (courseId: string, options: { detail?: "summary" | "full"; topicIds?: string[]; asOf?: string } = {}): Promise<CourseState | null> => {
+  const courseState = async (courseId: string, options: { detail?: "summary" | "weak" | "full"; topicIds?: string[]; asOf?: string } = {}): Promise<CourseState | null> => {
     const course = await owns(courseId);
     if (!course) return null;
     const [topics, objectives, questions, exams, profile, snapshots, feedback, runs, budget, materials] = await Promise.all([
@@ -283,9 +285,10 @@ export function connectorTools(db: OrcaSupabase, ownerId: string, now: () => Dat
     return {
       course: { id: course.id, name: course.name },
       today,
-      exams: options.detail === "summary" ? examLines.map(summarised) : examLines,
+      exams: options.detail === "summary" || options.detail === "weak" ? examLines.map(summarised) : examLines,
       topics: topicLines,
-      ...(options.detail === "summary" ? {} : { objectives: shown ? lines.filter((l) => shown.has(l.topicId)) : lines, materials: materialLines }),
+      // weak: the summary plus only the weak spots (in rotation or waiting on a check), so a check-in fits on a screen.
+      ...(options.detail === "summary" ? {} : options.detail === "weak" ? { objectives: lines.filter((l) => !NOT_WEAK.has(l.status as ObjectiveStatus) && (!shown || shown.has(l.topicId))) } : { objectives: shown ? lines.filter((l) => shown.has(l.topicId)) : lines, materials: materialLines }),
       dueNow,
       examFocus,
       budget: budget.ok ? { ok: true, resetsAt } : { ok: false, reason: budget.message, resetsAt },
@@ -529,10 +532,12 @@ export function connectorTools(db: OrcaSupabase, ownerId: string, now: () => Dat
       // The kind of mistake: only the rubric grader names one; choice and exact answers never have one.
       let errorType: CheckedAnswer["errorType"] = null;
       if (q.kind !== "Short answer") {
-        const picked = pickOption(words, q.options);
-        if (picked === null) return { error: `Pass the option the student chose: its number as shown (1 to ${q.options.length}), its letter, or its text.` };
+        // "I don't know" is an answer: a miss with no guess.
+        const gaveUp = isDontKnow(words);
+        const picked = gaveUp ? null : pickOption(words, q.options);
+        if (picked === null && !gaveUp) return { error: `Pass the option the student chose: its number as shown (1 to ${q.options.length}), its letter, or its text; or "I don't know".` };
         outcome = picked === q.answer ? "correct" : "incorrect";
-        feedback = outcome === "correct" ? "Right." : `Not quite. The answer is ${q.options[q.answer]}.`;
+        feedback = outcome === "correct" ? "Right." : gaveUp ? `The answer is ${q.options[q.answer]}.` : `Not quite. The answer is ${q.options[q.answer]}.`;
         grader = "choice";
       } else if (q.exact?.length) {
         const r = gradeExact(words, q.exact);
@@ -704,6 +709,8 @@ export function connectorTools(db: OrcaSupabase, ownerId: string, now: () => Dat
         scope = guarded.scope;
         if (guarded.raised.length) note = `Kept ${guarded.raised.length} objective(s) at weight 1: weak spots or objectives no file teaches, in topics the exam covers, aren't excluded by the file pick (${guarded.raised.join(", ")}).`;
       }
+      // Every change to the scope or budget is logged on it, with who made it.
+      scope = withHistory(kept.scope, scope, "claude", at.toISOString(), { before: kept.date, after: date });
       const row = { id: exam.id ?? crypto.randomUUID(), owner_id: ownerId, course_id: courseId, title, date, topic_ids: topicIds, cramming, scope: scope as unknown as Json };
       const { error } = await db.from("exams").upsert(row);
       if (error) throw new Error(`Couldn't save the exam: ${error.message}`);

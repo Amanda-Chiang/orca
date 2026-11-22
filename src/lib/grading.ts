@@ -64,6 +64,54 @@ export function numericValue(s: string): number | null {
 const sameNumber = (a: number, b: number) => Math.abs(a - b) <= 1e-9 * Math.max(1, Math.abs(a), Math.abs(b));
 
 /**
+ * "I don't know", however it's typed: an answer the student gives up on. It's a miss with no guess
+ * (owner, 2026-11-22: a multiple-choice question refused it, wanting an option letter).
+ */
+export function isDontKnow(response: string): boolean {
+  return /^(?:i\s+)?(?:do\s*n[o'’]?t|dont)\s+know\b|^idk\b|^no\s+idea\b|^not\s+sure\b|^(?:i\s+)?give\s+up\b|^skip\b|^\?+$/i.test(response.trim());
+}
+
+/** A quantity's number may be off by this much of the key's (rounding along the way): 1%. */
+export const QUANTITY_TOLERANCE = 0.01;
+const PREFIX: Record<string, number> = { p: 1e-12, n: 1e-9, u: 1e-6, "µ": 1e-6, "μ": 1e-6, m: 1e-3, k: 1e3, K: 1e3, M: 1e6, G: 1e9 };
+
+/**
+ * A number with a unit ("2000 A/s", "2,000 A/s", "2e3 A/s", "4.7 kΩ", "36.4 ps", "50%"): the value
+ * and the unit as written (spaces dropped, "ohm" as Ω, "u" before a unit as µ). Null for a bare
+ * number, a bit string or anything else. The number may carry thousands commas or an exponent.
+ */
+export function quantityOf(s: string): { value: number; unit: string } | null {
+  const m = /^([+-−–]?(?:\d{1,3}(?:,\d{3})+|\d+)?(?:\.\d+)?(?:e[+-]?\d+)?)\s*([A-Za-zµμΩ°%][A-Za-zµμΩ°%0-9/·*^.\-−\s]*)$/i.exec(s.trim());
+  if (!m || !/\d/.test(m[1])) return null;
+  const value = Number(m[1].replace(/,/g, "").replace(/[−–]/g, "-"));
+  if (!Number.isFinite(value)) return null;
+  const unit = m[2].replace(/\s+/g, "").replace(/ohms?/gi, "Ω").replace(/[−–]/g, "-").replace(/[·*]/g, "·").replace(/μ/g, "µ");
+  // Words aren't units ("3 apples and 2 pears" has spaces between words; a unit is one token of symbols).
+  if (/\s[A-Za-z]{2,}\s/.test(m[2])) return null;
+  return { value, unit };
+}
+
+/** The unit as a scale and a base: a leading SI prefix on a unit longer than one symbol is a scale ("kΩ" is 1000 × Ω; "m" alone is metres). */
+function scaled(unit: string): Array<{ scale: number; base: string }> {
+  const forms = [{ scale: 1, base: unit }];
+  const head = unit[0] === "u" ? "µ" : unit[0];
+  if (unit.length > 1 && PREFIX[head] !== undefined) forms.push({ scale: PREFIX[head], base: unit.slice(1) });
+  return forms;
+}
+
+/** Whether a quantity matches the key's: "unit" when the number is right but the unit is missing or wrong. */
+function quantityMatch(given: string, key: { value: number; unit: string }): "yes" | "unit" | "no" {
+  const close = (a: number, b: number) => Math.abs(a - b) <= QUANTITY_TOLERANCE * Math.max(Math.abs(a), Math.abs(b)) + 1e-12;
+  const q = quantityOf(given);
+  if (q) {
+    for (const k of scaled(key.unit)) for (const g of scaled(q.unit)) if (k.base === g.base && close(key.value * k.scale, q.value * g.scale)) return "yes";
+    return close(key.value, q.value) ? "unit" : "no";
+  }
+  const bare = Number(given.trim().replace(/,/g, "").replace(/[−–]/g, "-"));
+  return given.trim() !== "" && Number.isFinite(bare) && close(key.value, bare) ? "unit" : "no";
+}
+
+/**
  * An algebraic or Boolean expression (letters joined by operators: "a + c", "x'y", "A⊕B", "(a+b)c"):
  * exact matching can't tell equivalent forms apart, so question writing refuses these as exact
  * answers (owner, 2026-11-08; a rubric or multiple choice instead). A prime counts only on a letter
@@ -72,6 +120,8 @@ const sameNumber = (a: number, b: number) => Math.abs(a - b) <= 1e-9 * Math.max(
 export function isExpressionAnswer(s: string): boolean {
   const t = s.trim();
   if (!/[A-Za-z]/.test(t)) return false;
+  // A number with a unit ("2000 A/s") is a quantity, not an expression: it's graded by value and unit.
+  if (quantityOf(t)) return false;
   if (/[+*/⊕^|&~!×·]/.test(t)) return true;
   if (/[A-Za-z]['’′](?!s(?![A-Za-z]))/i.test(t)) return true;
   // Parentheses in an expression, but not function or Big-O notation ("f(x)", "O(n log n)"): one word then one group.
@@ -106,7 +156,16 @@ export function gradeExact(response: string, accepted: string[]): GradeResult {
     const given = value(bare);
     return given !== null && accepted.some((a) => value(a) !== null && sameNumber(value(a)!, given));
   };
+  if (isDontKnow(response)) return { outcome: "incorrect", feedback: `The answer is ${accepted[0]}.` };
   if (matches(response)) return { outcome: "correct", feedback: "Right." };
+  // A key with a unit: the number within 1% and the same unit (SI prefixes converted) is right; the right number with the unit missing or wrong is partly right.
+  const bareResponse = response.trim().replace(/[.!]+$/, "").replace(LEAD_IN, "") || response;
+  const keys = accepted.map(quantityOf).filter((k): k is { value: number; unit: string } => k !== null);
+  if (keys.length) {
+    const results = keys.map((k) => quantityMatch(bareResponse, k));
+    if (results.includes("yes")) return { outcome: "correct", feedback: "Right." };
+    if (results.includes("unit")) return { outcome: "partial", feedback: `Right number, but the unit is missing or wrong. Expected ${accepted[0]}.` };
+  }
   // A hedge that includes the right answer is partly right (owner, 2026-10-25), never full marks.
   const candidates = response.trim().replace(/^either\s+/i, "").split(HEDGE).map((c) => c.trim()).filter(Boolean);
   if (candidates.length > 1) {

@@ -29,6 +29,7 @@
  * holds a key; Settings no longer shows it). Older localStorage state (`orca:v3`–`orca:v8`
  * and the page text uploads used to keep, `orca:materialPages`) is removed.
  */
+import { withHistory } from "@/lib/course/scope-history";
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import {
@@ -582,7 +583,10 @@ export function OrcaProvider({ children }: { children: React.ReactNode }) {
   );
 
   const updateExam = useCallback<OrcaActions["updateExam"]>(
-    (id, change) => {
+    (id, given) => {
+      // A change to the scope or budget is logged on the scope, as the student's (the connector logs Claude's).
+      const was = stateRef.current.exams.find((e) => e.id === id);
+      const change = given.scope !== undefined && was ? { ...given, scope: withHistory(was.scope, given.scope, "student", new Date().toISOString(), { before: was.date, after: given.date ?? was.date }) } : given;
       setState((s) => ({ ...s, exams: s.exams.map((e) => (e.id === id ? { ...e, ...change } : e)) }));
       const row = {
         ...(change.title !== undefined ? { title: change.title } : {}),
