@@ -148,11 +148,11 @@ export function CramSetup({ exam, course, candidates, materials, catalogue, mast
       </fieldset>
 
       <p className="text-[15px] font-medium text-prussian">
-        Have a practice exam or a study guide?{" "}
+        Add every past and practice exam you have: Claude reads them to plan what to study.{" "}
         <Link href={`/add-material?course=${course.slug}&type=Practice%20exam&holdBack=1`} data-part="cram-add-material" className="font-bold text-wisteria-deep underline">
           Add material
         </Link>
-        <span className="text-wisteria-deep"> (kept hidden for a practice test)</span>
+        <span className="text-wisteria-deep"> (kept hidden from you until you sit one)</span>
       </p>
 
       <label className="flex flex-col gap-[6px]">

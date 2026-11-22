@@ -8,8 +8,8 @@ import type { ExamScope } from "../../src/lib/data.ts";
 
 /** The fake setExam's scope: the budget merged as the server merges it, with the 10th as today and a fixed clock. */
 const mergeScopeForTest = (input: ScopeInput, examDate: string): ExamScope => {
-  const { budget, objectives, sources, ...rest } = input;
-  return { objectives: objectives ?? [], sources: sources ?? [], ...rest, ...(budget ? { budget: mergeBudget(null, budget, { today: "2026-11-10", examDate, now: "2026-11-10T12:00:00.000Z" }) } : {}) };
+  const { budget, objectives, sources, reservedMaterialId, ...rest } = input;
+  return { objectives: objectives ?? [], sources: sources ?? [], ...rest, ...(reservedMaterialId ? { reservedMaterialId } : {}), ...(budget ? { budget: mergeBudget(null, budget, { today: "2026-11-10", examDate, now: "2026-11-10T12:00:00.000Z" }) } : {}) };
 };
 
 /** A student with one course, one objective and one question, remembering what was recorded. */
@@ -28,6 +28,7 @@ function fakeTools() {
   const OBJ = "f0000000-0000-4000-8000-000000000001";
   const Q = "a0000000-0000-4000-8000-000000000001";
   const MATERIAL = "d0000000-0000-4000-8000-000000000001";
+  const RESERVED = "d0000000-0000-4000-8000-000000000002";
   /** What the server does for a summary: each exam's scope by its size instead of its entries. */
   const summarised = (e: ExamLine): ExamLine => {
     const { scope, ...rest } = e;
@@ -92,6 +93,11 @@ function fakeTools() {
       // The server's record_answer checks the words against a choice or exact key and says when its result won.
       return { recorded: true, objectiveId: OBJ, status: "learning", ...(response === "the stored key disagrees" ? { corrected: true as const } : {}) };
     },
+    async vaultMaterial(courseId, materialId, options) {
+      if (courseId !== COURSE) return { error: "No such course." };
+      if (materialId === RESERVED && !options.forMock) return { error: "This exam is reserved." };
+      return { materialId, filename: "Fall25 Quiz 2.pdf", type: "Practice exam", pages: [{ n: options.fromPage ?? 1, text: "Problem 1 ..." }], totalPages: 1, doNotReveal: true, note: "For your planning only." };
+    },
     async setExam(courseId, exam) {
       if (courseId !== COURSE) return { error: "No such course." };
       // As the server does: the budget merges over the exam's (none here), objectives left out keep the exam's (none here); today is the 10th.
@@ -132,7 +138,7 @@ function fakeTools() {
       screened.push(hits);
     },
   };
-  return { tools, recorded, checked, exams, flagged, screened, materialAsked, added, materials, logged, COURSE, TOPIC, OBJ, Q, MATERIAL };
+  return { tools, recorded, checked, exams, flagged, screened, materialAsked, added, materials, logged, COURSE, TOPIC, OBJ, Q, MATERIAL, RESERVED };
 }
 
 const rpc = (method: string, params?: unknown, id: number | string | null = 1) => ({ jsonrpc: "2.0", id, method, ...(params === undefined ? {} : { params }) });
@@ -160,12 +166,12 @@ test("notifications get 202 and no body; ping and tools/list answer", async () =
   assert.deepEqual((await handleRpc(rpc("ping"), tools, "s")).body, { jsonrpc: "2.0", id: 1, result: {} });
   const list = await handleRpc(rpc("tools/list"), tools, "s");
   const names = (list.body as { result: { tools: Array<{ name: string }> } }).result.tools.map((t) => t.name);
-  assert.deepEqual(names, ["course_state", "next_questions", "set_exam", "questions_for", "check_answer", "record_answer", "flag_check", "material_for", "add_questions", "add_material", "log_evidence"]);
+  assert.deepEqual(names, ["course_state", "next_questions", "set_exam", "questions_for", "check_answer", "record_answer", "flag_check", "material_for", "vault_material", "add_questions", "add_material", "log_evidence"]);
   for (const t of TOOLS) {
     assert.ok(t.description.length > 80, `${t.name} explains when to use it`);
     assert.equal(t.inputSchema.type, "object");
   }
-  assert.equal(SERVER_INFO.version, "0.4");
+  assert.equal(SERVER_INFO.version, "0.5");
 });
 
 test("a malformed message is a 400; an unknown method is a JSON-RPC error", async () => {
@@ -630,4 +636,40 @@ test("course_state full lists the materials and each objective's materialIds; su
   const tool = TOOLS.find((t) => t.name === "set_exam");
   const schema = (tool!.inputSchema.properties as Record<string, { properties?: Record<string, unknown> }>).scope;
   assert.ok(schema.properties && "materialIds" in schema.properties, "the schema offers the materials");
+});
+
+/* ── v0.5: the exam map ── */
+
+test("vault_material gives the tutor a held-back exam marked do-not-reveal, and refuses the reserved one until it's sat", async () => {
+  const { tools, COURSE, MATERIAL, RESERVED } = fakeTools();
+  const read = text(await handleRpc(call("vault_material", { courseId: COURSE, materialId: MATERIAL }), tools, "s"));
+  assert.equal(read.doNotReveal, true);
+  assert.equal((read.pages as unknown[]).length, 1);
+  assert.equal(isError(await handleRpc(call("vault_material", { courseId: COURSE, materialId: RESERVED }), tools, "s")), true);
+  assert.equal(isError(await handleRpc(call("vault_material", { courseId: COURSE, materialId: RESERVED, forMock: true }), tools, "s")), false);
+  for (const bad of [{ materialId: "nope" }, { materialId: MATERIAL, fromPage: 0 }, { materialId: MATERIAL, forMock: "yes" }]) {
+    assert.equal(isError(await handleRpc(call("vault_material", { courseId: COURSE, ...bad }), tools, "s")), true, JSON.stringify(bad));
+  }
+});
+
+test("set_exam stores the exam's rules, its problem types and the reserved exam, and refuses malformed ones", async () => {
+  const { tools, exams, COURSE, OBJ, MATERIAL, RESERVED } = fakeTools();
+  const base = { courseId: COURSE, title: "Midterm 2", date: "2026-11-20", topicIds: [] };
+  const types = [{ id: "charge-sharing", name: "Charge sharing between two capacitors", objectiveIds: [OBJ], materialIds: [MATERIAL], note: "Conserve charge, not energy." }];
+  const ok = await handleRpc(call("set_exam", { ...base, scope: { rules: { notes: "none", calculator: "simple", minutes: 75, text: "Graded on derivations." }, problemTypes: types, reservedMaterialId: RESERVED } }), tools, "s");
+  assert.equal(isError(ok), false);
+  assert.deepEqual(exams[0].scope?.rules, { notes: "none", calculator: "simple", minutes: 75, text: "Graded on derivations." });
+  assert.deepEqual(exams[0].scope?.problemTypes, types);
+  assert.equal(exams[0].scope?.reservedMaterialId, RESERVED);
+  const bad = [
+    { rules: { notes: "some" } },
+    { rules: { minutes: 0 } },
+    { problemTypes: [{ ...types[0], id: "Charge Sharing" }] },
+    { problemTypes: [types[0], types[0]] },
+    { problemTypes: [{ ...types[0], objectiveIds: ["x"] }] },
+    { problemTypes: [{ id: "a", name: "", objectiveIds: [], materialIds: [] }] },
+    { reservedMaterialId: "nope" },
+  ];
+  for (const scope of bad) assert.equal(isError(await handleRpc(call("set_exam", { ...base, scope }), tools, "s")), true, JSON.stringify(scope));
+  assert.equal(exams.length, 1, "refused calls store nothing");
 });

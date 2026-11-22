@@ -36,7 +36,8 @@ export function useCramPlan(course: Course | undefined, exam: Exam | null, maste
     }
     const topics = planTopics(exam, course.topics, objectives[course.id] ?? {}, relations[course.id] ?? [], (id) => mastery.objectives.get(id)?.status ?? "unseen");
     const touchedObjectiveIds = touchedObjectives(evidence, course.id, budget.since);
-    const mocks = materials.filter((m) => m.courseId === course.id && m.heldBack).map((m) => ({ materialId: m.id, name: m.filename, ...(exam.scope?.format?.minutes ? { minutes: exam.scope.format.minutes } : {}) }));
+    // The reserved exam is the one to sit: it goes first, so it gets the last study day.
+    const mocks = materials.filter((m) => m.courseId === course.id && m.heldBack).sort((a, b) => Number(b.id === exam.scope?.reservedMaterialId) - Number(a.id === exam.scope?.reservedMaterialId)).map((m) => ({ materialId: m.id, name: m.filename, ...(exam.scope?.format?.minutes ? { minutes: exam.scope.format.minutes } : {}) }));
     return { plan: cramPlan({ today, examDate: exam.date, budget, topics, spentMinutes, spentByDay, touchedObjectiveIds, mocks }), spentMinutes, topics };
   }, [exam, budget, course, objectives, relations, results, evidence, materials, mastery, dayKey, nowMs]);
 }

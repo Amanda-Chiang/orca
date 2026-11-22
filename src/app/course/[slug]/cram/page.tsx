@@ -4,6 +4,8 @@ import { use, useEffect, useState } from "react";
 import Link from "next/link";
 import { AnimatePresence, motion } from "motion/react";
 import { cardExam, daysUntil, examObjectives } from "@/lib/course/exam-card";
+import { examMap, rulesLine } from "@/lib/course/exam-map";
+import type { ExamScope } from "@/lib/data";
 import type { CramCovered, CramPlan, CramPlanDay, CramPlanInput, SpentMinutes } from "@/lib/mastery/cram-plan";
 import type { ObjectiveStatus } from "@/lib/mastery/types";
 import { useCourse, useDayKey, useMasteryByCourse, useOrca } from "@/lib/store";
@@ -110,7 +112,7 @@ export default function CramPage({ params, searchParams }: PageProps<"/course/[s
 
       <motion.div variants={stagger(0.05, 0.08)} initial="hidden" animate="show" className="flex items-start gap-[12px] px-[24px] pb-[28px] pt-[20px]" data-part="cram-page" data-cramming={exam.cramming ? "1" : undefined}>
         {cramming ? (
-          <CrammingView course={course} today={today} plan={planned.plan} topics={planned.topics} spentMinutes={planned.spentMinutes} objectiveName={(id) => catalogue[id]?.name ?? id} vault={vault.map((v) => v.filename)} connected={connected} onEdit={() => setEditing(true)} onStop={() => updateExam(exam.id, { cramming: false })} />
+          <CrammingView course={course} today={today} plan={planned.plan} topics={planned.topics} spentMinutes={planned.spentMinutes} objectiveName={(id) => catalogue[id]?.name ?? id} vault={vault.map((v) => ({ id: v.id, filename: v.filename }))} scope={exam.scope} onReserve={(id) => updateExam(exam.id, { scope: reserveIn(exam.scope, id) })} connected={connected} onEdit={() => setEditing(true)} onStop={() => updateExam(exam.id, { cramming: false })} />
         ) : (
           <motion.div variants={fadeUp} className="w-[600px]">
             <Card className="px-[28px] pb-[24px] pt-[24px]">
@@ -127,7 +129,7 @@ export default function CramPage({ params, searchParams }: PageProps<"/course/[s
 
 const isVerified = (s: ObjectiveStatus) => s === "verified" || s === "mastered";
 
-function CrammingView({ course, today, plan, topics, spentMinutes, objectiveName, vault, connected, onEdit, onStop }: { course: { slug: string }; today: string; plan: CramPlan; topics: CramPlanInput["topics"]; spentMinutes: SpentMinutes; objectiveName: (id: string) => string; vault: string[]; connected: boolean | null; onEdit: () => void; onStop: () => void }) {
+function CrammingView({ course, today, plan, topics, spentMinutes, objectiveName, vault, scope, onReserve, connected, onEdit, onStop }: { course: { slug: string }; today: string; plan: CramPlan; topics: CramPlanInput["topics"]; spentMinutes: SpentMinutes; objectiveName: (id: string) => string; vault: Array<{ id: string; filename: string }>; scope: ExamScope | null; onReserve: (materialId: string | null) => void; connected: boolean | null; onEdit: () => void; onStop: () => void }) {
   void today;
   const days = Object.keys(plan.perDay).sort();
   const hours = days.reduce((sum, d) => sum + plan.perDay[d], 0);
@@ -241,17 +243,32 @@ function CrammingView({ course, today, plan, topics, spentMinutes, objectiveName
               {vault.length ? (
                 <>
                   <ul className="flex flex-col" data-part="cram-vault">
-                    {vault.map((name) => (
-                      <li key={name} className="truncate text-[13px] font-semibold text-prussian" data-part="cram-vault-item">
-                        {name}
-                      </li>
-                    ))}
+                    {vault.map((v) => {
+                      const reserved = scope?.reservedMaterialId === v.id;
+                      return (
+                        <li key={v.id} className="flex items-center justify-between gap-[8px] text-[13px] font-semibold text-prussian" data-part="cram-vault-item" data-reserved={reserved ? "1" : undefined}>
+                          <span className="truncate">{v.filename}</span>
+                          {/* One exam can stay unread, even by Claude, until it's sat timed: the cram's measured score. */}
+                          {vault.length > 1 && (
+                            <button type="button" onClick={() => onReserve(reserved ? null : v.id)} data-part="cram-reserve" aria-pressed={reserved} className="shrink-0 text-[12px] font-bold text-wisteria-deep underline">
+                              {reserved ? "Reserved" : "Reserve"}
+                            </button>
+                          )}
+                        </li>
+                      );
+                    })}
                   </ul>
                   <p className="text-[13px] font-medium text-wisteria-deep" data-part="cram-mock-when">
                     {(() => {
                       const next = plan.days.find((d) => d.mock && !d.past);
                       return next ? `Held back. Sit it timed on ${dayChip(next.day)}${next.today ? " (today)" : ""}: it's on the schedule.` : "Held back. No study day left to sit it on.";
                     })()}
+                  </p>
+                  <p className="text-[12px] font-medium text-wisteria-deep">
+                    Claude reads these to plan, and never shows you the problems.{vault.length > 1 ? " Reserve one and Claude leaves it unread until you sit it timed." : ""}{" "}
+                    <Link href={`/add-material?course=${course.slug}&type=Practice%20exam&holdBack=1`} data-part="cram-add-material" className="font-bold underline">
+                      Add another
+                    </Link>
                   </p>
                 </>
               ) : (
@@ -266,7 +283,8 @@ function CrammingView({ course, today, plan, topics, spentMinutes, objectiveName
           </motion.div>
         </div>
 
-        <motion.div variants={fadeUp} className="min-w-0 flex-1">
+        <motion.div variants={fadeUp} className="flex min-w-0 flex-1 flex-col gap-[12px]">
+          <ExamMapCard scope={scope} hasVault={vault.length > 0} addHref={`/add-material?course=${course.slug}&type=Practice%20exam&holdBack=1`} />
           <Card className="flex flex-col gap-[12px] px-[22px] pb-[18px] pt-[18px]">
             <div className="flex items-baseline justify-between gap-[12px]">
               <h2 className="text-[20px] font-bold text-prussian">The schedule</h2>
@@ -418,5 +436,67 @@ function ScheduleDay({ day, topicName, covered }: { day: CramPlanDay; topicName:
         </p>
       )}
     </li>
+  );
+}
+
+/** The scope with one held-back exam reserved (null clears it); an exam without a scope gets an empty one to hold it. */
+function reserveIn(scope: ExamScope | null, materialId: string | null): ExamScope {
+  const { reservedMaterialId: _was, ...rest } = scope ?? { objectives: [], sources: [] };
+  void _was;
+  return materialId ? { ...rest, reservedMaterialId: materialId } : rest;
+}
+
+/**
+ * The exam map (plan 2026-11-22, Phase 1): the exam's rules and the kinds of problem its past exams
+ * ask, most recurrent first, as the student's Claude mapped them. Until it's mapped, it says how.
+ */
+function ExamMapCard({ scope, hasVault, addHref }: { scope: ExamScope | null; hasVault: boolean; addHref: string }) {
+  const map = examMap(scope);
+  const rules = rulesLine(scope?.rules);
+  return (
+    <Card className="flex flex-col gap-[8px] px-[22px] pb-[16px] pt-[16px]" data-part="cram-exam-map" data-mapped={map ? "1" : undefined}>
+      <div className="flex flex-wrap items-baseline justify-between gap-x-[12px]">
+        <h2 className="text-[20px] font-bold text-prussian">What the exam asks</h2>
+        {(rules || scope?.rules?.text) && (
+          <p className="text-[13px] font-semibold text-wisteria-deep" data-part="cram-rules">
+            {[rules, scope?.rules?.text].filter(Boolean).join(" · ")}
+          </p>
+        )}
+      </div>
+      {map ? (
+        <>
+          <ul className="flex flex-col gap-[3px]" data-part="cram-problem-types">
+            {map.types.map((t) => (
+              <li key={t.id} className="flex items-baseline justify-between gap-[10px] text-[14px] font-semibold text-prussian" data-part="cram-problem-type" data-type={t.id} title={t.note}>
+                <span className="truncate">{t.name}</span>
+                <span className="shrink-0 text-[13px] font-medium text-wisteria-deep">
+                  on {t.exams} of {map.examsMapped} {map.examsMapped === 1 ? "exam" : "exams"}
+                </span>
+              </li>
+            ))}
+          </ul>
+          {map.uncertain && (
+            <p className="text-[12px] font-medium text-wisteria-deep" data-part="cram-map-uncertain">
+              From {map.examsMapped} {map.examsMapped === 1 ? "exam" : "exams"}: a kind of problem on none of them can still come up.{" "}
+              <Link href={addHref} className="font-bold underline">
+                Add another past exam
+              </Link>
+            </p>
+          )}
+        </>
+      ) : (
+        <p className="text-[13px] font-medium text-wisteria-deep" data-part="cram-map-empty">
+          {hasVault ? "Not mapped yet. Ask Claude to map the exam: it reads your past exams and lists the kinds of problem they ask." : "Not mapped yet. "}
+          {!hasVault && (
+            <>
+              <Link href={addHref} className="font-bold underline">
+                Add every past exam you have
+              </Link>
+              , then ask Claude to map the exam.
+            </>
+          )}
+        </p>
+      )}
+    </Card>
   );
 }

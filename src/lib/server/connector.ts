@@ -13,6 +13,8 @@ import { logEvidence } from "@/lib/server/connector/log-evidence";
 import { materialFor } from "@/lib/server/connector/material-for";
 import type { ExamScope, MaterialType, ObjectiveSignal } from "@/lib/data";
 import { objectiveMaterialIds, protectScope } from "@/lib/course/exam-card";
+import { examMap } from "@/lib/course/exam-map";
+import { vaultMaterial } from "@/lib/server/connector/vault-material";
 import { AGENDA_RULES, addDays } from "@/lib/mastery/agenda";
 import { NOT_WEAK } from "@/lib/mastery/cram-plan";
 import { mergeBudget, withPerDay } from "@/lib/mastery/cram-budget";
@@ -129,18 +131,22 @@ export function orcaOutcome(q: QuizQuestion, response: string): AnswerEvent["out
  * call); the budget is merged over the exam's (`mergeBudget`: per day, today, or a total spread).
  */
 export function mergeScope(kept: ExamScope | null, input: ScopeInput, context: { today: string; examDate: string; now: string }): ExamScope {
-  const { budget, ...rest } = input;
-  if (rest.patchObjectives && rest.objectives) {
+  const { budget, reservedMaterialId, patchObjectives, objectives, sources, ...others } = input;
+  let base: ExamScope;
+  if (patchObjectives && objectives) {
     // A patch: the named objectives replace their entries, every other one keeps its weight; sources join the exam's.
-    const { patchObjectives: _patch, objectives: changed, sources, ...others } = rest;
-    void _patch;
     const byId = new Map((kept?.objectives ?? []).map((o) => [o.objectiveId, o]));
-    for (const o of changed) byId.set(o.objectiveId, o);
-    const patched: ExamScope = { ...(kept ?? { objectives: [], sources: [] }), ...others, objectives: [...byId.values()], sources: [...new Set([...(kept?.sources ?? []), ...(sources ?? [])])] };
-    if (budget) return { ...patched, budget: mergeBudget(kept?.budget, budget, context) };
-    return patched;
+    for (const o of objectives) byId.set(o.objectiveId, o);
+    base = { ...(kept ?? { objectives: [], sources: [] }), ...others, objectives: [...byId.values()], sources: [...new Set([...(kept?.sources ?? []), ...(sources ?? [])])] };
+  } else if (objectives !== undefined) {
+    // A resent scope replaces the objectives, sources, format and materials; what the student said, the rules, the exam map and the reservation stay.
+    const stays = { ...(kept?.worries ? { worries: kept.worries } : {}), ...(kept?.rules ? { rules: kept.rules } : {}), ...(kept?.problemTypes ? { problemTypes: kept.problemTypes } : {}), ...(kept?.reservedMaterialId ? { reservedMaterialId: kept.reservedMaterialId } : {}) };
+    base = { ...stays, objectives, sources: sources ?? [], ...others };
+  } else {
+    base = { ...(kept ?? { objectives: [], sources: [] }), ...others };
   }
-  const base: ExamScope = rest.objectives !== undefined ? { objectives: rest.objectives, sources: rest.sources ?? [], ...(kept?.worries ? { worries: kept.worries } : {}), ...(rest.format !== undefined ? { format: rest.format } : {}), ...(rest.materialIds !== undefined ? { materialIds: rest.materialIds } : {}) } : { ...(kept ?? { objectives: [], sources: [] }), ...(rest.format !== undefined ? { format: rest.format } : {}), ...(rest.materialIds !== undefined ? { materialIds: rest.materialIds } : {}) };
+  if (reservedMaterialId === null) delete base.reservedMaterialId;
+  else if (reservedMaterialId !== undefined) base.reservedMaterialId = reservedMaterialId;
   if (budget) return { ...base, budget: mergeBudget(kept?.budget, budget, context) };
   // A scope resent without a budget keeps the exam's, so Edit scope from the chat doesn't lose the time budget.
   return kept?.budget ? { ...base, budget: kept.budget } : base;
@@ -162,7 +168,8 @@ export function scopeSummary(scope: ExamScope, topicIds: readonly string[], obje
     else excluded++;
   }
   // The budget with its hours by day (a budget saved before per-day budgets gets its spread), so Claude sees the days.
-  return { inScope, excluded, sources: scope.sources, ...(scope.worries ? { worries: scope.worries } : {}), ...(scope.budget ? { budget: examDate ? withPerDay(scope.budget, examDate) : scope.budget } : {}) };
+  const map = examMap(scope);
+  return { inScope, excluded, sources: scope.sources, ...(scope.worries ? { worries: scope.worries } : {}), ...(scope.rules ? { rules: scope.rules } : {}), ...(map ? { examMap: map } : {}), ...(scope.reservedMaterialId ? { reservedMaterialId: scope.reservedMaterialId } : {}), ...(scope.budget ? { budget: examDate ? withPerDay(scope.budget, examDate) : scope.budget } : {}) };
 }
 
 export function connectorTools(db: OrcaSupabase, ownerId: string, now: () => Date = () => new Date()): ConnectorTools {
@@ -250,7 +257,8 @@ export function connectorTools(db: OrcaSupabase, ownerId: string, now: () => Dat
     const examFocus = [...new Set(examLines.filter((e) => e.cramming || (e.date >= today && e.date <= weekOut)).flatMap((e) => (e.topicIds.length ? e.topicIds : liveTopics.map((t) => t.id))))];
     const mode = examLines.reduce<CourseMode>((m, e) => (MODE_ORDER[e.mode] > MODE_ORDER[m] ? e.mode : m), "normal");
     const cramming = examLines.find((e) => e.cramming)?.id ?? null;
-    const vaultLines: VaultLine[] = materialLines.filter((m) => m.heldBack).map((m) => ({ materialId: m.id, filename: m.filename, type: m.type }));
+    const reservedIds = new Set((exams.data ?? []).map((e) => (e.scope as unknown as ExamScope | null)?.reservedMaterialId).filter((id): id is string => !!id));
+    const vaultLines: VaultLine[] = materialLines.filter((m) => m.heldBack).map((m) => ({ materialId: m.id, filename: m.filename, type: m.type, reserved: reservedIds.has(m.id) }));
     const topicLines: TopicLine[] = liveTopics.map((t) => {
       const mine = lines.filter((l) => l.topicId === t.id);
       return { id: t.id, name: t.name, objectives: mine.length, weak: mine.filter((l) => DUE_STATUSES.has(l.status as ObjectiveStatus)).length, askable: mine.filter((l) => l.questions > 0).length };
@@ -558,6 +566,7 @@ export function connectorTools(db: OrcaSupabase, ownerId: string, now: () => Dat
     },
 
     materialFor: (courseId, objectiveIds) => materialFor(db, ownerId, courseId, objectiveIds),
+    vaultMaterial: (courseId, materialId, options) => vaultMaterial(db, ownerId, courseId, materialId, options),
     addQuestions: (courseId, questions) => addQuestions(db, ownerId, courseId, questions),
     addMaterial: (courseId, input) => addMaterial(db, ownerId, courseId, input),
     logEvidence: (courseId, objectiveId, entry, sessionId) => logEvidence(db, ownerId, courseId, objectiveId, entry, sessionId),
@@ -640,8 +649,9 @@ export function connectorTools(db: OrcaSupabase, ownerId: string, now: () => Dat
       const unknown = askedTopics.filter((id) => !known.has(id));
       if (unknown.length) return { error: `These aren't topic ids in this course: ${unknown.join(", ")}. Use ids from course_state.` };
       // A scope names live objectives of this course (archived and merged ones are no longer live).
-      if (exam.scope?.objectives?.length) {
-        const wanted = [...new Set(exam.scope.objectives.map((o) => o.objectiveId))];
+      const typeObjectives = (exam.scope?.problemTypes ?? []).flatMap((t) => t.objectiveIds);
+      if (exam.scope?.objectives?.length || typeObjectives.length) {
+        const wanted = [...new Set([...(exam.scope?.objectives ?? []).map((o) => o.objectiveId), ...typeObjectives])];
         const { data: live, error: liveError } = await db.from("objectives").select("id").eq("owner_id", ownerId).eq("course_id", courseId).neq("review", "archived").is("merged_into", null).in("id", wanted);
         if (liveError) throw new Error(`Couldn't read the objectives: ${liveError.message}`);
         const known = new Set((live ?? []).map((o) => o.id));
@@ -649,12 +659,16 @@ export function connectorTools(db: OrcaSupabase, ownerId: string, now: () => Dat
         if (unknownObjectives.length) return { error: `These aren't objective ids in this course: ${unknownObjectives.join(", ")}. Use ids from course_state (detail "full").` };
       }
       // The materials a scope names are this course's, not removed.
-      if (exam.scope?.materialIds?.length) {
-        const { data: known, error: knownError } = await db.from("materials").select("id").eq("owner_id", ownerId).eq("course_id", courseId).neq("status", "removed").in("id", exam.scope.materialIds);
+      const namedMaterials = [...new Set([...(exam.scope?.materialIds ?? []), ...(exam.scope?.problemTypes ?? []).flatMap((t) => t.materialIds), ...(exam.scope?.reservedMaterialId ? [exam.scope.reservedMaterialId] : [])])];
+      if (namedMaterials.length) {
+        const { data: known, error: knownError } = await db.from("materials").select("id, held_back").eq("owner_id", ownerId).eq("course_id", courseId).neq("status", "removed").in("id", namedMaterials);
         if (knownError) throw new Error(`Couldn't read the materials: ${knownError.message}`);
         const ids = new Set((known ?? []).map((m) => m.id));
-        const unknownMaterials = exam.scope.materialIds.filter((id) => !ids.has(id));
+        const unknownMaterials = namedMaterials.filter((id) => !ids.has(id));
         if (unknownMaterials.length) return { error: `These aren't material ids in this course: ${unknownMaterials.join(", ")}. Use ids from course_state's materials (detail "full").` };
+        // Only a held-back exam can be reserved: reserving is keeping it unread until it's sat.
+        const reserved = exam.scope?.reservedMaterialId;
+        if (reserved && !(known ?? []).find((m) => m.id === reserved)?.held_back) return { error: "scope.reservedMaterialId must be a held-back exam from course_state's vault." };
       }
       // cramming and scope left out keep what the exam already has (false and null for a new one).
       let kept: { cramming: boolean; scope: ExamScope | null; title?: string; date?: string; topicIds?: string[] } = { cramming: false, scope: null };
