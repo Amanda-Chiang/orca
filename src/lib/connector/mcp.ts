@@ -10,7 +10,7 @@
  */
 
 import { SCOPE_STRENGTH } from "../course/scope.ts";
-import { MATERIAL_TYPES, type CramBudget, type ExamRules, type ExamScope, type MaterialType, type ProblemType, type ScopeEvidence, type ScopeSignal } from "../data.ts";
+import { MATERIAL_TYPES, type CramBudget, type ExamRules, type ExamScope, type MaterialType, type ProblemType, type ScopeEdit, type ScopeEvidence, type ScopeSignal } from "../data.ts";
 import type { ExamMap } from "../course/exam-map.ts";
 import { ATTEMPT_OUTCOMES, type ExamReadiness, type ProblemAttempt } from "../course/readiness.ts";
 import { BUDGET_DAYS_MAX, HOURS_PER_DAY_MAX, HOUR_STEP, isDay, isHalfHours, type CramBudgetInput } from "../mastery/cram-budget.ts";
@@ -205,6 +205,8 @@ export interface ScopeSummary {
   /** The exam map: problem types by how many of the mapped past exams ask them; absent until you write scope.problemTypes. */
   examMap?: ExamMap;
   reservedMaterialId?: string;
+  /** The last five edits to the scope or budget, and who made them (the student in the app, or you). */
+  history?: ScopeEdit[];
 }
 
 /** A material of the course (not removed), so Claude can map "lectures 11 to 16" to files. */
@@ -501,7 +503,7 @@ export interface FlagCheckResult {
 export interface ConnectorTools {
   courses(): Promise<CourseSummary[]>;
   /** The course in full, or a summary without the objective lines (or only some topics' objectives). Null: no such course. */
-  courseState(courseId: string, options?: { detail?: "summary" | "full"; topicIds?: string[]; asOf?: string }): Promise<CourseState | null>;
+  courseState(courseId: string, options?: { detail?: "summary" | "weak" | "full"; topicIds?: string[]; asOf?: string }): Promise<CourseState | null>;
   /** The next questions to ask (unanswered first, then least recently seen), writing some when none exist. Null: no such course. */
   nextQuestions(courseId: string, options: { objectiveIds?: string[]; topicIds?: string[]; count: number; write: boolean }): Promise<NextQuestions | null>;
   /** Remove an exam. */
@@ -580,7 +582,7 @@ export const TOOLS = [
       type: "object",
       properties: {
         courseId: { ...UUID, description: "The course to describe. Omit to list the courses." },
-        detail: { type: "string", enum: ["summary", "full"], description: "summary: no objective or material lines, exams' scopes by size; full (default): every objective, the materials, full scopes." },
+        detail: { type: "string", enum: ["summary", "weak", "full"], description: "summary: no objective or material lines, exams' scopes by size; weak: the summary plus only the weak-spot objectives (the cheap view for a session: use it unless you need every objective id); full (default): every objective, the materials, full scopes." },
         topicIds: { type: "array", items: { type: "string" }, description: "With full: only these topics' objectives." },
         asOf: { type: "string", description: "Testing only: YYYY-MM-DD, within 60 days of today. The exams, mode and cram plan are worked out as if today were that day (statuses and recall stay as of now); nothing is written. Use it to check how a cram plays out on later days instead of editing a real exam's date." },
       },
@@ -1284,10 +1286,10 @@ async function callTool(params: Record<string, unknown>, tools: ConnectorTools, 
       case "course_state": {
         if (args.courseId === undefined) return toolText({ courses: await tools.courses() });
         if (!isUuid(args.courseId)) return toolText({ error: "courseId must be a course id from course_state." }, true);
-        if (args.detail !== undefined && args.detail !== "summary" && args.detail !== "full") return toolText({ error: "detail is summary or full." }, true);
+        if (args.detail !== undefined && args.detail !== "summary" && args.detail !== "weak" && args.detail !== "full") return toolText({ error: "detail is summary, weak or full." }, true);
         if (args.topicIds !== undefined && (!Array.isArray(args.topicIds) || !args.topicIds.every(isUuid))) return toolText({ error: "topicIds is a list of topic ids from course_state." }, true);
         if (args.asOf !== undefined && (typeof args.asOf !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(args.asOf) || Number.isNaN(Date.parse(args.asOf)) || Math.abs(Date.parse(args.asOf) - Date.now()) > 61 * 86_400_000)) return toolText({ error: "asOf is a day, YYYY-MM-DD, within 60 days of today." }, true);
-        const state = await tools.courseState(args.courseId, { detail: (args.detail as "summary" | "full" | undefined) ?? "full", ...(args.topicIds !== undefined ? { topicIds: args.topicIds as string[] } : {}), ...(typeof args.asOf === "string" ? { asOf: args.asOf } : {}) });
+        const state = await tools.courseState(args.courseId, { detail: (args.detail as "summary" | "weak" | "full" | undefined) ?? "full", ...(args.topicIds !== undefined ? { topicIds: args.topicIds as string[] } : {}), ...(typeof args.asOf === "string" ? { asOf: args.asOf } : {}) });
         return state ? toolText(state) : toolText({ error: "No such course." }, true);
       }
       case "next_questions": {
