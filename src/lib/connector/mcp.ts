@@ -88,7 +88,11 @@ export const INSTRUCTIONS =
   "the exams it's on. Plan from that map: teach the types that recur across exams first, at the " +
   "exams' difficulty, and say so when scopeSummary.examMap.uncertain is true (fewer than three exams " +
   "read: a type on none of them can still appear). An exam with a vault but no problemTypes hasn't " +
-  "been mapped: do that before anything else. Setup: when an exam is near and has no scope, " +
+  "been mapped: do that before anything else. Attachments: Orca never sees a file or text the " +
+  "student gives you in the chat. When they attach or paste course material (slides, notes, a " +
+  "syllabus, homework, an exam), ask once whether to add it to Orca, and on a yes call add_material: " +
+  "the text when you can read all of it, else file true for an upload link; a past or practice exam " +
+  "held back. Never add it unasked, and don't ask again about the same file. Setup: when an exam is near and has no scope, " +
   "ask what the professor said it covers, whether there's a practice exam or study guide " +
   "(add_material: pasted text, or file true for an upload link; past and practice exams are held " +
   "back), and what the student is worried about (flag_check with strength struggled); then record " +
