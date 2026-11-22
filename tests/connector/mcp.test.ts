@@ -18,6 +18,7 @@ function fakeTools() {
   const checked: Array<{ questionId: string; response: string; session: string; report?: Partial<AnswerReport> }> = [];
   const exams: ExamLine[] = [];
   const sessions: SessionLine[] = [];
+  const problems: Array<Record<string, unknown>> = [];
   const flagged: Array<{ objectiveIds: string[]; said: string; strength: FlagStrength }> = [];
   const screened: ScreenHit[][] = [];
   const materialAsked: string[][] = [];
@@ -62,6 +63,7 @@ function fakeTools() {
         plan: null,
         coverage: null,
         topErrors: [],
+        readiness: null,
         lastSession: sessions[sessions.length - 1] ?? null,
       };
     },
@@ -94,6 +96,11 @@ function fakeTools() {
       recorded.push({ questionId, outcome, session, ...(response ? { response } : {}), report });
       // The server's record_answer checks the words against a choice or exact key and says when its result won.
       return { recorded: true, objectiveId: OBJ, status: "learning", ...(response === "the stored key disagrees" ? { corrected: true as const } : {}) };
+    },
+    async logProblem(courseId, examId, attempt) {
+      if (courseId !== COURSE) return { error: "No such course." };
+      problems.push({ examId, ...attempt });
+      return { recorded: true, typeId: attempt.typeId, state: attempt.cold && attempt.outcome === "solved" ? "ready" : "shaky", ready: 1, total: 2 };
     },
     async logSession(courseId, entry) {
       if (courseId !== COURSE) return { error: "No such course." };
@@ -146,7 +153,7 @@ function fakeTools() {
       screened.push(hits);
     },
   };
-  return { tools, recorded, checked, exams, flagged, screened, materialAsked, added, materials, logged, COURSE, TOPIC, OBJ, Q, MATERIAL, RESERVED };
+  return { tools, recorded, checked, exams, flagged, screened, materialAsked, added, materials, logged, problems, COURSE, TOPIC, OBJ, Q, MATERIAL, RESERVED };
 }
 
 const rpc = (method: string, params?: unknown, id: number | string | null = 1) => ({ jsonrpc: "2.0", id, method, ...(params === undefined ? {} : { params }) });
@@ -174,7 +181,7 @@ test("notifications get 202 and no body; ping and tools/list answer", async () =
   assert.deepEqual((await handleRpc(rpc("ping"), tools, "s")).body, { jsonrpc: "2.0", id: 1, result: {} });
   const list = await handleRpc(rpc("tools/list"), tools, "s");
   const names = (list.body as { result: { tools: Array<{ name: string }> } }).result.tools.map((t) => t.name);
-  assert.deepEqual(names, ["course_state", "next_questions", "set_exam", "questions_for", "check_answer", "record_answer", "flag_check", "material_for", "vault_material", "add_questions", "add_material", "log_session", "log_evidence"]);
+  assert.deepEqual(names, ["course_state", "next_questions", "set_exam", "questions_for", "check_answer", "record_answer", "flag_check", "material_for", "vault_material", "add_questions", "add_material", "log_problem", "log_session", "log_evidence"]);
   for (const t of TOOLS) {
     assert.ok(t.description.length > 80, `${t.name} explains when to use it`);
     assert.equal(t.inputSchema.type, "object");
@@ -697,4 +704,21 @@ test("log_session stores a sitting with its bookmark and ordered next steps; cou
   for (const change of bad) assert.equal(isError(await handleRpc(call("log_session", { ...sitting, ...change }), tools, "s")), true, JSON.stringify(change));
   assert.match(INSTRUCTIONS, /log_session/);
   assert.match(INSTRUCTIONS, /lastSession/);
+});
+
+/* ── Readiness by problem type ── */
+
+test("log_problem records an exam-style attempt for a kind of problem, with a mock's points, and refuses malformed ones", async () => {
+  const { tools, problems, COURSE, RESERVED } = fakeTools();
+  const EXAM = "b0000000-0000-4000-8000-000000000009";
+  const base = { courseId: COURSE, examId: EXAM, problemTypeId: "charge-sharing", outcome: "solved", cold: true };
+  const cold = text(await handleRpc(call("log_problem", { ...base, minutes: 12 }), tools, "s"));
+  assert.deepEqual([cold.recorded, cold.state], [true, "ready"]);
+  const mock = await handleRpc(call("log_problem", { ...base, outcome: "with-hints", cold: false, errorNote: "conserved energy, not charge", mockMaterialId: RESERVED, points: 12, outOf: 25 }), tools, "s");
+  assert.equal(isError(mock), false);
+  assert.deepEqual(problems[1], { examId: EXAM, typeId: "charge-sharing", outcome: "with-hints", cold: false, errorNote: "conserved energy, not charge", mockMaterialId: RESERVED, points: 12, outOf: 25 });
+  const bad = [{ problemTypeId: "Charge Sharing" }, { outcome: "fine" }, { cold: "yes" }, { minutes: 0 }, { points: 5 }, { points: 30, outOf: 25 }, { points: 1, outOf: 0 }, { examId: "nope" }, { mockMaterialId: "nope" }];
+  for (const change of bad) assert.equal(isError(await handleRpc(call("log_problem", { ...base, ...change }), tools, "s")), true, JSON.stringify(change));
+  assert.equal(problems.length, 2, "refused calls record nothing");
+  assert.match(INSTRUCTIONS, /log_problem/);
 });

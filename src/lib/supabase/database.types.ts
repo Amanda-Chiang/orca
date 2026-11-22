@@ -288,6 +288,25 @@ isOneToOne: false
       referencedColumns: ["id","owner_id"]
     }
                   ]
+                },"problem_attempts": {
+                  Row: {
+                    "at": string,"cold": boolean,"course_id": string,"error_note": string | null,"exam_id": string,"id": string,"minutes": number | null,"mock_material_id": string | null,"out_of": number | null,"outcome": string,"owner_id": string,"points": number | null,"type_id": string
+                  }
+                  Insert: {
+                    "at"?: string,"cold"?: boolean,"course_id": string,"error_note"?: string | null,"exam_id": string,"id"?: string,"minutes"?: number | null,"mock_material_id"?: string | null,"out_of"?: number | null,"outcome": string,"owner_id": string,"points"?: number | null,"type_id": string
+                  }
+                  Update: {
+                    "at"?: string,"cold"?: boolean,"course_id"?: string,"error_note"?: string | null,"exam_id"?: string,"id"?: string,"minutes"?: number | null,"mock_material_id"?: string | null,"out_of"?: number | null,"outcome"?: string,"owner_id"?: string,"points"?: number | null,"type_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "problem_attempts_course_id_owner_id_fkey"
+      columns: ["course_id","owner_id"]
+isOneToOne: false
+      referencedRelation: "courses"
+      referencedColumns: ["id","owner_id"]
+    }
+                  ]
                 },"profiles": {
                   Row: {
                     "avatar": string,"created_at": string,"default_review_config": Json | null,"is_admin": boolean,"last_active_at": string | null,"marker_notes": string | null,"name": string | null,"onboarded": boolean,"onboarding": NonNullable<Json>,"orca_notes": string | null,"owner_id": string,"timezone": string

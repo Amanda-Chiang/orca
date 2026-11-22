@@ -39,7 +39,7 @@ test("Settings mints the connector link once; Claude can read the course, ask a 
   const note = await page.request.post(url, { data: { jsonrpc: "2.0", method: "notifications/initialized" } });
   expect(note.status()).toBe(202);
   const tools = await rpc(page, url, "tools/list");
-  expect(tools.body!.result!.tools!.map((t) => t.name)).toEqual(["course_state", "next_questions", "set_exam", "questions_for", "check_answer", "record_answer", "flag_check", "material_for", "vault_material", "add_questions", "add_material", "log_session", "log_evidence"]);
+  expect(tools.body!.result!.tools!.map((t) => t.name)).toEqual(["course_state", "next_questions", "set_exam", "questions_for", "check_answer", "record_answer", "flag_check", "material_for", "vault_material", "add_questions", "add_material", "log_problem", "log_session", "log_evidence"]);
 
   // The courses, then one course: every objective unseen (not flagged), each with its questions counted; weak points first, so none is due.
   const courses = toolText(await call(page, url, "course_state", {}));
@@ -353,6 +353,21 @@ test("the exam map: Claude reads a held-back exam (never the reserved one), stor
   expect(after.lastSession).toMatchObject({ bookmark: "Drill 2 half done", next: ["Finish Drill 2", "A timed conversion problem"] });
   expect(after.plan.minutesToday).toBe(15);
 
+  // Readiness by kind of problem: untested until a cold exam-style problem is solved; the plan's units are the kinds.
+  const before = toolText(await call(page, url, "course_state", { courseId: F.course, detail: "summary" })) as { readiness: { ready: number; total: number; types: Array<{ id: string; state: string }> }; plan: { unit: string; diagnostic: { topicIds: string[] } | null } };
+  expect(before.readiness).toMatchObject({ ready: 0, total: 1, types: [{ id: "sign-extension", state: "untested" }] });
+  expect(before.plan.unit).toBe("problem-type");
+  expect(before.plan.diagnostic?.topicIds).toEqual(["sign-extension"]);
+  expect((await call(page, url, "log_problem", { courseId: F.course, examId: exam.id, problemTypeId: "no-such-kind", outcome: "solved", cold: true })).body!.result!.isError).toBe(true);
+  const guided = toolText(await call(page, url, "log_problem", { courseId: F.course, examId: exam.id, problemTypeId: "sign-extension", outcome: "with-hints", cold: false, errorNote: "copied the low bit" })) as { state: string };
+  expect(guided.state).toBe("shaky");
+  const cold = toolText(await call(page, url, "log_problem", { courseId: F.course, examId: exam.id, problemTypeId: "sign-extension", outcome: "solved", cold: true, minutes: 9 })) as { state: string; ready: number };
+  expect([cold.state, cold.ready]).toEqual(["ready", 1]);
+  const readyNow = toolText(await call(page, url, "course_state", { courseId: F.course, detail: "summary" })) as { readiness: { ready: number; share: number }; plan: { diagnostic: unknown; verified: { done: number; total: number } } };
+  expect(readyNow.readiness).toMatchObject({ ready: 1, share: 1 });
+  expect(readyNow.plan.diagnostic).toBeNull();
+  expect(readyNow.plan.verified).toMatchObject({ done: 1, total: 1 });
+
   await page.goto(`/course/${FIXTURE_STATE.courses[0].slug}/cram`);
   const left = page.locator("[data-part=cram-last-session]");
   await expect(left.locator("[data-part=cram-bookmark]")).toHaveText("Drill 2 half done");
@@ -361,7 +376,9 @@ test("the exam map: Claude reads a held-back exam (never the reserved one), stor
   const map = page.locator("[data-part=cram-exam-map]");
   await expect(map).toHaveAttribute("data-mapped", "1");
   await expect(map.locator("[data-part=cram-rules]")).toHaveText("Closed book · simple calculator · 75 min");
-  await expect(map.locator("[data-part=cram-problem-type]")).toHaveText(["Sign-extend a numberon 1 of 1 exam"]);
+  await expect(map.locator("[data-part=cram-problem-type]")).toContainText(["Sign-extend a number"]);
+  await expect(map.locator("[data-part=cram-type-state]")).toHaveText(["Ready"]);
+  await expect(page.locator("[data-part=cram-plan]")).toContainText("ready for 1 of 1 kinds of problem");
   await expect(map.locator("[data-part=cram-map-uncertain]")).toBeVisible();
   // The reserved exam is marked; reserving the other one moves the mark and is saved.
   await expect(page.locator('[data-part=cram-vault-item][data-reserved="1"]')).toContainText("Fall23 Quiz 2.pdf");
