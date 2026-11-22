@@ -1,13 +1,22 @@
 name: Deploy
 
-# Every change that reaches `main` goes live by itself. Vercel builds production from
-# `backend-implementation`, so once CI on `main` is green this workflow (1) pushes any migration
-# `main` adds to the hosted Supabase project, so the tables exist before the code that needs them,
-# and (2) merges `main` into `backend-implementation` and pushes it. The merge commit is authored
-# as the owner: Vercel's Hobby plan builds only commits by the account's own GitHub user, and a
-# teammate's merge commit at the top of the branch would show as "Blocked" instead of building.
+# Every change that reaches `main` goes live by itself. Production is the `backend-implementation`
+# branch, so once CI on `main` is green this workflow (1) pushes any migration `main` adds to the
+# hosted Supabase project, so the tables exist before the code that needs them, (2) merges `main`
+# into `backend-implementation` and pushes it, and (3) deploys that branch to Vercel's production
+# with the Vercel CLI. The Vercel project has no Git connection (since 2026-11-22, when the
+# repository moved to an account the project's owner doesn't control), so nothing builds unless this
+# workflow does it. The merge commit is authored as the Vercel project's owner: the Hobby plan
+# refuses deployments whose commit is by anyone else.
+#
+# Run it by hand (Actions → Deploy → Run workflow) to redeploy production as it is, e.g. after
+# changing an environment variable on Vercel.
 #
 # Needs, once, in the repository's Settings → Secrets and variables → Actions:
+#   VERCEL_TOKEN            a token from vercel.com/account/tokens (the project owner's)
+#   VERCEL_ORG_ID           the owner id of the Vercel project (team_… or the user's id)
+#   VERCEL_PROJECT_ID       the Vercel project (prj_…; Project → Settings → General)
+# Without these three nothing is deployed: the run fails before it touches the database.
 #   SUPABASE_ACCESS_TOKEN   a personal access token from supabase.com/dashboard/account/tokens
 #   SUPABASE_DB_PASSWORD    the project's database password (Supabase → Connect → reset if lost)
 # With them every deploy runs `supabase db push` first (it applies only what the hosted project is
@@ -44,6 +53,7 @@ jobs:
       SUPABASE_PROJECT_REF: fbbimuspcsytjhbqlzzc
       HAVE_SUPABASE_SECRETS: ${{ secrets.SUPABASE_ACCESS_TOKEN != '' && secrets.SUPABASE_DB_PASSWORD != '' }}
       HAVE_TRIGGER_SECRETS: ${{ secrets.TRIGGER_ACCESS_TOKEN != '' && secrets.TRIGGER_PROJECT_REF != '' }}
+      HAVE_VERCEL_SECRETS: ${{ secrets.VERCEL_TOKEN != '' && secrets.VERCEL_ORG_ID != '' && secrets.VERCEL_PROJECT_ID != '' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -62,6 +72,13 @@ jobs:
           migrations=$(git diff --name-only --diff-filter=A origin/backend-implementation...origin/main -- supabase/migrations | tr '\n' ' ')
           echo "migrations=$migrations" >> "$GITHUB_OUTPUT"
           echo "New migrations: ${migrations:-none}"
+
+      # Checked first, so the database and the jobs never move ahead of a site that can't follow.
+      - name: Deploying needs the Vercel secrets
+        if: env.HAVE_VERCEL_SECRETS != 'true' && (steps.diff.outputs.nothing != 'true' || github.event_name == 'workflow_dispatch')
+        run: |
+          echo "::error::VERCEL_TOKEN, VERCEL_ORG_ID and VERCEL_PROJECT_ID aren't all set as repository secrets, so this workflow can't deploy to Vercel (see the comment at the top of .github/workflows/deploy.yml). Nothing was changed. Add them and rerun this workflow."
+          exit 1
 
       - name: Migrations need the Supabase secrets
         if: steps.diff.outputs.nothing != 'true' && steps.diff.outputs.migrations != '' && env.HAVE_SUPABASE_SECRETS != 'true'
@@ -87,7 +104,7 @@ jobs:
           supabase db push --linked --yes
 
       - uses: actions/setup-node@v4
-        if: steps.diff.outputs.nothing != 'true' && env.HAVE_TRIGGER_SECRETS == 'true'
+        if: steps.diff.outputs.nothing != 'true' || github.event_name == 'workflow_dispatch'
         with:
           node-version: 24
           cache: npm
@@ -101,7 +118,7 @@ jobs:
           npm ci --no-audit --no-fund
           npx --yes trigger.dev@4.8.3 deploy --env prod
 
-      - name: Merge main into backend-implementation and push (Vercel builds it)
+      - name: Merge main into backend-implementation and push
         if: steps.diff.outputs.nothing != 'true'
         run: |
           git config user.name "${{ vars.DEPLOY_AUTHOR_NAME || 'Sophia Huh' }}"
@@ -109,4 +126,19 @@ jobs:
           git checkout -B backend-implementation origin/backend-implementation
           git merge --no-ff -m "Deploy: main at $(git rev-parse --short origin/main)" origin/main
           git push origin backend-implementation
-          echo "Pushed $(git rev-parse --short HEAD); Vercel is building it."
+          echo "Pushed $(git rev-parse --short HEAD)."
+
+      # Vercel builds what's uploaded, with the project's own Production environment variables.
+      # A manual run with nothing new on main redeploys the branch as it is.
+      - name: Deploy backend-implementation to Vercel (production)
+        if: steps.diff.outputs.nothing != 'true' || github.event_name == 'workflow_dispatch'
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          if [ "${{ steps.diff.outputs.nothing }}" = "true" ]; then
+            git checkout --detach origin/backend-implementation
+          fi
+          echo "Deploying $(git rev-parse --short HEAD) to production."
+          npx --yes vercel@66.6.0 deploy --prod --yes --token "$VERCEL_TOKEN"
