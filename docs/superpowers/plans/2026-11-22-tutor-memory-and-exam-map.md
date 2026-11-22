@@ -79,6 +79,14 @@ timed score.
   late in a cram, state assumptions and reference directions, say what's optional and what's new,
   verify arithmetic before posting, ask "which ones did you miss?" after releasing answers.
 
+**Built (branch `playbook`):** `PLAYBOOK` in `src/lib/connector/mcp.ts`, the last part of the
+connector's instructions: time (real hours, the clock, the stop time, problems first when the exam is
+two days off), honesty (no guesses as facts; what's new, what's a scaffold, what's optional; the
+exam's rules), problems (exam difficulty and clean numbers, full figures, stated conventions, what
+each part is worth, checked arithmetic, batched sets), hints (one at a time, nothing of the answer),
+mistakes (the student's actual line, the specific slip, "which ones did you miss?"). Instructions are
+advice to the student's Claude, not something Orca can enforce.
+
 ### Alongside (small fixes from the change list)
 
 Numeric answers with units and tolerance (#9), "don't know" on multiple choice (#16), a compact

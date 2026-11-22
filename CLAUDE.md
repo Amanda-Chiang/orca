@@ -131,8 +131,9 @@ own courses (Data Structures, Fundamentals of Computer Systems) on the hosted pr
   and its bookmark and ordered next steps open the next chat. Phase 3 is built: readiness by kind of problem
   (`problem_attempts`, migration `20261122100000`; tool `log_problem`, fourteen tools; `course_state.readiness`,
   `src/lib/course/readiness.ts`: ready only after a cold solve, `measured` from the reserved exam's sitting); once
-  an exam has a map the cram plan's units are its kinds of problem (`plan.unit`, `typePlanTopics`). Phase 4 (the
-  tutor playbook) isn't built.
+  an exam has a map the cram plan's units are its kinds of problem (`plan.unit`, `typePlanTopics`). Phase 4 is
+  built: the tutor playbook (`PLAYBOOK`, the last part of the connector's `INSTRUCTIONS`; the owner's corrections
+  as standing rules for the student's Claude). The plan's "Alongside" small fixes aren't built.
 - **Upload toasts** (2026-11-08, `src/components/layout/UploadToasts.tsx`, mounted in `providers.tsx`): an upload
   that finishes (done or failed) while the app is open, from any tab or device, pops a toast unless the student is on
   that course's uploads; uploads of one course finishing while its toast is up share it. One upload's toast opens
