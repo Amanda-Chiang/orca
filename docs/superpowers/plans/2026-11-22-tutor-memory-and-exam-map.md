@@ -50,6 +50,13 @@ committed (course material and a private chat).
   bookmark ("7.5 half done") and an ordered next-steps list. Time counts from it.
 - The cram page shows the record, so a new chat picks up where the last stopped.
 
+**Built (branch `session-record`):** `study_sessions` (migration `20261122090000`, owner-read, server-write;
+pgTAP 21), connector tool `log_session` (minutes, summary, `worked` with an outcome and the specific
+slip per item, `bookmark`, ordered `next`), `course_state.lastSession`, `GET /api/study-log`, the cram
+page's "Where you left off" card. A day's time with Claude is what it logged or the estimate from its
+evidence, whichever is more (`claudeMinutesByDay`), on the page and in `course_state` alike. The
+instructions tell Claude to open from `lastSession` and to log every sitting, with minutes from the clock.
+
 ### Phase 3: Readiness at exam level
 
 - The diagnostic is a cold exam-style problem per type, not recall questions.

@@ -97,7 +97,13 @@ export const INSTRUCTIONS =
   "quote or walk through its problems or solutions; write your own problems of the same kinds. The " +
   "reserved exam (vault[].reserved) you don't read either until the student sits it timed. 8) Call flag_check " +
   "only for objectives the student asked about or got wrong in this chat. 9) Every few answers, " +
-  "send a one-line progress note unasked: what's verified, what's still weak, what's next.";
+  "send a one-line progress note unasked: what's verified, what's still weak, what's next. 10) The " +
+  "session record: when course_state has a lastSession, open by saying where the student stopped " +
+  "(its bookmark) and offering its next steps in order, before anything else. When a sitting ends or " +
+  "pauses, call log_session with the minutes actually spent (check the clock; never guess), what you " +
+  "worked on and how each went (with the specific slip, not just right or wrong), the bookmark and " +
+  "the ordered next steps. Homework, lessons and drills count: without it Orca shows no time studied " +
+  "and the next chat starts blind.";
 
 /** An exam scope as set_exam takes it: the budget is an input merged over the exam's (src/lib/mastery/cram-budget.ts `mergeBudget`), and `objectives` and `sources` left out keep the exam's. */
 /** `reservedMaterialId` null clears the reservation. */
@@ -263,7 +269,47 @@ export interface CourseState {
   coverage: CoverageLine | null;
   /** The kinds of mistake since the cram started (else the last 30 days), most frequent first, at most 6. */
   topErrors: TopError[];
+  /** The last sitting logged with log_session: where the student stopped and what comes next. Null before any. Start from it. */
+  lastSession: SessionLine | null;
 }
+
+/** One thing worked in a sitting. */
+export interface SessionWork {
+  /** What it was: "HW08 E8 to E12", "Drill 2: RLC damping", "Lesson 7: values that jump". */
+  what: string;
+  outcome?: (typeof SESSION_OUTCOMES)[number];
+  /** The specific slip, in words: "flipped the divider fraction", "used ω₀ where ω_d was asked". */
+  errorNote?: string;
+  objectiveIds?: string[];
+  /** A problem type's id from the exam map (scope.problemTypes). */
+  problemTypeId?: string;
+}
+
+/** A sitting as log_session takes it. */
+export interface SessionEntry {
+  minutes: number;
+  summary: string;
+  worked: SessionWork[];
+  bookmark?: string;
+  next?: string[];
+  examId?: string;
+}
+
+/** A logged sitting. */
+export interface SessionLine {
+  id: string;
+  at: string;
+  /** The student's day it counts on, YYYY-MM-DD. */
+  day: string;
+  minutes: number;
+  summary: string;
+  worked: SessionWork[];
+  bookmark: string | null;
+  next: string[];
+}
+
+/** How a piece of work went: alone, with hints, after being shown, or not finished. */
+export const SESSION_OUTCOMES = ["solved", "with-hints", "shown", "stuck"] as const;
 
 /** What next_questions answers: questions to ask, or why there are none yet. */
 export interface NextQuestions {
@@ -436,6 +482,8 @@ export interface ConnectorTools {
   addMaterial(courseId: string, input: AddMaterialInput): Promise<AddMaterialResult | { error: string }>;
   /** Record a piece of work or a signal on one objective. Free text (`problem`, `response`, `note`) arrives cleaned and screened. */
   logEvidence(courseId: string, objectiveId: string, entry: EvidenceEntry, sessionId: string): Promise<LoggedEvidence | { error: string }>;
+  /** Store a sitting: its minutes count as study on the student's day, and its bookmark and next steps open the next chat. */
+  logSession(courseId: string, entry: SessionEntry): Promise<SessionLine | { error: string }>;
   /** Log the screen's hits on what the student said (refused or not). */
   screened(hits: ScreenHit[]): Promise<void>;
 }
@@ -829,6 +877,46 @@ export const TOOLS = [
         file: { type: "boolean", description: "true, with no text: return an upload link instead." },
       },
       required: ["courseId", "type"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "log_session",
+    description:
+      "Log a sitting with the student: how long it ran, what you worked on together, where they stopped and what " +
+      "comes next. Call it whenever a sitting ends or pauses (the student says they're done, takes a break, or " +
+      "switches course), and at least every couple of hours in a long one. This is what makes homework, drills and " +
+      "lessons done in the chat count as time studied, and what lets a new chat pick up where this one stopped " +
+      "(course_state's lastSession). Minutes are the time actually spent since the last log_session, from the clock, " +
+      "not a guess. Objective-level results still go through check_answer, record_answer and log_evidence.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        courseId: UUID,
+        examId: { ...UUID, description: "The exam it was for, when one is being crammed for." },
+        minutes: { type: "integer", minimum: 1, maximum: 720, description: "Minutes actually spent since the last log_session." },
+        summary: { type: "string", maxLength: 500, description: "One or two sentences: what the sitting covered." },
+        worked: {
+          type: "array",
+          maxItems: 30,
+          description: "What was worked, in order.",
+          items: {
+            type: "object",
+            properties: {
+              what: { type: "string", maxLength: 200, description: "e.g. HW08 E8 to E12; Drill 2: RLC damping; Lesson 7." },
+              outcome: { type: "string", enum: SESSION_OUTCOMES, description: "solved alone, with-hints, shown the answer, or stuck (not finished)." },
+              errorNote: { type: "string", maxLength: 200, description: "The specific slip, when there was one: flipped the divider fraction; used ω₀ where ω_d was asked." },
+              objectiveIds: { type: "array", items: UUID, maxItems: 10 },
+              problemTypeId: { type: "string", description: "A problem type's id from the exam map." },
+            },
+            required: ["what"],
+            additionalProperties: false,
+          },
+        },
+        bookmark: { type: "string", maxLength: 500, description: "Where the student stopped, exactly: Lesson 7.5 half done (I_2F found); Practice 8 not tried." },
+        next: { type: "array", items: { type: "string", maxLength: 200 }, maxItems: 10, description: "What to do next, in order: HW07 P4, then a switched RC circuit, then an AC problem." },
+      },
+      required: ["courseId", "minutes", "summary", "worked"],
       additionalProperties: false,
     },
   },
@@ -1265,6 +1353,42 @@ async function callTool(params: Record<string, unknown>, tools: ConnectorTools, 
           holdBack,
         });
         return toolText(result, "error" in result);
+      }
+      case "log_session": {
+        if (!isUuid(args.courseId)) return toolText({ error: "courseId must be a course id from course_state." }, true);
+        if (args.examId !== undefined && !isUuid(args.examId)) return toolText({ error: "examId must be an exam id from course_state." }, true);
+        if (typeof args.minutes !== "number" || !Number.isInteger(args.minutes) || args.minutes < 1 || args.minutes > 720) return toolText({ error: "minutes is a whole number from 1 to 720: the time actually spent." }, true);
+        if (typeof args.summary !== "string" || args.summary.trim().length === 0 || args.summary.length > 500) return toolText({ error: "summary is 1 to 500 characters." }, true);
+        if (!Array.isArray(args.worked) || args.worked.length > 30) return toolText({ error: "worked is a list of up to 30 { what, outcome?, errorNote?, objectiveIds?, problemTypeId? }." }, true);
+        if (args.bookmark !== undefined && (typeof args.bookmark !== "string" || args.bookmark.length > 500)) return toolText({ error: "bookmark is at most 500 characters." }, true);
+        if (args.next !== undefined && (!Array.isArray(args.next) || args.next.length > 10 || !args.next.every((n) => typeof n === "string" && n.trim().length > 0 && n.length <= 200))) return toolText({ error: "next is a list of up to 10 steps, each 1 to 200 characters." }, true);
+        // Every piece of text is screened like a reflection note: a strong hit is refused, every hit logged.
+        const clean = async (raw: string, max: number, what: string) => screenText(tools, raw, max, what);
+        const summary = await clean(args.summary.trim(), 500, "summary");
+        if (!summary.ok) return toolText({ error: summary.error }, true);
+        const worked: SessionWork[] = [];
+        for (const [i, w] of (args.worked as unknown[]).entries()) {
+          if (!isObject(w) || typeof w.what !== "string" || w.what.trim().length === 0 || w.what.length > 200) return toolText({ error: `worked[${i}].what is 1 to 200 characters.` }, true);
+          if (w.outcome !== undefined && !isOneOf(SESSION_OUTCOMES, w.outcome)) return toolText({ error: `worked[${i}].outcome is one of ${SESSION_OUTCOMES.join(", ")}.` }, true);
+          if (w.errorNote !== undefined && (typeof w.errorNote !== "string" || w.errorNote.length > 200)) return toolText({ error: `worked[${i}].errorNote is at most 200 characters.` }, true);
+          if (w.objectiveIds !== undefined && (!Array.isArray(w.objectiveIds) || w.objectiveIds.length > 10 || !w.objectiveIds.every(isUuid))) return toolText({ error: `worked[${i}].objectiveIds is a list of up to 10 objective ids from course_state.` }, true);
+          if (w.problemTypeId !== undefined && (typeof w.problemTypeId !== "string" || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(w.problemTypeId))) return toolText({ error: `worked[${i}].problemTypeId is a problem type's id from the exam map.` }, true);
+          const what = await clean(w.what.trim(), 200, "worked");
+          if (!what.ok) return toolText({ error: what.error }, true);
+          const note = w.errorNote ? await clean(w.errorNote, 200, "errorNote") : null;
+          if (note && !note.ok) return toolText({ error: note.error }, true);
+          worked.push({ what: what.text ?? w.what.trim(), ...(w.outcome !== undefined ? { outcome: w.outcome } : {}), ...(note?.ok && note.text ? { errorNote: note.text } : {}), ...(w.objectiveIds !== undefined ? { objectiveIds: [...new Set(w.objectiveIds as string[])] } : {}), ...(w.problemTypeId !== undefined ? { problemTypeId: w.problemTypeId } : {}) });
+        }
+        const bookmark = typeof args.bookmark === "string" && args.bookmark.trim() ? await clean(args.bookmark.trim(), 500, "bookmark") : null;
+        if (bookmark && !bookmark.ok) return toolText({ error: bookmark.error }, true);
+        const next: string[] = [];
+        for (const step of (args.next as string[] | undefined) ?? []) {
+          const screened = await clean(step.trim(), 200, "next");
+          if (!screened.ok) return toolText({ error: screened.error }, true);
+          if (screened.text) next.push(screened.text);
+        }
+        const logged = await tools.logSession(args.courseId, { minutes: args.minutes, summary: summary.text ?? args.summary.trim(), worked, ...(bookmark?.ok && bookmark.text ? { bookmark: bookmark.text } : {}), ...(next.length ? { next } : {}), ...(args.examId !== undefined ? { examId: args.examId } : {}) });
+        return toolText(logged, "error" in logged);
       }
       case "log_evidence": {
         if (!isUuid(args.courseId)) return toolText({ error: "courseId must be a course id from course_state." }, true);

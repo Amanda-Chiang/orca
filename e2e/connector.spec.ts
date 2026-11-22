@@ -346,7 +346,18 @@ test("the exam map: Claude reads a held-back exam (never the reserved one), stor
   expect(state.exams[0].scopeSummary.rules).toEqual({ notes: "none", calculator: "simple", minutes: 75 });
   expect(state.exams[0].scopeSummary.examMap).toMatchObject({ examsMapped: 1, uncertain: true, types: [{ id: "sign-extension", exams: 1 }] });
 
+  // The session record: a sitting Claude logs counts as time studied and leaves a bookmark for the next chat.
+  const sitting = toolText(await call(page, url, "log_session", { courseId: F.course, examId: exam.id, minutes: 45, summary: "Sign extension lesson and two drills.", worked: [{ what: "Drill 1: sign extension", outcome: "with-hints", errorNote: "copied the low bit, not the top one", objectiveIds: [F.signExtend], problemTypeId: "sign-extension" }], bookmark: "Drill 2 half done", next: ["Finish Drill 2", "A timed conversion problem"] })) as { minutes: number; day: string };
+  expect(sitting.minutes).toBe(45);
+  const after = toolText(await call(page, url, "course_state", { courseId: F.course, detail: "summary" })) as { lastSession: { bookmark: string; next: string[] }; plan: { minutesToday: number } };
+  expect(after.lastSession).toMatchObject({ bookmark: "Drill 2 half done", next: ["Finish Drill 2", "A timed conversion problem"] });
+  expect(after.plan.minutesToday).toBe(15);
+
   await page.goto(`/course/${FIXTURE_STATE.courses[0].slug}/cram`);
+  const left = page.locator("[data-part=cram-last-session]");
+  await expect(left.locator("[data-part=cram-bookmark]")).toHaveText("Drill 2 half done");
+  await expect(left.locator("[data-part=cram-next-steps] li")).toHaveText(["Finish Drill 2", "A timed conversion problem"]);
+  await expect(page.locator("[data-part=cram-spent]")).toContainText("45 min studied");
   const map = page.locator("[data-part=cram-exam-map]");
   await expect(map).toHaveAttribute("data-mapped", "1");
   await expect(map.locator("[data-part=cram-rules]")).toHaveText("Closed book · simple calculator · 75 min");

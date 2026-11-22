@@ -5,6 +5,7 @@ import Link from "next/link";
 import { AnimatePresence, motion } from "motion/react";
 import { cardExam, daysUntil, examObjectives } from "@/lib/course/exam-card";
 import { examMap, rulesLine } from "@/lib/course/exam-map";
+import type { SessionLine } from "@/lib/connector/mcp";
 import type { ExamScope } from "@/lib/data";
 import type { CramCovered, CramPlan, CramPlanDay, CramPlanInput, SpentMinutes } from "@/lib/mastery/cram-plan";
 import type { ObjectiveStatus } from "@/lib/mastery/types";
@@ -16,7 +17,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { CramSetup } from "@/components/course/CramSetup";
-import { useConnectorStatus, useCramPlan } from "@/components/course/useCram";
+import { useConnectorStatus, useCramPlan, useStudyLog } from "@/components/course/useCram";
 import { MASTERY_LABEL } from "@/components/review/parts";
 import { fadeUp, overlayFade, popIn, stagger } from "@/lib/motion";
 
@@ -60,7 +61,8 @@ export default function CramPage({ params, searchParams }: PageProps<"/course/[s
   const today = dayKey(new Date(nowMs).toISOString());
   const exam = course ? cardExam(exams, course.id, today) : null;
   const m = course ? mastery[course.id] : undefined;
-  const planned = useCramPlan(course, exam, m);
+  const log = useStudyLog(course?.id);
+  const planned = useCramPlan(course, exam, m, log);
   const connected = useConnectorStatus(Boolean(exam?.cramming));
 
   if (!course || !m) {
@@ -112,7 +114,7 @@ export default function CramPage({ params, searchParams }: PageProps<"/course/[s
 
       <motion.div variants={stagger(0.05, 0.08)} initial="hidden" animate="show" className="flex items-start gap-[12px] px-[24px] pb-[28px] pt-[20px]" data-part="cram-page" data-cramming={exam.cramming ? "1" : undefined}>
         {cramming ? (
-          <CrammingView course={course} today={today} plan={planned.plan} topics={planned.topics} spentMinutes={planned.spentMinutes} objectiveName={(id) => catalogue[id]?.name ?? id} vault={vault.map((v) => ({ id: v.id, filename: v.filename }))} scope={exam.scope} onReserve={(id) => updateExam(exam.id, { scope: reserveIn(exam.scope, id) })} connected={connected} onEdit={() => setEditing(true)} onStop={() => updateExam(exam.id, { cramming: false })} />
+          <CrammingView course={course} today={today} plan={planned.plan} topics={planned.topics} spentMinutes={planned.spentMinutes} objectiveName={(id) => catalogue[id]?.name ?? id} vault={vault.map((v) => ({ id: v.id, filename: v.filename }))} lastSession={log?.sessions[0] ?? null} scope={exam.scope} onReserve={(id) => updateExam(exam.id, { scope: reserveIn(exam.scope, id) })} connected={connected} onEdit={() => setEditing(true)} onStop={() => updateExam(exam.id, { cramming: false })} />
         ) : (
           <motion.div variants={fadeUp} className="w-[600px]">
             <Card className="px-[28px] pb-[24px] pt-[24px]">
@@ -129,7 +131,7 @@ export default function CramPage({ params, searchParams }: PageProps<"/course/[s
 
 const isVerified = (s: ObjectiveStatus) => s === "verified" || s === "mastered";
 
-function CrammingView({ course, today, plan, topics, spentMinutes, objectiveName, vault, scope, onReserve, connected, onEdit, onStop }: { course: { slug: string }; today: string; plan: CramPlan; topics: CramPlanInput["topics"]; spentMinutes: SpentMinutes; objectiveName: (id: string) => string; vault: Array<{ id: string; filename: string }>; scope: ExamScope | null; onReserve: (materialId: string | null) => void; connected: boolean | null; onEdit: () => void; onStop: () => void }) {
+function CrammingView({ course, today, plan, topics, spentMinutes, objectiveName, vault, lastSession, scope, onReserve, connected, onEdit, onStop }: { lastSession: SessionLine | null; course: { slug: string }; today: string; plan: CramPlan; topics: CramPlanInput["topics"]; spentMinutes: SpentMinutes; objectiveName: (id: string) => string; vault: Array<{ id: string; filename: string }>; scope: ExamScope | null; onReserve: (materialId: string | null) => void; connected: boolean | null; onEdit: () => void; onStop: () => void }) {
   void today;
   const days = Object.keys(plan.perDay).sort();
   const hours = days.reduce((sum, d) => sum + plan.perDay[d], 0);
@@ -219,6 +221,30 @@ function CrammingView({ course, today, plan, topics, spentMinutes, objectiveName
               </div>
             </Card>
           </motion.div>
+
+          {lastSession && (
+            <motion.div variants={fadeUp}>
+              {/* Where the last sitting with Claude stopped: what a new chat opens with. */}
+              <Card className="flex flex-col gap-[6px] px-[22px] pb-[16px] pt-[16px]" data-part="cram-last-session">
+                <div className="flex items-baseline justify-between gap-[8px]">
+                  <h2 className="text-[17px] font-bold text-prussian">Where you left off</h2>
+                  <span className="shrink-0 text-[12px] font-medium text-wisteria-deep" data-part="cram-last-when">
+                    {dayChip(lastSession.day)} · {minutesText(lastSession.minutes)}
+                  </span>
+                </div>
+                <p className="text-[13px] font-medium leading-snug text-prussian" data-part="cram-bookmark">
+                  {lastSession.bookmark ?? lastSession.summary}
+                </p>
+                {lastSession.next.length > 0 && (
+                  <ol className="flex list-decimal flex-col gap-[2px] pl-[18px] text-[13px] font-semibold text-prussian" data-part="cram-next-steps">
+                    {lastSession.next.map((step, i) => (
+                      <li key={i}>{step}</li>
+                    ))}
+                  </ol>
+                )}
+              </Card>
+            </motion.div>
+          )}
 
           <motion.div variants={fadeUp}>
             <Card className="flex flex-col gap-[6px] px-[22px] pb-[16px] pt-[16px]" data-part="cram-weak">
