@@ -38,7 +38,9 @@ test("the exam card shows the soonest exam; Cram for this exam opens the page's 
   await expect(page).toHaveURL(`/course/${SLUG}/cram`);
   const setup = page.locator("[data-part=cram-setup]");
   await expect(setup).toContainText("Cram for Midterm");
-  await expect(setup.locator("[data-part=cram-add-material]")).toHaveAttribute("href", `/add-material?course=${SLUG}&type=Practice%20exam&holdBack=1`);
+  // One upload icon on the page (in its header, not the setup card) adds a practice exam, held back.
+  await expect(page.locator("[data-part=cram-add-material]")).toHaveCount(1);
+  await expect(page.locator("[data-part=cram-add-material]")).toHaveAttribute("href", `/add-material?course=${SLUG}&type=Practice%20exam&holdBack=1`);
   // Each day's hours start from the course's exam review duration (the fixture's: 10 hours) over the 5 days; the deck is picked by default.
   await expect(setup.locator("[data-part=cram-hours]")).toHaveValue("2");
   await expect(setup.locator("[data-part=cram-hours-total]")).toHaveText(`10 hours before ${weekday(inDays(5))}, 5 study days`);

@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { DEFAULT_CONFIG, type Course, type Exam, type ExamScope, type Material, type MaterialType, type Objective } from "@/lib/data";
 import { hoursFromDuration, perDayHours, remainingDays, weekdayName } from "@/lib/course/cram-page";
 import { scopeFromSetup, splitByMaterials } from "@/lib/course/exam-card";
@@ -33,8 +32,8 @@ const parseHours = (text: string): number | null => {
 /**
  * Cram setup (cram mode contract, section 6 and its per-day addendum), on the cram page: the
  * professor's words (saved as `professor` evidence on the scope), the files the exam covers (the
- * materials picked: objectives taught only elsewhere weigh 0), a link to add a practice exam held
- * back, what feels shaky in the student's own words (Claude maps it to objectives), and the hours
+ * materials picked: objectives taught only elsewhere weigh 0; the page's upload icon adds a practice
+ * exam held back), what feels shaky in the student's own words (Claude maps it to objectives), and the hours
  * they can put in on each remaining day (half-hour steps, 0 for a day off; "Same for every day"
  * fills every row); the budget stores the days, with the total derived. Confirm sets the exam
  * cramming with its budget (`since` = now, kept with the past days' hours when the scope of a
@@ -146,14 +145,6 @@ export function CramSetup({ exam, course, candidates, materials, catalogue, mast
             : `Nothing picked, so all ${candidates.length} objective${candidates.length === 1 ? "" : "s"} are in scope.`}
         </p>
       </fieldset>
-
-      <p className="text-[15px] font-medium text-prussian">
-        Add every past and practice exam you have: Claude reads them to plan what to study.{" "}
-        <Link href={`/add-material?course=${course.slug}&type=Practice%20exam&holdBack=1`} data-part="cram-add-material" className="font-bold text-wisteria-deep underline">
-          Add material
-        </Link>
-        <span className="text-wisteria-deep"> (kept hidden from you until you sit one)</span>
-      </p>
 
       <label className="flex flex-col gap-[6px]">
         <span className="text-[15px] font-bold text-prussian">
