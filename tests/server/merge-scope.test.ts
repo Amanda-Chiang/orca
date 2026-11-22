@@ -42,3 +42,15 @@ test("patchObjectives changes only the objectives named; the rest keep their wei
   assert.deepEqual(out.materialIds, ["m1"]);
   assert.deepEqual(out.budget, kept.budget);
 });
+
+test("the rules, the exam map, the reservation and the student's worries stay when a scope is resent; null clears the reservation", async () => {
+  const { mergeScope } = await import("../../src/lib/server/connector.ts");
+  const types = [{ id: "cs", name: "Charge sharing", objectiveIds: [OBJ], materialIds: ["m1"] }];
+  const mapped: ExamScope = { ...kept, worries: "signs", rules: { notes: "none" }, problemTypes: types, reservedMaterialId: "m9" };
+  const resent = mergeScope(mapped, { objectives: [], sources: ["guess"] }, ctx);
+  assert.deepEqual([resent.worries, resent.rules, resent.problemTypes, resent.reservedMaterialId], ["signs", { notes: "none" }, types, "m9"]);
+  assert.deepEqual(resent.budget, kept.budget);
+  const patched = mergeScope(mapped, { problemTypes: [], reservedMaterialId: null }, ctx);
+  assert.deepEqual([patched.problemTypes, patched.reservedMaterialId, patched.objectives], [[], undefined, kept.objectives]);
+  assert.equal(mergeScope(mapped, { reservedMaterialId: "m2" }, ctx).reservedMaterialId, "m2");
+});

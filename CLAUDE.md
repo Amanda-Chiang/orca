@@ -115,6 +115,28 @@ own courses (Data Structures, Fundamentals of Computer Systems) on the hosted pr
   `cram-mode`): an exam is *cramming* (a flag, from the exam card or `set_exam`) or within the 7-day window; Claude
   writes and grades during a cram, Orca stores, counts and schedules (connector v0.4, rules v4, migration
   `20261110130000`); past and practice exams are held back for a practice test. Details under "What exists".
+- **Since 2026-11-22: Orca as the tutor's memory and exam map** (plan
+  `docs/superpowers/plans/2026-11-22-tutor-memory-and-exam-map.md`; owner: Claude teaches, Orca makes sure it knows
+  what's on the exam, where the student is and what happened last time; connector-first, the app is setup and a
+  dashboard). Phase 1 is built (connector v0.5, twelve tools, no migration): `vault_material` gives the student's
+  Claude a held-back exam's pages for planning, marked do-not-reveal (hidden from the student isn't hidden from the
+  tutor; `src/lib/server/connector/vault-material.ts`); `scope.reservedMaterialId` keeps one exam unread even by
+  Claude until it's sat timed (`forMock`); `scope.problemTypes` is the exam map Claude writes (the kinds of problem
+  the past exams ask, each with its objectives and the exams it's on; `src/lib/course/exam-map.ts` orders them by
+  recurrence and marks fewer than three exams uncertain); `scope.rules` holds the exam's rules. The cram page shows
+  them ("What the exam asks", `cram-exam-map`) and a Reserve toggle per vault file. Phase 2 is built too: the
+  session record (`study_sessions`, migration `20261122090000`, server-write only; tool `log_session`, thirteen tools;
+  `course_state.lastSession`; `GET /api/study-log`; the cram page's "Where you left off", `cram-last-session`): a
+  sitting's minutes count as study (the larger of what Claude logged and the estimate from its evidence, per day)
+  and its bookmark and ordered next steps open the next chat. Phase 3 is built: readiness by kind of problem
+  (`problem_attempts`, migration `20261122100000`; tool `log_problem`, fourteen tools; `course_state.readiness`,
+  `src/lib/course/readiness.ts`: ready only after a cold solve, `measured` from the reserved exam's sitting); once
+  an exam has a map the cram plan's units are its kinds of problem (`plan.unit`, `typePlanTopics`). Phase 4 is
+  built: the tutor playbook (`PLAYBOOK`, the last part of the connector's `INSTRUCTIONS`; the owner's corrections
+  as standing rules for the student's Claude). Small fixes built alongside: exact answers with units graded by
+  value and unit (`quantityOf`), "I don't know" as a miss on choice and exact questions (`isDontKnow`),
+  `course_state` `detail: "weak"`, and `scope.history` (who changed the scope or budget, and what;
+  `src/lib/course/scope-history.ts`). The plan lists what wasn't built and why.
 - **Upload toasts** (2026-11-08, `src/components/layout/UploadToasts.tsx`, mounted in `providers.tsx`): an upload
   that finishes (done or failed) while the app is open, from any tab or device, pops a toast unless the student is on
   that course's uploads; uploads of one course finishing while its toast is up share it. One upload's toast opens

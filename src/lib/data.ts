@@ -164,6 +164,49 @@ export interface ExamScope {
    * Claude maps it to objectives in the first session and flags them; absent when nothing was said.
    */
   worries?: string;
+  /** The exam's rules, from the syllabus or the professor (owner, 2026-11-22: "make a formula sheet if allowed" was planned for a closed-book exam). */
+  rules?: ExamRules;
+  /**
+   * The exam map: the kinds of problem the past exams ask, written by the student's Claude from the
+   * exams it read (plan `2026-11-22-tutor-memory-and-exam-map.md`). The unit a cram plans in.
+   */
+  problemTypes?: ProblemType[];
+  /** The one held-back exam kept unread, even by Claude, until the student sits it timed: the cram's measured score. */
+  reservedMaterialId?: string;
+  /** What changed on the scope and budget, and who changed it: the last 30 edits (`src/lib/course/scope-history.ts`). */
+  history?: ScopeEdit[];
+}
+
+/** One edit to an exam's scope or budget. */
+export interface ScopeEdit {
+  at: string;
+  /** The student in the app, or their Claude through the connector. */
+  by: "student" | "claude";
+  /** What changed, in words: "objectives excluded 63 → 37 (of 151 listed); budget 22 h → 16 h". */
+  what: string;
+}
+
+/** What an exam allows. Every field is optional: only what's known is stored. */
+export interface ExamRules {
+  /** Notes in the room: none (closed book), a formula sheet, or open book. */
+  notes?: "none" | "sheet" | "open";
+  calculator?: "none" | "simple" | "any";
+  /** How long it runs. */
+  minutes?: number;
+  /** Anything else, in the syllabus's or professor's words (at most 500 characters). */
+  text?: string;
+}
+
+/** A kind of problem the exam asks ("Charge sharing between capacitors", "Design an RLC for a damping ratio"). */
+export interface ProblemType {
+  id: string;
+  name: string;
+  /** The objectives a problem of this kind uses. */
+  objectiveIds: string[];
+  /** The past and practice exams (materials) it appears on. */
+  materialIds: string[];
+  /** What a problem of this kind asks for and where students lose points (at most 500 characters). */
+  note?: string;
 }
 
 export interface CalendarEvent {

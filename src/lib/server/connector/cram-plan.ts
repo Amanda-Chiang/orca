@@ -10,7 +10,9 @@
  * have evidence since the cram started (the topics' `covered`).
  */
 import type { CourseState, CoverageLine, ExamLine, ObjectiveLine, TopError } from "@/lib/connector/mcp";
-import { connectorMinutesByDay as sharedConnectorMinutes } from "@/lib/course/cram-page";
+import { claudeMinutesByDay, connectorMinutesByDay as sharedConnectorMinutes } from "@/lib/course/cram-page";
+import { loggedMinutesByDay } from "@/lib/server/connector/study-sessions";
+import { typePlanTopics, typesTouchedSince, type ExamReadiness, type ProblemAttempt } from "@/lib/course/readiness";
 import { scopingExam } from "@/lib/course/weights";
 import { ERROR_TYPES } from "@/lib/grading";
 import { cramPlan, defaultBudget, type CramPlanInput, type SpentMinutes } from "@/lib/mastery/cram-plan";
@@ -37,6 +39,8 @@ export interface CramFieldsInput {
   weights: ReadonlyMap<string, number>;
   /** The vault (held-back exams): the practice tests the plan places on days. */
   vault?: ReadonlyArray<{ materialId: string; filename: string }>;
+  /** The mapped exam's readiness and attempts: when it's the exam being crammed for, the plan's units are its problem types. */
+  byType?: { examId: string; readiness: ExamReadiness; attempts: readonly ProblemAttempt[] };
 }
 
 /** Minutes of study with Claude by the student's day: `connectorMinutesByDay` (stretches of connector evidence), as the cram page counts it. */
@@ -55,21 +59,22 @@ export function connectorMinutes(events: ReadonlyArray<{ at: string; source: str
  * The minutes studied on each day (the student's) since the cram started (the plan's `spentByDay`):
  * the course's finished sessions by the day they finished, plus the connector estimate by day.
  */
-export function spentMinutesByDay(sessions: ReadonlyArray<{ finished_at: string; seconds: number }>, events: ReadonlyArray<{ at: string; source: string | null }>, timezone: string): Record<string, number> {
+export function spentMinutesByDay(sessions: ReadonlyArray<{ finished_at: string; seconds: number }>, events: ReadonlyArray<{ at: string; source: string | null }>, timezone: string, logged: Readonly<Record<string, number>> = {}): Record<string, number> {
   const dayKey = dayKeyIn(timezone);
   const byDay: Record<string, number> = {};
   const add = (day: string, minutes: number) => {
     byDay[day] = (byDay[day] ?? 0) + minutes;
   };
   for (const s of sessions) add(dayKey(s.finished_at), s.seconds / 60);
-  for (const [day, minutes] of connectorMinutesByDay(events, timezone)) add(day, minutes);
+  // Time with Claude: what it logged for the day (log_session) or the estimate from its evidence, whichever is more.
+  for (const [day, minutes] of claudeMinutesByDay(connectorMinutesByDay(events, timezone), logged)) add(day, minutes);
   return byDay;
 }
 
 /** The minutes studied since the cram started, split at the start of today (the plan's `spentMinutes`), from `spentMinutesByDay`. */
-export function spentMinutesSplit(sessions: ReadonlyArray<{ finished_at: string; seconds: number }>, events: ReadonlyArray<{ at: string; source: string | null }>, timezone: string, today: string): SpentMinutes {
+export function spentMinutesSplit(sessions: ReadonlyArray<{ finished_at: string; seconds: number }>, events: ReadonlyArray<{ at: string; source: string | null }>, timezone: string, today: string, logged: Readonly<Record<string, number>> = {}): SpentMinutes {
   const spent = { beforeToday: 0, today: 0 };
-  for (const [day, minutes] of Object.entries(spentMinutesByDay(sessions, events, timezone))) {
+  for (const [day, minutes] of Object.entries(spentMinutesByDay(sessions, events, timezone, logged))) {
     if (day === today) spent.today += minutes;
     else if (day < today) spent.beforeToday += minutes;
   }
@@ -122,7 +127,9 @@ function coverageOf(topics: CramPlanInput["topics"]): CoverageLine {
 /** The vault's exams as the plan's practice tests, with the exam's length when its scope knows it. */
 function mocksOf(exam: ExamLine, input: CramFieldsInput): NonNullable<CramPlanInput["mocks"]> {
   const minutes = exam.scope?.format?.minutes;
-  return (input.vault ?? []).map((v) => ({ materialId: v.materialId, name: v.filename, ...(minutes ? { minutes } : {}) }));
+  // The reserved exam is the one to sit: it goes first, so it gets the last study day.
+  const reserved = exam.scope?.reservedMaterialId;
+  return [...(input.vault ?? [])].sort((a, b) => Number(b.materialId === reserved) - Number(a.materialId === reserved)).map((v) => ({ materialId: v.materialId, name: v.filename, ...(minutes ? { minutes } : {}) }));
 }
 
 export async function cramFields(db: OrcaSupabase, ownerId: string, input: CramFieldsInput): Promise<Pick<CourseState, "plan" | "coverage" | "topErrors">> {
@@ -138,15 +145,21 @@ export async function cramFields(db: OrcaSupabase, ownerId: string, input: CramF
   ]);
   for (const r of [sessions, events]) if (r.error) throw new Error(`Couldn't read the course: ${r.error.message}`);
 
+  // The plan's units: the cramming exam's problem types once it has a map (touched = attempted since), else its topics.
+  const unitsOf = (exam: ExamLine, sinceIso: string): Pick<CramPlanInput, "topics" | "touchedObjectiveIds" | "unit"> =>
+    input.byType && input.byType.examId === exam.id
+      ? { topics: typePlanTopics(input.byType.readiness), touchedObjectiveIds: typesTouchedSince(input.byType.attempts, sinceIso), unit: "problem-type" }
+      : { topics: planTopics(exam, input), touchedObjectiveIds: touchedSince(events.data ?? [], sinceIso), unit: "topic" };
   const coverage = scoping ? coverageOf(planTopics(scoping, input)) : null;
   let plan: CourseState["plan"] = null;
   if (cramming && budget) {
-    const spentByDay = spentMinutesByDay(sessions.data ?? [], events.data ?? [], input.timezone);
-    plan = cramPlan({ today: input.today, examDate: cramming.date, budget, topics: planTopics(cramming, input), spentMinutes: spentMinutesSplit(sessions.data ?? [], events.data ?? [], input.timezone, input.today), spentByDay, touchedObjectiveIds: touchedSince(events.data ?? [], budget.since), mocks: mocksOf(cramming, input) });
+    const logged = await loggedMinutesByDay(db, ownerId, input.courseId, budget.since);
+    const spentByDay = spentMinutesByDay(sessions.data ?? [], events.data ?? [], input.timezone, logged);
+    plan = cramPlan({ today: input.today, examDate: cramming.date, budget, ...unitsOf(cramming, budget.since), spentMinutes: spentMinutesSplit(sessions.data ?? [], events.data ?? [], input.timezone, input.today, logged), spentByDay, mocks: mocksOf(cramming, input) });
   } else if (cramming) {
     // No budget set yet: the plan assumes one (2 hours a study day from now, nothing spent, nothing touched) and says so, so Claude can ask.
     const assumed = defaultBudget(input.today, cramming.date, input.at.toISOString());
-    plan = cramPlan({ today: input.today, examDate: cramming.date, budget: assumed, topics: planTopics(cramming, input), spentMinutes: { beforeToday: 0, today: 0 }, spentByDay: {}, touchedObjectiveIds: [], defaulted: true, mocks: mocksOf(cramming, input) });
+    plan = cramPlan({ today: input.today, examDate: cramming.date, budget: assumed, ...unitsOf(cramming, assumed.since), touchedObjectiveIds: [], spentMinutes: { beforeToday: 0, today: 0 }, spentByDay: {}, defaulted: true, mocks: mocksOf(cramming, input) });
   }
   return { plan, coverage, topErrors: topErrorsOf(events.data ?? []) };
 }
