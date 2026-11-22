@@ -16,6 +16,7 @@ import { objectiveMaterialIds, protectScope } from "@/lib/course/exam-card";
 import { examMap } from "@/lib/course/exam-map";
 import { vaultMaterial } from "@/lib/server/connector/vault-material";
 import { logSession, recentSessions } from "@/lib/server/connector/study-sessions";
+import { logProblem, readinessFor } from "@/lib/server/connector/problem-attempts";
 import { AGENDA_RULES, addDays } from "@/lib/mastery/agenda";
 import { NOT_WEAK } from "@/lib/mastery/cram-plan";
 import { mergeBudget, withPerDay } from "@/lib/mastery/cram-budget";
@@ -269,7 +270,10 @@ export function connectorTools(db: OrcaSupabase, ownerId: string, now: () => Dat
     // The budget resets at the student's next local midnight (src/lib/jobs/budget.ts counts their day).
     const resetsAt = new Date(dayStartIn(timezone, at).getTime() + 86_400_000).toISOString();
     // The cram plan, coverage and top errors (contract section 6) read the agenda's effective weights: course × scope inside the window.
-    const cram = await cramFields(db, ownerId, { courseId, at, timezone, today, exams: examLines, topics: liveTopics, objectives: lines, weights: await effectiveWeights(courseId, examLines, today), vault: vaultLines });
+    // Readiness by kind of problem, for the exam being crammed for, else the soonest upcoming one with a map.
+    const mappedExam = examLines.find((e) => e.cramming && e.scope?.problemTypes?.length) ?? examLines.find((e) => e.date >= today && e.scope?.problemTypes?.length) ?? null;
+    const ready = mappedExam ? await readinessFor(db, ownerId, courseId, mappedExam) : null;
+    const cram = await cramFields(db, ownerId, { courseId, at, timezone, today, exams: examLines, topics: liveTopics, objectives: lines, weights: await effectiveWeights(courseId, examLines, today), vault: vaultLines, ...(ready && mappedExam ? { byType: { examId: mappedExam.id, readiness: ready.readiness, attempts: ready.attempts } } : {}) });
     // A summary carries each exam's scope by its size (a full scope lists every objective with its evidence: too much for a check-in).
     const summarised = (e: ExamLine): ExamLine => {
       const { scope, ...rest } = e;
@@ -290,6 +294,7 @@ export function connectorTools(db: OrcaSupabase, ownerId: string, now: () => Dat
       mode,
       cramming,
       ...cram,
+      readiness: ready?.readiness ?? null,
       lastSession: (await recentSessions(db, ownerId, courseId, 1))[0] ?? null,
     };
   };
@@ -573,6 +578,7 @@ export function connectorTools(db: OrcaSupabase, ownerId: string, now: () => Dat
     addMaterial: (courseId, input) => addMaterial(db, ownerId, courseId, input),
     logEvidence: (courseId, objectiveId, entry, sessionId) => logEvidence(db, ownerId, courseId, objectiveId, entry, sessionId),
     logSession: (courseId, entry) => logSession(db, ownerId, courseId, entry, now),
+    logProblem: (courseId, examId, attempt) => logProblem(db, ownerId, courseId, examId, attempt, now),
 
     async screened(hits) {
       await recordSecurityEvents(db, ownerId, "reflection_note", hits);

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { SessionLine } from "@/lib/connector/mcp";
+import { examReadiness, typePlanTopics, typesTouchedSince, type ExamReadiness, type ProblemAttempt } from "@/lib/course/readiness";
 import type { Course, Exam } from "@/lib/data";
 import { claudeMinutesByDay, connectorMinutesByDay, planTopics, spentMinutesByDayInOrca, spentMinutesInOrca, touchedObjectives } from "@/lib/course/cram-page";
 import { cramPlan, type CramPlan, type CramPlanInput, type SpentMinutes } from "@/lib/mastery/cram-plan";
@@ -17,7 +18,7 @@ import { useNow } from "@/hooks/useNow";
  * day. The topics' covered state reads the store's evidence since then. The vault's held-back exams
  * are the practice tests the plan places on days.
  */
-export function useCramPlan(course: Course | undefined, exam: Exam | null, mastery: CourseMastery | undefined, log: StudyLog | null = null): { plan: CramPlan; spentMinutes: SpentMinutes; topics: CramPlanInput["topics"] } | null {
+export function useCramPlan(course: Course | undefined, exam: Exam | null, mastery: CourseMastery | undefined, log: StudyLog | null = null): { plan: CramPlan; spentMinutes: SpentMinutes; topics: CramPlanInput["topics"]; readiness: ExamReadiness | null } | null {
   const { objectives, relations, results, evidence, materials } = useOrca();
   const dayKey = useDayKey();
   const nowMs = useNow();
@@ -39,11 +40,13 @@ export function useCramPlan(course: Course | undefined, exam: Exam | null, maste
       if (day === today) spentMinutes.today += minutes;
       else if (day < today) spentMinutes.beforeToday += minutes;
     }
-    const topics = planTopics(exam, course.topics, objectives[course.id] ?? {}, relations[course.id] ?? [], (id) => mastery.objectives.get(id)?.status ?? "unseen");
-    const touchedObjectiveIds = touchedObjectives(evidence, course.id, budget.since);
-    // The reserved exam is the one to sit: it goes first, so it gets the last study day.
+    // With an exam map the plan's units are its kinds of problem (ready = done, touched = attempted since); else the course's topics.
+    const types = exam.scope?.problemTypes ?? [];
+    const readiness = types.length ? examReadiness(types, log?.attempts ?? []) : null;
+    const topics = readiness ? typePlanTopics(readiness) : planTopics(exam, course.topics, objectives[course.id] ?? {}, relations[course.id] ?? [], (id) => mastery.objectives.get(id)?.status ?? "unseen");
+    const touchedObjectiveIds = readiness ? typesTouchedSince(log?.attempts ?? [], budget.since) : touchedObjectives(evidence, course.id, budget.since);
     const mocks = materials.filter((m) => m.courseId === course.id && m.heldBack).sort((a, b) => Number(b.id === exam.scope?.reservedMaterialId) - Number(a.id === exam.scope?.reservedMaterialId)).map((m) => ({ materialId: m.id, name: m.filename, ...(exam.scope?.format?.minutes ? { minutes: exam.scope.format.minutes } : {}) }));
-    return { plan: cramPlan({ today, examDate: exam.date, budget, topics, spentMinutes, spentByDay, touchedObjectiveIds, mocks }), spentMinutes, topics };
+    return { plan: cramPlan({ today, examDate: exam.date, budget, topics, spentMinutes, spentByDay, touchedObjectiveIds, mocks, unit: readiness ? "problem-type" : "topic" }), spentMinutes, topics, readiness };
   }, [exam, budget, course, objectives, relations, results, evidence, materials, mastery, dayKey, nowMs, log]);
 }
 
@@ -77,19 +80,21 @@ export function useConnectorStatus(wanted: boolean): boolean | null {
 export interface StudyLog {
   sessions: SessionLine[];
   sittings: Array<{ day: string; minutes: number; at: string }>;
+  /** The exam-style problems attempted for the exam's problem types (log_problem). */
+  attempts: ProblemAttempt[];
 }
 
 /**
  * The sittings the student's Claude logged for this course (`GET /api/study-log`): null until read,
  * read again when the tab comes back into view (a sitting is logged from the chat, in another tab).
  */
-export function useStudyLog(courseId: string | undefined): StudyLog | null {
+export function useStudyLog(courseId: string | undefined, examId?: string): StudyLog | null {
   const [log, setLog] = useState<StudyLog | null>(null);
   useEffect(() => {
     if (!courseId) return;
     let live = true;
     const read = () =>
-      fetch(`/api/study-log?courseId=${courseId}`, { cache: "no-store" })
+      fetch(`/api/study-log?courseId=${courseId}${examId ? `&examId=${examId}` : ""}`, { cache: "no-store" })
         .then(async (res) => {
           if (!res.ok) throw new Error(`Couldn't read the session record: ${res.status}`);
           const body = (await res.json()) as StudyLog;
@@ -105,6 +110,6 @@ export function useStudyLog(courseId: string | undefined): StudyLog | null {
       live = false;
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [courseId]);
+  }, [courseId, examId]);
   return log;
 }

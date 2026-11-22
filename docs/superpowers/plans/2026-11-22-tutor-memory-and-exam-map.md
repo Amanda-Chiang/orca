@@ -63,6 +63,16 @@ instructions tell Claude to open from `lastSession` and to log every sitting, wi
 - The plan's unit becomes the problem type; readiness is reported per type; the reserved exam gives
   the measured score.
 
+**Built (branch `readiness`):** `problem_attempts` (migration `20261122100000`, owner-read,
+server-write; pgTAP 22), connector tool `log_problem` (a kind's id, outcome, cold, minutes, the slip,
+and a mock's points), `course_state.readiness` (`src/lib/course/readiness.ts`: ready only when the
+latest attempt was cold and solved; shaky after help; not-yet when shown or stuck; the share weighs
+each kind by how many exams ask it; `measured` is the reserved exam's latest sitting). With a map the
+cram plan's units are the kinds of problem (`typePlanTopics`, `plan.unit`): ready ones are done,
+missed ones come first, the diagnostic is a cold problem per kind (12 minutes each, 15 to 120), and
+the line reads "Ready for 1 of 8 kinds of problem". The cram page shows a state chip per kind and the
+timed score.
+
 ### Phase 4: The tutor playbook
 
 - The owner's corrections as the connector's standing instructions: hints-only mode, problems first

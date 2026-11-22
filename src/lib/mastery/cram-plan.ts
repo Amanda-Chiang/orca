@@ -42,6 +42,12 @@ export interface CramPlanInput {
   touchedObjectiveIds: string[];
   /** The budget was assumed (`defaultBudget`), not set by the student. */
   defaulted?: boolean;
+  /**
+   * What the plan's units are: the course's topics (the default), or the exam's problem types once
+   * it has a map (`typePlanTopics`): then "verified" means ready for that kind of problem, and the
+   * diagnostic is a cold exam-style problem per type.
+   */
+  unit?: "topic" | "problem-type";
   /** The vault's practice and past exams, to be sat timed on days of the cram (`minutes`: the exam's length when known, else MOCK_MINUTES). */
   mocks?: Array<{ materialId: string; name: string; minutes?: number }>;
 }
@@ -126,6 +132,8 @@ export interface CramPlan {
   line: string;
   /** The budget was assumed: DEFAULT_HOURS_PER_DAY a study day from today, nothing spent. Claude says so and asks. */
   defaulted: boolean;
+  /** What `topics` are: the course's topics, or the exam's problem types (then `verified` counts types the student is ready for). */
+  unit: "topic" | "problem-type";
 }
 
 const DAY_MS = 86_400_000;
@@ -160,6 +168,10 @@ export const MOCK_MINUTES = 60;
 const SWEEP_MINUTES_PER_TOPIC = 3;
 const SWEEP_MIN = 10;
 const SWEEP_MAX = 30;
+/** By problem type the diagnostic is a cold exam-style problem each: longer, and capped at two hours. */
+const COLD_MINUTES_PER_TYPE = 12;
+const COLD_MIN = 15;
+const COLD_MAX = 120;
 
 /** The topics in the order to work through them: ones with weak spots first, then the largest need, then the plan's order. */
 function rankTopics(topics: readonly CramPlanTopic[], need: readonly number[]): number[] {
@@ -297,7 +309,9 @@ export function cramPlan(input: CramPlanInput): CramPlan {
 
   // Diagnostic first: nothing in scope answered since the cram started, so today opens with a sweep.
   const sweepTopics = !anyTouched && done === 0 && minutesToday > 0 ? open.map((t) => t.id) : [];
-  const sweep = sweepTopics.length ? Math.min(minutesToday, Math.max(SWEEP_MIN, Math.min(SWEEP_MAX, toFive(sweepTopics.length * SWEEP_MINUTES_PER_TOPIC)))) : 0;
+  const byType = input.unit === "problem-type";
+  const sweepSize = byType ? Math.max(COLD_MIN, Math.min(COLD_MAX, toFive(sweepTopics.length * COLD_MINUTES_PER_TYPE))) : Math.max(SWEEP_MIN, Math.min(SWEEP_MAX, toFive(sweepTopics.length * SWEEP_MINUTES_PER_TOPIC)));
+  const sweep = sweepTopics.length ? Math.min(minutesToday, sweepSize) : 0;
   const diagnostic = sweep > 0 ? { minutes: sweep, topicIds: sweepTopics } : null;
 
   // What's left for topics: today's minutes less the sweep and today's test, then the later days less theirs.
@@ -343,7 +357,7 @@ export function cramPlan(input: CramPlanInput): CramPlan {
   else {
     const doneNames = topics.filter((t) => t.done).map((t) => t.name);
     const steps = [
-      ...(diagnostic ? ["a quick sweep (one question per topic)"] : []),
+      ...(diagnostic ? [byType ? "a cold exam-style problem for each kind" : "a quick sweep (one question per topic)"] : []),
       ...(mockToday ? [`practice test ${mockToday.name}`] : []),
       ...todayPlanned.map((t) => nameOf.get(t.topicId) ?? t.topicId),
     ];
@@ -351,11 +365,11 @@ export function cramPlan(input: CramPlanInput): CramPlan {
     if (doneNames.length) line += ` Done: ${doneNames.join(", ")}.`;
     // At most three named, so the line stays one sentence; the page and the plan list them all.
     if (steps.length) line += ` Today: ${steps.slice(0, 3).join(", then ")}${steps.length > 3 ? ` and ${steps.length - 3} more` : ""}.`;
-    line += ` Verified: ${Math.round(share * 100)}%.`;
+    line += byType ? ` Ready for ${done} of ${total} kinds of problem.` : ` Verified: ${Math.round(share * 100)}%.`;
     const nextMock = [...mocks.keys()].sort().find((d) => d > today);
     if (nextMock) line += ` Practice test: ${shortDay(nextMock)}.`;
     if (cutIds.length) line += ` If time runs short: ${cutIds.slice(0, 3).map((id) => nameOf.get(id) ?? id).join(", ")}${cutIds.length > 3 ? ` and ${cutIds.length - 3} more` : ""}.`;
   }
 
-  return { daysLeft, studyDays, perDay, hoursLeft, minutesToday, minutesPerDay: minutesToday, cut: cutIds, diagnostic, mockToday, verified: { done, total, share }, topics, today: todayPlanned, days: schedule, line, defaulted: input.defaulted ?? false };
+  return { daysLeft, studyDays, perDay, hoursLeft, minutesToday, minutesPerDay: minutesToday, cut: cutIds, diagnostic, mockToday, verified: { done, total, share }, topics, today: todayPlanned, days: schedule, line, defaulted: input.defaulted ?? false, unit: input.unit ?? "topic" };
 }

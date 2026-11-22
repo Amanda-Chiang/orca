@@ -12,6 +12,7 @@
 import { SCOPE_STRENGTH } from "../course/scope.ts";
 import { MATERIAL_TYPES, type CramBudget, type ExamRules, type ExamScope, type MaterialType, type ProblemType, type ScopeEvidence, type ScopeSignal } from "../data.ts";
 import type { ExamMap } from "../course/exam-map.ts";
+import { ATTEMPT_OUTCOMES, type ExamReadiness, type ProblemAttempt } from "../course/readiness.ts";
 import { BUDGET_DAYS_MAX, HOURS_PER_DAY_MAX, HOUR_STEP, isDay, isHalfHours, type CramBudgetInput } from "../mastery/cram-budget.ts";
 import type { CramPlan } from "../mastery/cram-plan.ts";
 import type { ErrorType, FlagStrength, Help, SignalEvent, WorkEvent } from "../mastery/types.ts";
@@ -103,7 +104,14 @@ export const INSTRUCTIONS =
   "pauses, call log_session with the minutes actually spent (check the clock; never guess), what you " +
   "worked on and how each went (with the specific slip, not just right or wrong), the bookmark and " +
   "the ordered next steps. Homework, lessons and drills count: without it Orca shows no time studied " +
-  "and the next chat starts blind.";
+  "and the next chat starts blind. 11) Readiness is measured by problems, not recall: once the exam " +
+  "has a map (problemTypes), the plan's units are its kinds of problem and readiness says which the " +
+  "student is ready for. The diagnostic (plan.diagnostic) is then one cold exam-style problem per kind: " +
+  "your own problem of that kind, at the past exams' difficulty with clean numbers, no hints, timed; log " +
+  "each with log_problem (cold true). Teach the kinds that aren't ready, most recurrent first; after " +
+  "teaching one, re-test it cold with a fresh problem and log that too. Don't say the student is ready " +
+  "from recall questions or from a walk-through. When the reserved exam is sat (plan.mockToday), log each " +
+  "of its problems with mockMaterialId, points and outOf: readiness.measured is their real score.";
 
 /** An exam scope as set_exam takes it: the budget is an input merged over the exam's (src/lib/mastery/cram-budget.ts `mergeBudget`), and `objectives` and `sources` left out keep the exam's. */
 /** `reservedMaterialId` null clears the reservation. */
@@ -269,6 +277,12 @@ export interface CourseState {
   coverage: CoverageLine | null;
   /** The kinds of mistake since the cram started (else the last 30 days), most frequent first, at most 6. */
   topErrors: TopError[];
+  /**
+   * Readiness per kind of problem, for the exam being crammed for (else the soonest with a map), from
+   * the exam-style problems attempted (log_problem): null until the exam has problemTypes. Only a cold
+   * solve says ready. `measured` is the reserved exam's score once it's sat.
+   */
+  readiness: ExamReadiness | null;
   /** The last sitting logged with log_session: where the student stopped and what comes next. Null before any. Start from it. */
   lastSession: SessionLine | null;
 }
@@ -482,6 +496,8 @@ export interface ConnectorTools {
   addMaterial(courseId: string, input: AddMaterialInput): Promise<AddMaterialResult | { error: string }>;
   /** Record a piece of work or a signal on one objective. Free text (`problem`, `response`, `note`) arrives cleaned and screened. */
   logEvidence(courseId: string, objectiveId: string, entry: EvidenceEntry, sessionId: string): Promise<LoggedEvidence | { error: string }>;
+  /** Record an exam-style problem the student attempted, for a problem type on an exam's map; returns the type's readiness after it. */
+  logProblem(courseId: string, examId: string, attempt: Omit<ProblemAttempt, "at">): Promise<{ recorded: true; typeId: string; state: string; ready: number; total: number } | { error: string }>;
   /** Store a sitting: its minutes count as study on the student's day, and its bookmark and next steps open the next chat. */
   logSession(courseId: string, entry: SessionEntry): Promise<SessionLine | { error: string }>;
   /** Log the screen's hits on what the student said (refused or not). */
@@ -877,6 +893,33 @@ export const TOOLS = [
         file: { type: "boolean", description: "true, with no text: return an upload link instead." },
       },
       required: ["courseId", "type"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "log_problem",
+    description:
+      "Record an exam-style problem the student attempted, for one kind of problem on the exam's map " +
+      "(scope.problemTypes). This is how readiness is measured: Orca reports ready only for a kind whose latest " +
+      "attempt was cold (no help first, at the exam's difficulty, your own problem of that kind) and solved. Use it " +
+      "for the diagnostic (one cold problem per kind, before teaching), for the re-test after you teach a kind, and " +
+      "for each problem of the reserved exam when the student sits it timed (mockMaterialId, points, outOf: their " +
+      "measured score). Give the specific slip in errorNote. Call it as each problem is finished, not at the end.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        courseId: UUID,
+        examId: { ...UUID, description: "The exam whose map names the kind." },
+        problemTypeId: { type: "string", description: "The kind's id from scope.problemTypes." },
+        outcome: { type: "string", enum: ATTEMPT_OUTCOMES, description: "solved alone, with-hints, shown the answer, or stuck (not finished)." },
+        cold: { type: "boolean", description: "true when the student attempted it with no help first, as in the exam." },
+        minutes: { type: "integer", minimum: 1, maximum: 600, description: "How long it took, from the clock." },
+        errorNote: { type: "string", maxLength: 200, description: "The specific slip: missed a KCL branch; sign flip on v_L; used ω₀ where ω_d was asked." },
+        mockMaterialId: { ...UUID, description: "The reserved exam's material id, when this is one of its problems sat timed." },
+        points: { type: "number", minimum: 0, description: "Points earned on it, with outOf (a mock's problem)." },
+        outOf: { type: "number", exclusiveMinimum: 0, description: "Points the problem is worth." },
+      },
+      required: ["courseId", "examId", "problemTypeId", "outcome", "cold"],
       additionalProperties: false,
     },
   },
@@ -1353,6 +1396,26 @@ async function callTool(params: Record<string, unknown>, tools: ConnectorTools, 
           holdBack,
         });
         return toolText(result, "error" in result);
+      }
+      case "log_problem": {
+        if (!isUuid(args.courseId)) return toolText({ error: "courseId must be a course id from course_state." }, true);
+        if (!isUuid(args.examId)) return toolText({ error: "examId must be an exam id from course_state." }, true);
+        if (typeof args.problemTypeId !== "string" || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(args.problemTypeId)) return toolText({ error: "problemTypeId is a kind's id from the exam's scope.problemTypes." }, true);
+        if (!isOneOf(ATTEMPT_OUTCOMES, args.outcome)) return toolText({ error: `outcome is one of ${ATTEMPT_OUTCOMES.join(", ")}.` }, true);
+        if (typeof args.cold !== "boolean") return toolText({ error: "cold is true (no help first) or false." }, true);
+        if (args.minutes !== undefined && (typeof args.minutes !== "number" || !Number.isInteger(args.minutes) || args.minutes < 1 || args.minutes > 600)) return toolText({ error: "minutes is a whole number from 1 to 600." }, true);
+        if (args.mockMaterialId !== undefined && !isUuid(args.mockMaterialId)) return toolText({ error: "mockMaterialId is the reserved exam's material id." }, true);
+        if ((args.points === undefined) !== (args.outOf === undefined)) return toolText({ error: "points and outOf come together." }, true);
+        if (args.points !== undefined && (typeof args.points !== "number" || typeof args.outOf !== "number" || !Number.isFinite(args.points) || !Number.isFinite(args.outOf) || args.points < 0 || args.outOf <= 0 || args.points > args.outOf)) return toolText({ error: "points is from 0 to outOf, and outOf is above 0." }, true);
+        let errorNote: string | undefined;
+        if (args.errorNote !== undefined) {
+          if (typeof args.errorNote !== "string" || args.errorNote.length > 200) return toolText({ error: "errorNote is at most 200 characters." }, true);
+          const screened = await screenText(tools, args.errorNote, 200, "errorNote");
+          if (!screened.ok) return toolText({ error: screened.error }, true);
+          errorNote = screened.text ?? undefined;
+        }
+        const attempted = await tools.logProblem(args.courseId, args.examId, { typeId: args.problemTypeId, outcome: args.outcome, cold: args.cold, ...(typeof args.minutes === "number" ? { minutes: args.minutes } : {}), ...(errorNote ? { errorNote } : {}), ...(args.mockMaterialId !== undefined ? { mockMaterialId: args.mockMaterialId } : {}), ...(typeof args.points === "number" ? { points: args.points, outOf: args.outOf as number } : {}) });
+        return toolText(attempted, "error" in attempted);
       }
       case "log_session": {
         if (!isUuid(args.courseId)) return toolText({ error: "courseId must be a course id from course_state." }, true);
