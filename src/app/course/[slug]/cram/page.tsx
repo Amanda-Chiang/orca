@@ -13,6 +13,7 @@ import type { ObjectiveStatus } from "@/lib/mastery/types";
 import { useCourse, useDayKey, useMasteryByCourse, useOrca } from "@/lib/store";
 import { useNow } from "@/hooks/useNow";
 import { Screen } from "@/components/layout/Screen";
+import { IconUpload } from "@/components/icons";
 import { BackButton } from "@/components/layout/BackButton";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -111,6 +112,16 @@ export default function CramPage({ params, searchParams }: PageProps<"/course/[s
             {course.name} · {daysText(days)}
           </p>
         </div>
+        {/* The page's one way to add a past or practice exam (held back), in the setup and while cramming. */}
+        <Link
+          href={`/add-material?course=${course.slug}&type=Practice%20exam&holdBack=1`}
+          aria-label={ADD_EXAM_LABEL}
+          title={ADD_EXAM_LABEL}
+          data-part="cram-add-material"
+          className="pressable ml-auto inline-flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-[20px] border-2 border-alice-deep bg-parchment text-prussian lip-4 lip-alice"
+        >
+          <IconUpload size={24} />
+        </Link>
       </header>
 
       <motion.div variants={stagger(0.05, 0.08)} initial="hidden" animate="show" className="flex items-start gap-[12px] px-[24px] pb-[28px] pt-[20px]" data-part="cram-page" data-cramming={exam.cramming ? "1" : undefined}>
@@ -129,6 +140,8 @@ export default function CramPage({ params, searchParams }: PageProps<"/course/[s
     </Screen>
   );
 }
+
+const ADD_EXAM_LABEL = "Add a past or practice exam (kept hidden from you until you sit one)";
 
 const isVerified = (s: ObjectiveStatus) => s === "verified" || s === "mastered";
 
@@ -292,26 +305,18 @@ function CrammingView({ course, today, plan, topics, spentMinutes, objectiveName
                     })()}
                   </p>
                   <p className="text-[12px] font-medium text-wisteria-deep">
-                    Claude reads these to plan, and never shows you the problems.{vault.length > 1 ? " Reserve one and Claude leaves it unread until you sit it timed." : ""}{" "}
-                    <Link href={`/add-material?course=${course.slug}&type=Practice%20exam&holdBack=1`} data-part="cram-add-material" className="font-bold underline">
-                      Add another
-                    </Link>
+                    Claude reads these to plan, and never shows you the problems.{vault.length > 1 ? " Reserve one and Claude leaves it unread until you sit it timed." : ""}
                   </p>
                 </>
               ) : (
-                <p className="text-[13px] font-medium text-wisteria-deep">
-                  No practice test yet.{" "}
-                  <Link href={`/add-material?course=${course.slug}&type=Practice%20exam&holdBack=1`} data-part="cram-add-material" className="font-bold underline">
-                    Add one
-                  </Link>
-                </p>
+                <p className="text-[13px] font-medium text-wisteria-deep">No practice test yet.</p>
               )}
             </Card>
           </motion.div>
         </div>
 
         <motion.div variants={fadeUp} className="flex min-w-0 flex-1 flex-col gap-[12px]">
-          <ExamMapCard scope={scope} readiness={readiness} vaultNames={new Map(vault.map((v) => [v.id, v.filename]))} hasVault={vault.length > 0} addHref={`/add-material?course=${course.slug}&type=Practice%20exam&holdBack=1`} />
+          <ExamMapCard scope={scope} readiness={readiness} vaultNames={new Map(vault.map((v) => [v.id, v.filename]))} hasVault={vault.length > 0} />
           <Card className="flex flex-col gap-[12px] px-[22px] pb-[18px] pt-[18px]">
             <div className="flex items-baseline justify-between gap-[12px]">
               <h2 className="text-[20px] font-bold text-prussian">The schedule</h2>
@@ -477,7 +482,7 @@ function reserveIn(scope: ExamScope | null, materialId: string | null): ExamScop
  * The exam map (plan 2026-11-22, Phase 1): the exam's rules and the kinds of problem its past exams
  * ask, most recurrent first, as the student's Claude mapped them. Until it's mapped, it says how.
  */
-function ExamMapCard({ scope, readiness, vaultNames, hasVault, addHref }: { scope: ExamScope | null; readiness: ExamReadiness | null; vaultNames: ReadonlyMap<string, string>; hasVault: boolean; addHref: string }) {
+function ExamMapCard({ scope, readiness, vaultNames, hasVault }: { scope: ExamScope | null; readiness: ExamReadiness | null; vaultNames: ReadonlyMap<string, string>; hasVault: boolean }) {
   const map = examMap(scope);
   const stateOf = new Map((readiness?.types ?? []).map((t) => [t.id, t]));
   const rules = rulesLine(scope?.rules);
@@ -515,24 +520,15 @@ function ExamMapCard({ scope, readiness, vaultNames, hasVault, addHref }: { scop
           )}
           {map.uncertain && (
             <p className="text-[12px] font-medium text-wisteria-deep" data-part="cram-map-uncertain">
-              From {map.examsMapped} {map.examsMapped === 1 ? "exam" : "exams"}: a kind of problem on none of them can still come up.{" "}
-              <Link href={addHref} className="font-bold underline">
-                Add another past exam
-              </Link>
+              From {map.examsMapped} {map.examsMapped === 1 ? "exam" : "exams"}: a kind of problem on none of them can still come up.
             </p>
           )}
         </>
       ) : (
         <p className="text-[13px] font-medium text-wisteria-deep" data-part="cram-map-empty">
-          {hasVault ? "Not mapped yet. Ask Claude to map the exam: it reads your past exams and lists the kinds of problem they ask." : "Not mapped yet. "}
-          {!hasVault && (
-            <>
-              <Link href={addHref} className="font-bold underline">
-                Add every past exam you have
-              </Link>
-              , then ask Claude to map the exam.
-            </>
-          )}
+          {hasVault
+            ? "Not mapped yet. Ask Claude to map the exam: it reads your past exams and lists the kinds of problem they ask."
+            : "Not mapped yet. Upload every past exam you have, then ask Claude to map the exam."}
         </p>
       )}
     </Card>
