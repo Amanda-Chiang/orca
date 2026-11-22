@@ -22,9 +22,8 @@ test("the status slider: Discard leaves it; Mark mastered records a mark that su
   await page.goto(`/course/${SLUG}/list`);
   const row = page.locator("[data-part=weak-row]").first();
   await expect(row).toHaveAttribute("data-status", "needs-review");
-  // In progress isn't a place to put a topic by hand: tapping it asks nothing.
-  await row.locator('[data-part=status-stop][data-stop="in-progress"]').click();
-  await expect(page.locator("[data-part=status-confirm]")).toHaveCount(0);
+  // In progress isn't a place to put a topic by hand.
+  await expect(row.locator('[data-part=status-stop][data-stop="in-progress"]')).toHaveAttribute("aria-disabled", "true");
 
   await row.locator('[data-part=status-stop][data-stop="mastered"]').click();
   await expect(page.locator("[data-part=status-confirm]")).toContainText("Mark Two's Complement as mastered?");
