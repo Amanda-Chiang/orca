@@ -2,10 +2,13 @@
 
 import { use, useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
-import { motion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
 import { DiveModal } from "@/components/quiz/DiveModal";
 import { durationSeconds } from "@/lib/mastery/session";
 import { weakSpotStatus, type WeakSpotStatus } from "@/lib/mastery/progress";
+import { isInRotation } from "@/lib/mastery/flags";
+import { StatusSlider } from "@/components/course/StatusSlider";
+import { Button } from "@/components/ui/Button";
 import { AtlasSwitch } from "@/components/atlas/AtlasSwitch";
 import { UploadsLink } from "@/components/course/UploadsLink";
 import { AppShell } from "@/components/layout/AppShell";
@@ -13,18 +16,22 @@ import { BackButton } from "@/components/layout/BackButton";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { DEFAULT_CONFIG, trailTopics } from "@/lib/data";
 import { useCourse, useMasteryByCourse, useOrca } from "@/lib/store";
-import { fadeUp, stagger } from "@/lib/motion";
+import { fadeUp, popIn, stagger } from "@/lib/motion";
 
 /**
  * List (owner, 2026-11-10): every topic with weak spots, in course order, with its status (needs
  * review, in progress, mastered; colours from the Atlas) and a play button that opens its dive.
+ * The status is a 3-stop slider (owner, 2026-11-22): moving it to Mastered marks the topic's weak
+ * spots mastered (MarkEvent, rules v5), to Needs review flags them hard again; a pop-up confirms.
  */
 export default function ListPage({ params }: PageProps<"/course/[slug]/list">) {
   const { slug } = use(params);
   const [diving, setDiving] = useState<{ id: string; name: string } | null>(null);
   const closeDive = useCallback(() => setDiving(null), []);
   const router = useRouter();
-  const { hydrated, configs } = useOrca();
+  const { hydrated, configs, markMastered, flagObjectives } = useOrca();
+  // A status the student dragged a topic to, waiting for the pop-up's answer.
+  const [pending, setPending] = useState<{ topicId: string; name: string; to: WeakSpotStatus; ids: string[] } | null>(null);
   const course = useCourse(slug);
   const mastery = useMasteryByCourse();
 
@@ -42,10 +49,16 @@ export default function ListPage({ params }: PageProps<"/course/[slug]/list">) {
   if (!m) throw new Error(`No mastery computed for course ${course.id}`);
 
   const rows = trailTopics(course).flatMap((topic) => {
-    const status = weakSpotStatus(m.topicObjectives.get(topic.id) ?? [], m.objectives);
+    const ids = m.topicObjectives.get(topic.id) ?? [];
+    const status = weakSpotStatus(ids, m.objectives);
     const progress = m.topics.get(topic.id);
     if (!progress) throw new Error(`No progress computed for topic ${topic.id}`);
-    return status ? [{ topic, status, progress }] : [];
+    const weakSpots = ids.flatMap((id) => {
+      const s = m.objectives.get(id);
+      if (!s) throw new Error(`No state computed for objective ${id}`);
+      return isInRotation(s.status) || s.status === "check-due" ? [s] : [];
+    });
+    return status ? [{ topic, status, progress, weakSpots }] : [];
   });
 
   // The same header as Path (title, line, progress bar, then the pills), so the pills sit at the same height on every tab.
@@ -88,7 +101,7 @@ export default function ListPage({ params }: PageProps<"/course/[slug]/list">) {
               </p>
             ) : (
               <motion.ul variants={stagger()} initial="hidden" animate="show" className="mt-[24px] flex flex-col gap-[12px]" data-part="weak-list">
-                {rows.map(({ topic, status, progress }) => (
+                {rows.map(({ topic, status, progress, weakSpots }) => (
                   <motion.li
                     key={topic.id}
                     variants={fadeUp}
@@ -100,9 +113,25 @@ export default function ListPage({ params }: PageProps<"/course/[slug]/list">) {
                       <p className="truncate text-[19px] font-bold text-prussian">{topic.name}</p>
                       <p className="text-[14px] text-wisteria-deep">
                         {progress.mastered} of {progress.weak} weak spot{progress.weak === 1 ? "" : "s"} mastered
+                        {weakSpots.some((s) => s.markedByStudent) && <span data-part="marked-by-you"> · marked by you</span>}
                       </p>
                     </div>
-                    <StatusPill status={status} />
+                    <StatusSlider
+                      status={status}
+                      pending={pending?.topicId === topic.id ? pending.to : null}
+                      label={`${topic.name} status`}
+                      // Mastered marks what isn't held yet; Needs review flags every weak spot again. In progress
+                      // is where answers take a topic, not a place to put it by hand.
+                      canPick={(to) => to !== "in-progress"}
+                      onPick={(to) =>
+                        setPending({
+                          topicId: topic.id,
+                          name: topic.name,
+                          to,
+                          ids: weakSpots.filter((s) => to === "needs-review" || !(s.status === "mastered" || s.status === "retired")).map((s) => s.objectiveId),
+                        })
+                      }
+                    />
                     <button
                       type="button"
                       onClick={() => setDiving({ id: topic.id, name: topic.name })}
@@ -121,6 +150,49 @@ export default function ListPage({ params }: PageProps<"/course/[slug]/list">) {
           </div>
         </div>
       </div>
+      <AnimatePresence>
+        {pending && (
+          <motion.div
+            key="status-confirm"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 z-30 flex items-center justify-center bg-prussian/20 p-[20px]"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="status-confirm-title"
+            data-part="status-confirm"
+          >
+            <motion.div variants={popIn} initial="hidden" animate="show" exit="exit" className="w-full max-w-[26rem] rounded-[20px] border-2 border-alice-deep bg-parchment p-[22px] text-prussian lip-4 lip-alice">
+              <h2 id="status-confirm-title" className="text-[19px] font-bold">
+                {pending.to === "mastered" ? `Mark ${pending.name} as mastered?` : `Move ${pending.name} back to Needs review?`}
+              </h2>
+              <p className="mt-[6px] text-[15px] text-prussian/80">
+                {pending.to === "mastered"
+                  ? `${pending.ids.length === 1 ? "Its weak spot counts" : `Its ${pending.ids.length} weak spots count`} as mastered now. Orca checks back in a week.`
+                  : "Its weak spots start over and come back in your reviews."}
+              </p>
+              <div className="mt-[16px] flex justify-end gap-[10px]">
+                <Button size="sm" variant="secondary" onClick={() => setPending(null)} data-part="status-discard">
+                  Discard
+                </Button>
+                <Button
+                  size="sm"
+                  autoFocus
+                  onClick={() => {
+                    if (pending.to === "mastered") markMastered(course.id, pending.ids);
+                    else flagObjectives(course.id, pending.ids);
+                    setPending(null);
+                  }}
+                  data-part="status-confirm-yes"
+                >
+                  {pending.to === "mastered" ? "Mark mastered" : "Move back"}
+                </Button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
       <DiveModal
         topic={diving}
         initialMinutes={durationSeconds((configs[course.id] ?? DEFAULT_CONFIG).deep.duration) / 60}
@@ -128,24 +200,5 @@ export default function ListPage({ params }: PageProps<"/course/[slug]/list">) {
         onClose={closeDive}
       />
     </AppShell>
-  );
-}
-
-/** Needs review in the Atlas's red, in progress in its amber, mastered as a green check. */
-function StatusPill({ status }: { status: WeakSpotStatus }) {
-  if (status === "mastered") {
-    return (
-      <span role="img" aria-label="Mastered" data-part="status-pill" className="flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full bg-good-tint text-good-deep">
-        <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
-          <path d="M3.5 9.5l3.5 3.5 7.5-8" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      </span>
-    );
-  }
-  const style = status === "needs-review" ? "bg-bad-tint text-bad-text" : "bg-warn-tint text-warn-text";
-  return (
-    <span data-part="status-pill" className={`shrink-0 rounded-pill px-[14px] py-[6px] text-[14px] font-bold ${style}`}>
-      {status === "needs-review" ? "Needs review" : "In progress"}
-    </span>
   );
 }
