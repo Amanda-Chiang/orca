@@ -229,7 +229,7 @@ export interface CramPlan {
   verified: { done: number; total: number; share: number };   // objectives verified or mastered over objectives in scope (weight > 0)
   topics: Array<{ id: string; name: string; weight: number; unverifiedShare: number; done: boolean; minutesToday: number; weakSpots: string[] /* objective ids in rotation or check-due */ }>;
   today: Array<{ topicId: string; minutes: number }>;   // topics with minutesToday > 0, largest first
-  line: string;   // "9 days to the exam. Done: A, B. Today: C, D. Verified: 60%." (day of: "Exam day. Light review only, nothing new." ; behind: append " 20 minutes behind: D gets shortened.")
+  line: string;   // "9 days to the exam. Done: A, B. Today: C, D. Ready: 60%." (day of: "Exam day. Light review only, nothing new." ; behind: append " 20 minutes behind: D gets shortened.")
 }
 export function cramPlan(input: CramPlanInput): CramPlan;
 ```

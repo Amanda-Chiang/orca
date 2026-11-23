@@ -57,12 +57,12 @@ test("cram mode: dark course pages on the exam's topics, reviews paused, banner,
   await expect(page.locator("[data-part=island-spot][data-cramming] [data-part=island-halo]")).toHaveCount(1);
   await expect(page.locator("[data-cram]")).toHaveCount(0);
   await expect(page.locator("aside [data-todo]")).toHaveCount(0);
-  // The sidebar's cram card, first: the course, the exam, days left and the share verified; it opens the plan.
+  // The sidebar's cram card, first: the course, the exam, days left and the share ready; it opens the plan.
   const cramCard = page.locator("aside [data-part=cram-card]");
   await expect(cramCard).toContainText("Cram for Logic Fixture");
   await expect(cramCard).toContainText("Final");
   await expect(cramCard.locator("[data-part=cram-card-days]")).toHaveText("5 days left");
-  await expect(cramCard.locator("[data-part=cram-card-progress]")).toHaveText("0% verified");
+  await expect(cramCard.locator("[data-part=cram-card-progress]")).toHaveText("0% ready");
   await expect(cramCard).toHaveAttribute("href", `/course/${SLUG}/cram`);
 
   // Calendar: a Cramming key, and the course marked in the filter.

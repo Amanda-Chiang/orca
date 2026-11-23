@@ -51,7 +51,7 @@ test("course_state's plan counts the sessions and the connector's chat since the
   assert.equal(plan.minutesToday, 5);
   assert.equal(Math.round(plan.hoursLeft * 1000) / 1000, 3.417);
   assert.equal(plan.daysLeft, 6);
-  assert.equal(plan.line, "6 days to the exam. Done: Counters. Today: Adders. Verified: 50%.");
+  assert.equal(plan.line, "6 days to the exam. Done: Counters. Today: Adders. Ready: 50%.");
   assert.deepEqual(plan.verified, { done: 2, total: 4, share: 0.5 });
   assert.deepEqual(plan.topics.map((t) => [t.id, t.done, t.weakSpots]), [
     ["A", false, ["a1"]],

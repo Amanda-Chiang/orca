@@ -89,7 +89,7 @@ test("diagnostic first: with nothing in scope verified or answered since the cra
   const plan = cramPlan({ ...base, topics: fresh });
   assert.deepEqual(plan.diagnostic, { minutes: 10, topicIds: ["X", "Y"] });
   assert.deepEqual(plan.today, [{ topicId: "X", minutes: 50 }]);
-  assert.equal(plan.line, "9 days to the exam. Today: a quick sweep (one question per topic), then Xors. Verified: 0%.");
+  assert.equal(plan.line, "9 days to the exam. Today: a quick sweep (one question per topic), then Xors. Ready: 0%.");
   assert.equal(cramPlan({ ...base, topics: fresh, touchedObjectiveIds: ["y1"] }).diagnostic, null, "answered something: no sweep");
   assert.equal(cramPlan(base).diagnostic, null, "something verified: no sweep");
 });
@@ -116,13 +116,13 @@ test("weak spots are the in-scope objectives in rotation or waiting on a check",
 });
 
 test("the line names what's done and today's queue, never time behind, and exam day says so", () => {
-  assert.equal(cramPlan(base).line, "9 days to the exam. Done: Counters. Today: Adders. Verified: 60%.");
-  assert.equal(cramPlan({ ...base, today: "2026-11-13", spentMinutes: { beforeToday: 0, today: 0 } }).line, "6 days to the exam. Done: Counters. Today: Adders. Verified: 60%.", "nothing studied before today: no debt");
-  assert.equal(cramPlan({ ...base, today: "2026-11-15" }).line, "4 days to the exam. Done: Counters. Verified: 60%.", "a day off");
+  assert.equal(cramPlan(base).line, "9 days to the exam. Done: Counters. Today: Adders. Ready: 60%.");
+  assert.equal(cramPlan({ ...base, today: "2026-11-13", spentMinutes: { beforeToday: 0, today: 0 } }).line, "6 days to the exam. Done: Counters. Today: Adders. Ready: 60%.", "nothing studied before today: no debt");
+  assert.equal(cramPlan({ ...base, today: "2026-11-15" }).line, "4 days to the exam. Done: Counters. Ready: 60%.", "a day off");
   assert.equal(cramPlan({ ...base, today: "2026-11-19" }).line, "Exam day. Light review only, nothing new.");
   assert.equal(cramPlan({ ...base, today: "2026-11-18" }).line.slice(0, 18), "1 day to the exam.");
   const nothingDone = cramPlan({ ...base, topics: topics.filter((t) => t.id !== "C") });
-  assert.equal(nothingDone.line, "9 days to the exam. Today: Adders. Verified: 33%.");
+  assert.equal(nothingDone.line, "9 days to the exam. Today: Adders. Ready: 33%.");
 });
 
 test("the plan is deterministic", () => {

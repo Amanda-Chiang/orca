@@ -52,7 +52,7 @@ export function CramCards({ courses }: { courses: readonly Course[] }) {
                 <span className="block h-full rounded-pill bg-parchment" style={{ width: `${share}%` }} />
               </span>
               <span className="shrink-0 text-[13px] font-semibold" data-part="cram-card-progress">
-                {share}% verified
+                {share}% ready
               </span>
             </span>
           </Link>
