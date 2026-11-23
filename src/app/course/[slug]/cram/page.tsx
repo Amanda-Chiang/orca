@@ -19,7 +19,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { CramSetup } from "@/components/course/CramSetup";
-import { useCramTheme } from "@/components/course/CramTheme";
+import { CramCurtain } from "@/components/course/CramCurtain";
 import { useConnectorStatus, useCramPlan, useStudyLog } from "@/components/course/useCram";
 import { MASTERY_LABEL } from "@/components/review/parts";
 import { fadeUp, overlayFade, popIn, stagger } from "@/lib/motion";
@@ -67,8 +67,6 @@ export default function CramPage({ params, searchParams }: PageProps<"/course/[s
   const log = useStudyLog(course?.id, exam?.id);
   const planned = useCramPlan(course, exam, m, log);
   const connected = useConnectorStatus(Boolean(exam?.cramming));
-  // Cram mode's dark look (owner, 2026-11-22) while the shown exam is being crammed for (cardExam only returns ones not yet past).
-  useCramTheme(exam?.cramming === true);
 
   if (!course || !m) {
     return (
@@ -103,7 +101,10 @@ export default function CramPage({ params, searchParams }: PageProps<"/course/[s
   const vault = mine.filter((mat) => mat.heldBack);
 
   return (
-    <Screen bg="ocean" className="overflow-auto">
+    <>
+    {/* Outside the page's data-cram, so the curtain shows the old look. */}
+    <CramCurtain cram={exam.cramming} />
+    <Screen bg="ocean" className="overflow-auto" data-cram={exam.cramming ? "1" : undefined}>
       <header className="flex items-center gap-[12px] px-[24px] pt-[20px]">
         <BackButton href={`/course/${course.slug}`} />
         <div>
@@ -143,6 +144,7 @@ export default function CramPage({ params, searchParams }: PageProps<"/course/[s
         )}
       </motion.div>
     </Screen>
+    </>
   );
 }
 

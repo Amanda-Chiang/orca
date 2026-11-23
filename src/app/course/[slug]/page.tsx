@@ -18,7 +18,6 @@ import { AtlasSwitch } from "@/components/atlas/AtlasSwitch";
 import { ExamsModal } from "@/components/config/ExamsModal";
 import { CramBanner } from "@/components/course/CramBanner";
 import { cardExam } from "@/lib/course/exam-card";
-import { useCramTheme } from "@/components/course/CramTheme";
 import { UploadsLink } from "@/components/course/UploadsLink";
 import { duration, useUserMetrics } from "@/components/settings/YourMetrics";
 import { fadeUp, stagger } from "@/lib/motion";
@@ -41,7 +40,6 @@ export default function CoursePage({ params }: PageProps<"/course/[slug]">) {
   const agendas = useAgenda();
   // Cram mode (owner, 2026-11-22): the exam being crammed for and its topics; null otherwise.
   const cram = useCramming(course?.id);
-  useCramTheme(!!cram);
   const { exams } = useOrca();
   const dayKey = useDayKey();
   const nowMs = useNow();
@@ -80,7 +78,7 @@ export default function CoursePage({ params }: PageProps<"/course/[slug]">) {
   const warmUp = !cram && warm.length ? { topicName: course.topics.find((t) => t.id === warm[0].topicId)?.name ?? course.name, href: `/session/${course.slug}?kind=quick&warmup=1`, questions: warm.length } : null;
 
   return (
-    <AppShell bg="ocean" sidebar={!cram}>
+    <AppShell bg="ocean" cram={!!cram}>
       {cram && <CramBanner course={course} exam={cram.exam} />}
       {topics.length === 0 ? (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-[12px] text-center">

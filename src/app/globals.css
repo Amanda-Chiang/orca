@@ -18,6 +18,8 @@
 
   /* The sea behind full screens (owner's pick, 2026-10-06); cards and chips stay alice. */
   --color-ocean: #9cc3e7;
+  /* The deep sea: cram mode's ocean (owner, 2026-11-22), and the bottom of the dive into it. */
+  --color-abyss: #081d33;
 
   /* Concept Atlas edges (Figma: E1 · Concept graph v4): has a kind, alternative to, related. "Used in" is wisteria-deep. */
   --color-link-kind: #c2418f;
@@ -131,10 +133,11 @@
 
 /* Cram mode (owner, 2026-11-22): a cramming course's pages in Orca Ocean Dark. The light tokens are
    redefined, so every utility (bg-parchment, text-prussian…) turns dark without per-component variants.
-   Set on <html> by useCramTheme (src/components/course/CramTheme.tsx). */
-:root[data-cram] {
+   Set on the page below the top bar (AppShell's `cram`, or `data-cram` on the cram page's Screen), so the
+   top bar stays light. */
+[data-cram] {
   color-scheme: dark;
-  --color-ocean: #081d33;
+  --color-ocean: var(--color-abyss);
   --color-parchment: #0e2a46;
   --color-parchment-deep: #234967;
   --color-alice: #163a5c;
