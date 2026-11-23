@@ -57,6 +57,12 @@ export async function signIn(context: BrowserContext, email: string, password: s
   await context.addCookies(jar.map(({ name, value }) => ({ name, value, url: baseURL })));
 }
 
+/** After a missed answer: pass on the second try and on naming the mistake, so the solution and Continue show. */
+export async function pastMiss(page: Page) {
+  await page.locator("[data-part=show-solution]").click();
+  await page.locator("[data-part=spot-skip]").click();
+}
+
 /** Wait until the app has no save in flight, and fail with its message if one failed. */
 export async function settled(page: Page) {
   await page.waitForFunction(() => (document.documentElement.dataset.saving ?? "0") === "0");

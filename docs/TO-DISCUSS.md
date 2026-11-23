@@ -6,6 +6,19 @@ in the doc it affects (usually `docs/BACKEND-ROADMAP.md`) and move it to "Decide
 
 ## Open
 
+### After a wrong answer: assumptions (2026-11-22)
+
+Decided by the owner: the second try is practice only (the first answer is what's recorded), the
+"What went wrong?" pick is shown, not saved, a miss brings back a sibling question that counts, and
+it runs in every web quiz (`src/lib/quiz/after-miss.ts`). Assumed while building:
+- No second try on true/false or two-option questions (it would give the answer), after "Don't
+  know" or a typed "I don't know", for self-marked answers, or when grading failed.
+- The nudge before the second try is the grader's `errorType` in words and, for a partial answer,
+  the rubric ideas it already had; never the grader's feedback, which may name the answer.
+- The sibling comes 3 questions later (`SIBLING_GAP`), once per objective per session, not in
+  "Review missed", unseen questions first; in a dive it may be an ordinary (not deep) question.
+- A prose second try is graded by the model, so it costs one more grade call.
+
 ### Cram mode you enter: assumptions (2026-11-22)
 - **Source:** the owner's ask (cram mode as a space the student enters: dark, exam topics only, reviews paused, a
   banner) and answers (off-exam reviews hidden completely; dives on exam topics only; ends after the exam or on Stop;
