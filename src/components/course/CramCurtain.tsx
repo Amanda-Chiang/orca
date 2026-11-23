@@ -39,7 +39,7 @@ export function CramCurtain({ cram }: { cram: boolean }) {
       aria-hidden
       data-part="cram-curtain"
       data-direction={run.into ? "in" : "out"}
-      className="pointer-events-none fixed inset-x-0 bottom-0 top-(--topbar-h) z-40 overflow-hidden"
+      className="pointer-events-none fixed inset-0 z-40 overflow-hidden"
       {...cramDiveFade}
       onAnimationComplete={() => setRun(null)}
     >

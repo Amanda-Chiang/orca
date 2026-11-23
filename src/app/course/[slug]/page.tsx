@@ -19,7 +19,6 @@ import { ExamsModal } from "@/components/config/ExamsModal";
 import { CramBanner } from "@/components/course/CramBanner";
 import { cardExam } from "@/lib/course/exam-card";
 import { UploadsLink } from "@/components/course/UploadsLink";
-import { duration, useUserMetrics } from "@/components/settings/YourMetrics";
 import { fadeUp, stagger } from "@/lib/motion";
 import { COURSE_NAME_MAX, DEFAULT_CONFIG, trailTopics } from "@/lib/data";
 import { useNow } from "@/hooks/useNow";
@@ -36,7 +35,6 @@ export default function CoursePage({ params }: PageProps<"/course/[slug]">) {
   const { hydrated, objectives, renameCourse, configs, flagObjectives, questionBank, feedback } = useOrca();
   const course = useCourse(slug);
   const mastery = useMasteryByCourse();
-  const { metrics } = useUserMetrics();
   const agendas = useAgenda();
   // Cram mode (owner, 2026-11-22): the exam being crammed for and its topics; null otherwise.
   const cram = useCramming(course?.id);
@@ -57,7 +55,6 @@ export default function CoursePage({ params }: PageProps<"/course/[slug]">) {
     );
   }
 
-  const studied = metrics?.courses.find((c) => c.courseId === course.id);
   const m = mastery[course.id];
   if (!m) throw new Error(`No mastery computed for course ${course.id}`);
   const topics = trailTopics(course);
@@ -125,11 +122,8 @@ export default function CoursePage({ params }: PageProps<"/course/[slug]">) {
           >
             {course.name}
           </motion.h1>
-          <motion.p variants={fadeUp} className="text-[15px] font-medium text-wisteria-deep" data-part={topics.length > 0 ? "weak-count" : undefined}>
-            {weak ? `${held} of ${weak} weak spots mastered` : "No weak spots flagged yet"}
-            {studied && <span data-part="course-studied"> · {duration(studied.seconds)} studied · {studied.solved} solved</span>}
-          </motion.p>
-          <motion.div variants={fadeUp} className="mt-[6px] w-[240px]">
+          {/* No count line under the name (owner, 2026-11-22): the bar says how much of the weak spots is mastered. */}
+          <motion.div variants={fadeUp} className="mt-[6px] w-[240px]" data-part={topics.length > 0 ? "weak-count" : undefined}>
             <ProgressBar value={pct} height={12} label="Course progress" track="parchment" />
           </motion.div>
           <motion.nav variants={fadeUp} aria-label="Course structure" className="mt-[4px] flex items-center gap-[10px]">
