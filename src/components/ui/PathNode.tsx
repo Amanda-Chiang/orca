@@ -26,9 +26,13 @@ export interface PathNodeProps {
   index?: number;
   /** The topic's weak points: how many of them are mastered. Absent when nothing is in rotation. */
   ring?: { mastered: number; of: number };
+  /** The topic's id, as `data-topic`. */
+  topicId?: string;
+  /** Not on the exam being crammed for: faint, and not playable (owner, 2026-11-22). */
+  offExam?: boolean;
 }
 
-export function PathNode({ visual, x, y, name, sub, onClick, index = 0, ring }: PathNodeProps) {
+export function PathNode({ visual, x, y, name, sub, onClick, index = 0, ring, topicId, offExam = false }: PathNodeProps) {
   const size = NODE_SIZE[visual];
   const box = size + 16;
   const radius = size / 2 + 5;
@@ -44,7 +48,7 @@ export function PathNode({ visual, x, y, name, sub, onClick, index = 0, ring }: 
         : "bg-parchment border-alice-deep text-periwinkle-deep lip-alice";
 
   return (
-    <div className="absolute" style={{ left: x, top: y, width: 0, height: 0 }} data-visual={visual}>
+    <div className="absolute" style={{ left: x, top: y, width: 0, height: 0, opacity: offExam ? 0.4 : undefined }} data-visual={visual} data-topic={topicId} data-off-exam={offExam ? "1" : undefined}>
       {visual === "current" && (
         <motion.div
           data-part="halo"

@@ -70,6 +70,7 @@ import { isUsable } from "./mastery/snapshots";
 import { courseObjectiveWeights, examScopeWeights } from "./course/weights";
 import { laidOut } from "./course/layout";
 import { placeIslands } from "./course/islands";
+import { crammingExam, examTopicIds } from "./course/exam-card";
 import { streakDays } from "./mastery/streak";
 import { browserSupabase } from "./supabase/browser";
 import { type MyData, type StructureState, calendarToRow, courseToRow, defaultsToRow, examToRow, isEmpty, progressKey, progressToRow, loadedState, materialInsertRow, sessionFromRow, sessionToRow, structureRows } from "./supabase/app-rows";
@@ -589,7 +590,10 @@ export function OrcaProvider({ children }: { children: React.ReactNode }) {
       // A change to the scope or budget is logged on the scope, as the student's (the connector logs Claude's).
       const was = stateRef.current.exams.find((e) => e.id === id);
       const change = given.scope !== undefined && was ? { ...given, scope: withHistory(was.scope, given.scope, "student", new Date().toISOString(), { before: was.date, after: given.date ?? was.date }) } : given;
-      setState((s) => ({ ...s, exams: s.exams.map((e) => (e.id === id ? { ...e, ...change } : e)) }));
+      // One cram per course (owner, 2026-11-22): starting one stops the course's others.
+      const others = change.cramming && was ? stateRef.current.exams.filter((e) => e.courseId === was.courseId && e.id !== id && e.cramming).map((e) => e.id) : [];
+      setState((s) => ({ ...s, exams: s.exams.map((e) => (e.id === id ? { ...e, ...change } : others.includes(e.id) ? { ...e, cramming: false } : e)) }));
+      if (others.length) save(async () => mustChange(await browserSupabase().from("exams").update({ cramming: false }).in("id", others).select("id")));
       const row = {
         ...(change.title !== undefined ? { title: change.title } : {}),
         ...(change.date !== undefined ? { date: change.date } : {}),
@@ -1075,7 +1079,7 @@ export function useMasteryByCourse(): Record<string, CourseMastery> {
 
 /** The sidebar's to-do cards for every course, today's first. */
 export function useTodos(): TodoCard[] {
-  const { courses, objectives, configs, questionBank, feedback } = useOrca();
+  const { courses, objectives, configs, questionBank, feedback, exams } = useOrca();
   const agenda = useAgenda();
   const mastery = useMasteryByCourse();
   const dayKey = useDayKey();
@@ -1083,6 +1087,8 @@ export function useTodos(): TodoCard[] {
   return useMemo(
     () =>
       courses.flatMap((c) => {
+        // Cram mode pauses the course's quick reviews, dives and warm-up (owner, 2026-11-22): no cards, here or in the map's count.
+        if (crammingExam(exams, c.id, dayKey(new Date(nowMs).toISOString()))) return [];
         const a = agenda[c.id];
         const m = mastery[c.id];
         if (!a || !m) throw new Error(`No agenda computed for course ${c.id}`);
@@ -1112,8 +1118,21 @@ export function useTodos(): TodoCard[] {
           },
         }, covered, coveredTomorrow, warmUp);
       }),
-    [courses, objectives, configs, agenda, mastery, questionBank, feedback, nowMs, dayKey],
+    [courses, objectives, configs, agenda, mastery, questionBank, feedback, exams, nowMs, dayKey],
   );
+}
+
+/** The course's cram mode: the exam it's cramming for and that exam's topics; null when it isn't (or the exam has passed). */
+export function useCramming(courseId: string | undefined): { exam: Exam; topics: Set<string> } | null {
+  const { exams, courses, objectives } = useOrca();
+  const dayKey = useDayKey();
+  const nowMs = useNow();
+  return useMemo(() => {
+    const course = courses.find((c) => c.id === courseId);
+    if (!course) return null;
+    const exam = crammingExam(exams, course.id, dayKey(new Date(nowMs).toISOString()));
+    return exam ? { exam, topics: examTopicIds(exam, course.topics, objectives[course.id] ?? {}) } : null;
+  }, [exams, courses, objectives, courseId, dayKey, nowMs]);
 }
 
 /** Days in a row with at least one unaided graded answer. */

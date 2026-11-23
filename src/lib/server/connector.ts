@@ -714,6 +714,11 @@ export function connectorTools(db: OrcaSupabase, ownerId: string, now: () => Dat
       const row = { id: exam.id ?? crypto.randomUUID(), owner_id: ownerId, course_id: courseId, title, date, topic_ids: topicIds, cramming, scope: scope as unknown as Json };
       const { error } = await db.from("exams").upsert(row);
       if (error) throw new Error(`Couldn't save the exam: ${error.message}`);
+      if (cramming) {
+        // One cram per course (owner, 2026-11-22): cram mode filters the course by one exam, so the others stop.
+        const { error: others } = await db.from("exams").update({ cramming: false }).eq("owner_id", ownerId).eq("course_id", courseId).neq("id", row.id).eq("cramming", true);
+        if (others) throw new Error(`Couldn't stop the course's other cram: ${others.message}`);
+      }
       const weekOut = new Date(at.getTime() + AGENDA_RULES.examWindowDays * 86_400_000).toISOString().slice(0, 10);
       return { id: row.id, title: row.title, date: row.date, topicIds: row.topic_ids, cramming: cramming && row.date >= today, scope, mode: examMode({ date: row.date, cramming: cramming && row.date >= today }, today, weekOut), ...(note ? { note } : {}) };
     },

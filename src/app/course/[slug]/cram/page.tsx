@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { CramSetup } from "@/components/course/CramSetup";
+import { useCramTheme } from "@/components/course/CramTheme";
 import { useConnectorStatus, useCramPlan, useStudyLog, type StudySplit } from "@/components/course/useCram";
 import { CramProgress } from "@/components/course/CramProgress";
 import { WeakSpotBubbles } from "@/components/course/WeakSpotBubbles";
@@ -69,6 +70,8 @@ export default function CramPage({ params, searchParams }: PageProps<"/course/[s
   const log = useStudyLog(course?.id, exam?.id);
   const planned = useCramPlan(course, exam, m, log);
   const connected = useConnectorStatus(Boolean(exam?.cramming));
+  // Cram mode's dark look (owner, 2026-11-22) while the shown exam is being crammed for (cardExam only returns ones not yet past).
+  useCramTheme(exam?.cramming === true);
 
   if (!course || !m) {
     return (
