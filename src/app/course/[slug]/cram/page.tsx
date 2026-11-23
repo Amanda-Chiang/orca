@@ -7,7 +7,7 @@ import { cardExam, daysUntil, examObjectives } from "@/lib/course/exam-card";
 import { examMap, rulesLine } from "@/lib/course/exam-map";
 import { READINESS_LABEL, type ExamReadiness } from "@/lib/course/readiness";
 import type { SessionLine } from "@/lib/connector/mcp";
-import type { ExamScope } from "@/lib/data";
+import type { ExamScope, QuizResult } from "@/lib/data";
 import type { CramCovered, CramPlan, CramPlanDay, CramPlanInput, SpentMinutes } from "@/lib/mastery/cram-plan";
 import type { ObjectiveStatus } from "@/lib/mastery/types";
 import { useCourse, useDayKey, useMasteryByCourse, useOrca } from "@/lib/store";
@@ -19,8 +19,10 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { CramSetup } from "@/components/course/CramSetup";
-import { useCramTheme } from "@/components/course/CramTheme";
-import { useConnectorStatus, useCramPlan, useStudyLog } from "@/components/course/useCram";
+import { useConnectorStatus, useCramPlan, useStudyLog, type StudySplit } from "@/components/course/useCram";
+import { CramProgress } from "@/components/course/CramProgress";
+import { WeakSpotBubbles } from "@/components/course/WeakSpotBubbles";
+import { CramCurtain } from "@/components/course/CramCurtain";
 import { MASTERY_LABEL } from "@/components/review/parts";
 import { fadeUp, overlayFade, popIn, stagger } from "@/lib/motion";
 
@@ -54,21 +56,20 @@ const dayChip = (day: string) => {
 export default function CramPage({ params, searchParams }: PageProps<"/course/[slug]/cram">) {
   const { slug } = use(params);
   const sp = use(searchParams);
-  const { hydrated, exams, objectives, materials, updateExam } = useOrca();
+  const { hydrated, exams, objectives, materials, results, updateExam } = useOrca();
   const course = useCourse(slug);
   const mastery = useMasteryByCourse();
   const dayKey = useDayKey();
   const nowMs = useNow();
   // Edit scope (here or on the card, `?edit=1`) reopens the setup prefilled.
   const [editing, setEditing] = useState(sp.edit === "1");
+  const [tab, setTab] = useState<CramTab>(sp.tab === "progress" ? "progress" : "today");
   const today = dayKey(new Date(nowMs).toISOString());
   const exam = course ? cardExam(exams, course.id, today) : null;
   const m = course ? mastery[course.id] : undefined;
   const log = useStudyLog(course?.id, exam?.id);
   const planned = useCramPlan(course, exam, m, log);
   const connected = useConnectorStatus(Boolean(exam?.cramming));
-  // Cram mode's dark look (owner, 2026-11-22) while the shown exam is being crammed for (cardExam only returns ones not yet past).
-  useCramTheme(exam?.cramming === true);
 
   if (!course || !m) {
     return (
@@ -101,9 +102,14 @@ export default function CramPage({ params, searchParams }: PageProps<"/course/[s
   const cramming = exam.cramming && planned !== null && !editing;
   const mine = materials.filter((mat) => mat.courseId === course.id);
   const vault = mine.filter((mat) => mat.heldBack);
+  const latest = results.filter((r) => r.courseId === course.id).reduce<QuizResult | null>((a, r) => (!a || r.finishedAt > a.finishedAt ? r : a), null);
+  const lastQuiz: LastQuiz | null = latest && { topic: latest.topicId ? (course.topics.find((t) => t.id === latest.topicId)?.name ?? null) : null, mode: latest.mode, correct: latest.correct, total: latest.total, minutes: latest.seconds / 60, day: dayKey(latest.finishedAt) };
 
   return (
-    <Screen bg="ocean" className="overflow-auto">
+    <>
+    {/* Outside the page's data-cram, so the curtain shows the old look. */}
+    <CramCurtain cram={exam.cramming} />
+    <Screen bg="ocean" className="overflow-auto" data-cram={exam.cramming ? "1" : undefined}>
       <header className="flex items-center gap-[12px] px-[24px] pt-[20px]">
         <BackButton href={`/course/${course.slug}`} />
         <div>
@@ -131,7 +137,7 @@ export default function CramPage({ params, searchParams }: PageProps<"/course/[s
 
       <motion.div variants={stagger(0.05, 0.08)} initial="hidden" animate="show" className="flex items-start gap-[12px] px-[24px] pb-[28px] pt-[20px]" data-part="cram-page" data-cramming={exam.cramming ? "1" : undefined}>
         {cramming ? (
-          <CrammingView course={course} today={today} plan={planned.plan} topics={planned.topics} spentMinutes={planned.spentMinutes} objectiveName={(id) => catalogue[id]?.name ?? planned.plan.topics.find((t) => t.id === id)?.name ?? id} vault={vault.map((v) => ({ id: v.id, filename: v.filename }))} lastSession={log?.sessions[0] ?? null} readiness={planned.readiness} scope={exam.scope} onReserve={(id) => updateExam(exam.id, { scope: reserveIn(exam.scope, id) })} connected={connected} onEdit={() => setEditing(true)} onStop={() => updateExam(exam.id, { cramming: false })} />
+          <CrammingView course={course} today={today} plan={planned.plan} topics={planned.topics} spentMinutes={planned.spentMinutes} split={planned.split} examDate={exam.date} lastQuiz={lastQuiz} tab={tab} onTab={setTab} objectiveName={(id) => catalogue[id]?.name ?? planned.plan.topics.find((t) => t.id === id)?.name ?? id} vault={vault.map((v) => ({ id: v.id, filename: v.filename }))} lastSession={log?.sessions[0] ?? null} readiness={planned.readiness} scope={exam.scope} onReserve={(id) => updateExam(exam.id, { scope: reserveIn(exam.scope, id) })} connected={connected} onEdit={() => setEditing(true)} onStop={() => updateExam(exam.id, { cramming: false })} />
         ) : (
           <motion.div variants={fadeUp} className="w-[600px]">
             <Card className="px-[28px] pb-[24px] pt-[24px]">
@@ -143,6 +149,7 @@ export default function CramPage({ params, searchParams }: PageProps<"/course/[s
         )}
       </motion.div>
     </Screen>
+    </>
   );
 }
 
@@ -150,30 +157,24 @@ const ADD_EXAM_LABEL = "Add a past or practice exam (kept hidden from you until 
 
 const isVerified = (s: ObjectiveStatus) => s === "verified" || s === "mastered";
 
-function CrammingView({ course, today, plan, topics, spentMinutes, objectiveName, vault, lastSession, readiness, scope, onReserve, connected, onEdit, onStop }: { lastSession: SessionLine | null; readiness: ExamReadiness | null; course: { slug: string }; today: string; plan: CramPlan; topics: CramPlanInput["topics"]; spentMinutes: SpentMinutes; objectiveName: (id: string) => string; vault: Array<{ id: string; filename: string }>; scope: ExamScope | null; onReserve: (materialId: string | null) => void; connected: boolean | null; onEdit: () => void; onStop: () => void }) {
+function CrammingView({ course, today, plan, topics, spentMinutes, split, examDate, objectiveName, vault, lastSession, lastQuiz, readiness, scope, onReserve, connected, tab, onTab, onEdit, onStop }: { lastSession: SessionLine | null; lastQuiz: LastQuiz | null; readiness: ExamReadiness | null; course: { slug: string }; today: string; plan: CramPlan; topics: CramPlanInput["topics"]; spentMinutes: SpentMinutes; split: StudySplit; examDate: string; objectiveName: (id: string) => string; vault: Array<{ id: string; filename: string }>; scope: ExamScope | null; onReserve: (materialId: string | null) => void; connected: boolean | null; tab: CramTab; onTab: (tab: CramTab) => void; onEdit: () => void; onStop: () => void }) {
   void today;
-  const days = Object.keys(plan.perDay).sort();
-  const hours = days.reduce((sum, d) => sum + plan.perDay[d], 0);
   const studied = spentMinutes.beforeToday + spentMinutes.today;
   const topicName = new Map(plan.topics.map((t) => [t.id, t.name]));
   const coveredOf = new Map(plan.topics.map((t) => [t.id, t.covered]));
   const statusOf = new Map(topics.flatMap((t) => t.objectives.map((o) => [o.id, o.status] as const)));
-  // Every weak spot in scope, one list (owner, 2026-11-15: only what needs attention stays on the page).
-  const weak = plan.topics.flatMap((t) => t.weakSpots.map((id) => ({ id, topic: t.name })));
   const [scopeOpen, setScopeOpen] = useState(false);
   return (
     <div className="flex w-full flex-col gap-[12px]">
-      {/* One line: the budget and the share verified; Edit and Stop beside it. */}
-      <motion.div variants={fadeUp} className="flex flex-wrap items-center gap-x-[14px] gap-y-[6px]" data-part="cram-header">
-        <p className="text-[18px] font-bold text-prussian" data-part="cram-budget">
-          {hoursText(plan.hoursLeft)} hours left of {hoursText(hours)}
-        </p>
-        <p className="text-[15px] font-semibold text-wisteria-deep" data-part="cram-plan">
-          {plan.daysLeft === 0 ? "Exam day. Light review only, nothing new." : `${plan.daysLeft} ${plan.daysLeft === 1 ? "day" : "days"} to the exam · ${plan.unit === "problem-type" ? `ready for ${plan.verified.done} of ${plan.verified.total} kinds of problem` : `${Math.round(plan.verified.share * 100)}% verified`}`}
-        </p>
-        <p className="text-[13px] font-medium text-wisteria-deep" data-part="cram-spent">
-          {minutesText(studied)} studied{plan.daysLeft > 0 ? ` · ${minutesText(plan.minutesToday)} left today` : ""}
-        </p>
+      {/* Two tabs (owner, 2026-11-22): Today (the plan, where you left off, the weak spots) and Your Progress (the dashboard); Edit and Stop beside them. */}
+      <motion.div variants={fadeUp} className="flex flex-wrap items-center gap-[8px]" data-part="cram-header">
+        <div role="tablist" aria-label="Cram views" className="flex gap-[6px] rounded-pill bg-alice p-[4px] ring-2 ring-inset ring-alice-deep">
+          {CRAM_TABS.map((t) => (
+            <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} onClick={() => onTab(t.id)} data-part={`cram-tab-${t.id}`} className={`rounded-pill px-[16px] py-[6px] text-[15px] font-bold transition-colors ${tab === t.id ? "bg-parchment text-prussian lip-2 lip-alice" : "text-wisteria-deep"}`}>
+              {t.label}
+            </button>
+          ))}
+        </div>
         <span className="ml-auto flex items-center gap-[8px]">
           <button type="button" onClick={onEdit} data-part="cram-edit" className="text-[13px] font-bold text-wisteria-deep underline">
             Edit
@@ -184,10 +185,14 @@ function CrammingView({ course, today, plan, topics, spentMinutes, objectiveName
         </span>
       </motion.div>
 
-      <div className="flex items-start gap-[12px]">
-        <div className="flex w-[340px] shrink-0 flex-col gap-[12px]">
-          <motion.div variants={fadeUp}>
-            <Card className="flex flex-col gap-[10px] px-[22px] pb-[18px] pt-[18px]" data-part="cram-today">
+      {tab === "progress" ? (
+        <CramProgress plan={plan} topics={topics} studied={studied} studiedToday={spentMinutes.today} split={split} examDate={examDate} />
+      ) : (
+        <>
+          <div className="flex items-stretch gap-[12px]">
+            <div className="flex w-[380px] shrink-0 flex-col">
+          <motion.div variants={fadeUp} className="flex-1">
+            <Card className="flex h-full flex-col gap-[10px] px-[22px] pb-[18px] pt-[18px]" data-part="cram-today">
               <h2 className="text-[20px] font-bold text-prussian">Today</h2>
               {plan.daysLeft === 0 ? (
                 <p className="text-[14px] font-medium text-wisteria-deep">Light review only, nothing new.</p>
@@ -240,48 +245,25 @@ function CrammingView({ course, today, plan, topics, spentMinutes, objectiveName
               </div>
             </Card>
           </motion.div>
-
-          {lastSession && (
-            <motion.div variants={fadeUp}>
-              {/* Where the last sitting with Claude stopped: what a new chat opens with. */}
-              <Card className="flex flex-col gap-[6px] px-[22px] pb-[16px] pt-[16px]" data-part="cram-last-session">
-                <div className="flex items-baseline justify-between gap-[8px]">
-                  <h2 className="text-[17px] font-bold text-prussian">Where you left off</h2>
-                  <span className="shrink-0 text-[12px] font-medium text-wisteria-deep" data-part="cram-last-when">
-                    {dayChip(lastSession.day)} · {minutesText(lastSession.minutes)}
-                  </span>
-                </div>
-                <p className="text-[13px] font-medium leading-snug text-prussian" data-part="cram-bookmark">
-                  {lastSession.bookmark ?? lastSession.summary}
-                </p>
-                {lastSession.next.length > 0 && (
-                  <ol className="flex list-decimal flex-col gap-[2px] pl-[18px] text-[13px] font-semibold text-prussian" data-part="cram-next-steps">
-                    {lastSession.next.map((step, i) => (
-                      <li key={i}>{step}</li>
-                    ))}
-                  </ol>
-                )}
-              </Card>
+            </div>
+            <motion.div variants={fadeUp} className="min-w-0 flex-1">
+              <LeftOff lastSession={lastSession} lastQuiz={lastQuiz} connected={connected} />
             </motion.div>
-          )}
-
+          </div>
           <motion.div variants={fadeUp}>
-            <Card className="flex flex-col gap-[6px] px-[22px] pb-[16px] pt-[16px]" data-part="cram-weak">
-              <h2 className="text-[17px] font-bold text-prussian">Weak spots{weak.length ? ` · ${weak.length}` : ""}</h2>
-              {weak.length === 0 ? (
-                <p className="text-[13px] font-medium text-wisteria-deep">None flagged in scope.</p>
-              ) : (
-                <ul className="flex max-h-[180px] flex-col gap-[3px] overflow-y-auto">
-                  {weak.map((w) => (
-                    <li key={w.id} className="text-[13px] font-medium leading-snug text-prussian" data-part="cram-weak-item" data-objective={w.id}>
-                      {objectiveName(w.id)} <span className="text-wisteria-deep">· {MASTERY_LABEL[statusOf.get(w.id) ?? "unseen"]}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
+            <Card radius={24} lip={5} className="px-[22px] pb-[18px] pt-[18px]">
+              <WeakSpotBubbles plan={plan} topics={topics} slug={course.slug} objectiveName={objectiveName} />
             </Card>
           </motion.div>
+        </>
+      )}
 
+      {/* Under both tabs: what the exam asks and the practice test, then the schedule. */}
+      <div className="flex items-start gap-[12px]">
+        <motion.div variants={fadeUp} className="min-w-0 flex-1">
+          <ExamMapCard scope={scope} readiness={readiness} vaultNames={new Map(vault.map((v) => [v.id, v.filename]))} hasVault={vault.length > 0} />
+        </motion.div>
+        <div className="w-[340px] shrink-0">
           <motion.div variants={fadeUp}>
             <Card className="flex flex-col gap-[4px] px-[22px] pb-[16px] pt-[16px]" data-part="cram-mock">
               <h2 className="text-[17px] font-bold text-prussian">Practice test</h2>
@@ -319,9 +301,8 @@ function CrammingView({ course, today, plan, topics, spentMinutes, objectiveName
             </Card>
           </motion.div>
         </div>
-
-        <motion.div variants={fadeUp} className="flex min-w-0 flex-1 flex-col gap-[12px]">
-          <ExamMapCard scope={scope} readiness={readiness} vaultNames={new Map(vault.map((v) => [v.id, v.filename]))} hasVault={vault.length > 0} />
+      </div>
+      <motion.div variants={fadeUp}>
           <Card className="flex flex-col gap-[12px] px-[22px] pb-[18px] pt-[18px]">
             <div className="flex items-baseline justify-between gap-[12px]">
               <h2 className="text-[20px] font-bold text-prussian">The schedule</h2>
@@ -344,11 +325,79 @@ function CrammingView({ course, today, plan, topics, spentMinutes, objectiveName
               <span><span className="mr-[4px] inline-block h-[10px] w-[10px] rounded-[3px] bg-wisteria/25 align-middle" />Done</span>
             </p>
           </Card>
-        </motion.div>
-      </div>
+      </motion.div>
 
       <ScopePanel open={scopeOpen} onClose={() => setScopeOpen(false)} plan={plan} topics={topics} objectiveName={objectiveName} statusOf={statusOf} />
     </div>
+  );
+}
+
+type CramTab = "today" | "progress";
+const CRAM_TABS: Array<{ id: CramTab; label: string }> = [
+  { id: "today", label: "Today" },
+  { id: "progress", label: "Your Progress" },
+];
+
+/** The course's latest finished session in the app: the other half of "where you left off". */
+interface LastQuiz {
+  topic: string | null;
+  mode: QuizResult["mode"];
+  correct: number;
+  total: number;
+  minutes: number;
+  day: string;
+}
+
+const MODE_NAME: Record<QuizResult["mode"], string> = { topic: "Topic quiz", quick: "Quick review", deep: "Dive", requiz: "Re-quiz" };
+
+/**
+ * Where you left off (owner, 2026-11-22: always on the Today tab): the last sitting with Claude
+ * (its bookmark and next steps, what a new chat opens with) and the last session in the app; before
+ * either, how it fills in.
+ */
+function LeftOff({ lastSession, lastQuiz, connected }: { lastSession: SessionLine | null; lastQuiz: LastQuiz | null; connected: boolean | null }) {
+  return (
+    <Card radius={24} lip={5} className="flex h-full flex-col gap-[8px] px-[22px] pb-[16px] pt-[18px]" data-part="cram-last-session" data-empty={lastSession || lastQuiz ? undefined : "1"}>
+      <div className="flex items-baseline justify-between gap-[8px]">
+        <h2 className="text-[20px] font-bold text-prussian">Where you left off</h2>
+        {lastSession && (
+          <span className="shrink-0 text-[12px] font-medium text-wisteria-deep" data-part="cram-last-when">
+            With Claude · {dayChip(lastSession.day)} · {minutesText(lastSession.minutes)}
+          </span>
+        )}
+      </div>
+      {lastSession ? (
+        <>
+          <p className="text-[14px] font-medium leading-snug text-prussian" data-part="cram-bookmark">
+            {lastSession.bookmark ?? lastSession.summary}
+          </p>
+          {lastSession.next.length > 0 && (
+            <div className="flex flex-col gap-[2px]">
+              <p className="text-[13px] font-bold text-wisteria-deep">Next</p>
+              <ol className="flex list-decimal flex-col gap-[2px] pl-[18px] text-[13px] font-semibold text-prussian" data-part="cram-next-steps">
+                {lastSession.next.map((step, i) => (
+                  <li key={i}>{step}</li>
+                ))}
+              </ol>
+            </div>
+          )}
+        </>
+      ) : (
+        <p className="text-[14px] font-medium text-wisteria-deep" data-part="cram-last-empty">
+          No sittings with Claude yet. Study with Claude and it picks up here next time.
+        </p>
+      )}
+      {lastQuiz && (
+        <p className="mt-auto border-t border-alice-deep pt-[8px] text-[13px] font-semibold text-prussian" data-part="cram-last-quiz">
+          In Orca: {MODE_NAME[lastQuiz.mode]}
+          {lastQuiz.topic ? ` · ${lastQuiz.topic}` : ""}
+          <span className="font-medium text-wisteria-deep">
+            {" "}· {lastQuiz.correct}/{lastQuiz.total} right · {minutesText(lastQuiz.minutes)} · {dayChip(lastQuiz.day)}
+          </span>
+        </p>
+      )}
+      {lastSession && connected && <p className="text-[12px] font-medium text-wisteria-deep">A new chat with Claude opens from here.</p>}
+    </Card>
   );
 }
 

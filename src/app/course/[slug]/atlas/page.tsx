@@ -15,7 +15,6 @@ import { DEFAULT_CONFIG, trailTopics } from "@/lib/data";
 import { topicGraph, topicStrength } from "@/lib/course/topic-graph";
 import { useCourse, useCramming, useMasteryByCourse, useOrca } from "@/lib/store";
 import { CramBanner } from "@/components/course/CramBanner";
-import { useCramTheme } from "@/components/course/CramTheme";
 import { fadeUp, stagger } from "@/lib/motion";
 
 /**
@@ -35,7 +34,6 @@ export default function AtlasPage({ params }: PageProps<"/course/[slug]/atlas">)
   const m = course ? mastery[course.id] : undefined;
   // Cram mode (owner, 2026-11-22): topics not on the exam are faint, and only exam topics open a dive.
   const cram = useCramming(course?.id);
-  useCramTheme(!!cram);
 
   const graph = useMemo(() => {
     if (!course || !m) return null;
@@ -85,7 +83,7 @@ export default function AtlasPage({ params }: PageProps<"/course/[slug]/atlas">)
   const connections = graph.edges.length;
   const muted = cram ? new Set(graph.nodes.map((n) => n.topic.id).filter((id) => !cram.topics.has(id))) : null;
   return (
-    <AppShell bg="parchment" sidebar={!cram}>
+    <AppShell bg="parchment" cram={!!cram}>
       {cram && <CramBanner course={course} exam={cram.exam} />}
       {topics === 0 ? (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-[12px] text-center">
@@ -93,7 +91,7 @@ export default function AtlasPage({ params }: PageProps<"/course/[slug]/atlas">)
           <p className="text-[16px] text-wisteria-deep">Add lecture slides or homework and Orca will chart this island&apos;s topics.</p>
         </div>
       ) : (
-        <TopicGraph key={`${graph.width}x${graph.height}`} graph={graph} muted={muted} onOpen={(id) => !muted?.has(id) && setDiving(graph.nodes.find((n) => n.topic.id === id)?.topic ?? null)} />
+        <TopicGraph key={`${graph.width}x${graph.height}`} graph={graph} muted={muted} raiseZoom={!!cram} onOpen={(id) => !muted?.has(id) && setDiving(graph.nodes.find((n) => n.topic.id === id)?.topic ?? null)} />
       )}
       <motion.header variants={stagger()} initial="hidden" animate="show" className={`pointer-events-none absolute left-[28px] flex items-start gap-[16px] ${cram ? "top-[76px]" : "top-[28px]"}`}>
         <motion.div variants={fadeUp} className="pointer-events-auto">

@@ -10,7 +10,7 @@ import { Wave } from "@/components/brand/Decor";
 import { ZoomControls } from "@/components/ui/ZoomControls";
 import { useFitScale } from "@/hooks/useFitScale";
 import { ISLAND_LAYOUT, islandMapSize, placeIslands } from "@/lib/course/islands";
-import { stagger } from "@/lib/motion";
+import { pulseHalo, stagger } from "@/lib/motion";
 import { useMasteryByCourse } from "@/lib/store";
 import { LabelPill } from "./LabelPill";
 
@@ -38,7 +38,7 @@ type View = { scale: number; x: number; y: number };
  * around, and zoom with − + or fit it again. Clicking an island
  * or its name opens its path.
  */
-/** `cramming`: courses in cram mode (owner, 2026-11-22), drawn at night with a "Cram mode" tag. */
+/** `cramming`: courses in cram mode (owner, 2026-11-22), drawn with the path's pulsing halo behind them. */
 export function KnowledgeMap({ courses, dueCount, cramming = () => false }: { courses: Course[]; dueCount: (courseId: string) => number; cramming?: (courseId: string) => boolean }) {
   const router = useRouter();
   const mastery = useMasteryByCourse();
@@ -107,7 +107,7 @@ export function KnowledgeMap({ courses, dueCount, cramming = () => false }: { co
         {courses.map((c, i) => {
           const spot = spots[i];
           return (
-            <div key={c.id} className="absolute" style={{ left: spot.x, top: spot.y, width: ISLAND_W, height: ISLAND_H }} data-part="island-spot" data-cram={cramming(c.id) ? "1" : undefined}>
+            <div key={c.id} className="absolute" style={{ left: spot.x, top: spot.y, width: ISLAND_W, height: ISLAND_H }} data-part="island-spot" data-cramming={cramming(c.id) ? "1" : undefined}>
               <motion.button
                 type="button"
                 aria-label={`Open ${c.name}`}
@@ -116,20 +116,22 @@ export function KnowledgeMap({ courses, dueCount, cramming = () => false }: { co
                 whileHover={{ scale: 1.04 }}
                 whileTap={{ scale: 0.98 }}
               >
-                <Island variant={c.variant} level={levelOf(c.id)} float seed={i} style={cramming(c.id) ? { filter: "brightness(0.55) saturate(0.8) hue-rotate(-10deg)" } : undefined} />
+                {cramming(c.id) && (
+                  <motion.div
+                    data-part="island-halo"
+                    aria-hidden
+                    className="absolute rounded-[50%] bg-alice"
+                    style={{ left: 12, top: 4, right: 12, bottom: 20 }}
+                    animate={pulseHalo}
+                  />
+                )}
+                <Island variant={c.variant} level={levelOf(c.id)} float seed={i} />
               </motion.button>
               <div className="absolute left-1/2 -translate-x-1/2" style={{ top: 196 }}>
                 <LabelPill count={dueCount(c.id)} onClick={() => router.push(`/course/${c.slug}`)} aria-label={`Open ${c.name}, ${dueCount(c.id)} due today`} title={c.name} style={{ maxWidth: ISLAND_LAYOUT.pillMax }}>
                   <span className="min-w-0 truncate">{c.name}</span>
                 </LabelPill>
-                {cramming(c.id) && (
-                  <p className="mt-[6px] flex justify-center">
-                    <span data-part="island-cram" className="eyebrow rounded-pill bg-prussian px-[10px] py-[3px] text-[11px] text-parchment">
-                      Cram mode
-                    </span>
-                  </p>
-                )}
-                {levelOf(c.id) === "uncharted" && !cramming(c.id) && (mastery[c.id]?.objectives.size ?? 0) > 0 && (
+                {levelOf(c.id) === "uncharted" && (mastery[c.id]?.objectives.size ?? 0) > 0 && (
                   <p data-part="island-note" className="mt-[6px] whitespace-nowrap text-center text-[13px] font-semibold text-wisteria-deep">
                     No weak spots flagged yet
                   </p>

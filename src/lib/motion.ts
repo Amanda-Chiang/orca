@@ -86,6 +86,23 @@ export const pulseHalo = {
   transition: { duration: 2.4, repeat: Infinity, ease: "easeInOut" as const },
 };
 
+/**
+ * Cram mode's way in and out (owner, 2026-11-22): a dive. A strip of water three screens tall, light
+ * at the top and dark at the bottom, scrolls past: into cram from the light end down to the dark one
+ * (bubbles rising past), out of cram back up; then it fades to show the page.
+ */
+export const CRAM_DIVE_S = 1.4;
+export const cramDive = (into: boolean) => ({
+  initial: { y: into ? "0%" : "-66.667%" },
+  animate: { y: into ? "-66.667%" : "0%" },
+  transition: { duration: CRAM_DIVE_S, ease: [0.45, 0, 0.25, 1] as const },
+});
+export const cramDiveFade = {
+  initial: { opacity: 1 },
+  animate: { opacity: [1, 1, 0] },
+  transition: { duration: CRAM_DIVE_S + 0.3, times: [0, CRAM_DIVE_S / (CRAM_DIVE_S + 0.3), 1] },
+};
+
 /** Quick crossfade for swapped text (calendar month heading). */
 export const fadeSwap: Variants = {
   hidden: { opacity: 0, y: 8 },
