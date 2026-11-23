@@ -186,7 +186,7 @@ export default function ListPage({ params }: PageProps<"/course/[slug]/list">) {
                   }}
                   data-part="status-confirm-yes"
                 >
-                  {pending.to === "mastered" ? "Mark mastered" : "Move back"}
+                  Confirm
                 </Button>
               </div>
             </motion.div>
