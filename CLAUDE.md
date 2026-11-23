@@ -139,6 +139,18 @@ own courses (Data Structures, Fundamentals of Computer Systems) on the hosted pr
   value and unit (`quantityOf`), "I don't know" as a miss on choice and exact questions (`isDontKnow`),
   `course_state` `detail: "weak"`, and `scope.history` (who changed the scope or budget, and what;
   `src/lib/course/scope-history.ts`). The plan lists what wasn't built and why.
+- **Since 2026-11-22: cram mode you enter** (plan `docs/superpowers/plans/2026-11-22-cram-mode-immersive.md`; owner):
+  while a course crams for an exam (`crammingExam` in `src/lib/course/exam-card.ts`: `cramming` and the date not past,
+  so it ends by itself the day after; `useCramming(courseId)` in the store gives the exam and `examTopicIds`), its
+  Path, List, Atlas and cram page are dark (`useCramTheme` sets `data-cram` on `<html>`; `:root[data-cram]` in
+  `globals.css` redefines the light tokens), the due sidebar goes (`AppShell sidebar={false}`), the course's to-do
+  cards drop out everywhere (`useTodos`; the home count and the calendar's reviews too), the warm-up and the
+  course-wide Dive in pill hide (topic dives stay, exam topics only), Path and List show the exam's topics ("Show N
+  other topics": faint, `data-off-exam`, not playable), the Atlas draws the others faint until a neighbour is
+  hovered (`TopicGraph muted`), the CRAM MODE banner (`CramBanner`, `data-part="cram-banner"`) replaces the exam
+  card, and the home island is at night with a "Cram mode" tag (`island-cram`). One exam per course crams at a time
+  (the store's `updateExam` and the connector's `set_exam`). Assumptions in `docs/TO-DISCUSS.md`; e2e
+  `e2e/cram-immersive.spec.ts`.
 - **Upload toasts** (2026-11-08, `src/components/layout/UploadToasts.tsx`, mounted in `providers.tsx`): an upload
   that finishes (done or failed) while the app is open, from any tab or device, pops a toast unless the student is on
   that course's uploads; uploads of one course finishing while its toast is up share it. One upload's toast opens
