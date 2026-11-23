@@ -40,7 +40,7 @@ export function CramProgress({ plan, topics, studied, studiedToday, split, examD
       <motion.div variants={fadeUp} className="grid grid-cols-4 gap-[12px]">
         <Tile label="Hours left" value={`${hoursText(plan.hoursLeft)} of ${hoursText(totalHours)} h`} share={totalHours ? 1 - plan.hoursLeft / totalHours : 0} part="cram-budget" note={`${minutesText(studied)} studied`} />
         <Tile label="Today" value={plannedToday ? `${Math.round(studiedToday)} of ${Math.round(plannedToday)} min` : `${Math.round(studiedToday)} min`} share={plannedToday ? studiedToday / plannedToday : null} part="cram-spent" note={plan.daysLeft === 0 ? "Exam day: light review only" : plannedToday ? `${minutesText(plan.minutesToday)} left today` : "A day off"} />
-        <Tile label={problems ? "Ready" : "Verified"} value={`${Math.round(plan.verified.share * 100)}%`} share={plan.verified.share} part="cram-plan" note={`${plan.verified.done} of ${plan.verified.total} ${problems ? "kinds of problem" : "objectives"}`} />
+        <Tile label="Ready" value={`${Math.round(plan.verified.share * 100)}%`} share={plan.verified.share} part="cram-plan" note={`${plan.verified.done} of ${plan.verified.total} ${problems ? "kinds of problem" : "objectives"}`} />
         <Tile label="Exam" value={plan.daysLeft === 0 ? "Today" : plan.daysLeft === 1 ? "Tomorrow" : `In ${plan.daysLeft} days`} share={null} part="cram-exam-day" note={dayChip(examDate)} />
       </motion.div>
 

@@ -21,7 +21,7 @@ test("This is hard on an objective makes it due, and its topic shows a ring", as
   await expect(flag).toHaveText("In review");
   await page.goto(`/course/${COURSE_SLUG}`);
   await expect(page.locator('[data-part="topic-ring"]')).toHaveCount(1);
-  await expect(page.getByText("0 of 1 weak spots mastered")).toBeVisible();
+  await expect(page.locator('[data-part="topic-ring"][data-mastered="0"][data-of="1"]')).toHaveCount(1);
   await expect(page.getByText("Quick review ·")).toBeVisible();
   const after = await stored(page, student);
   expect(after.evidence.filter((e) => e.kind === "confusion" && e.flagSource === "manual")).toHaveLength(1);
@@ -34,7 +34,7 @@ test("This topic is hard flags every objective in the topic", async ({ page, stu
   await page.locator('[data-part="node"]').nth(1).click();
   await page.locator('[data-part="flag-topic"]').click();
   await expect(page.locator('[data-part="topic-ring"]')).toHaveCount(1);
-  await expect(page.getByText("0 of 2 weak spots mastered")).toBeVisible();
+  await expect(page.locator('[data-part="topic-ring"][data-mastered="0"][data-of="2"]')).toHaveCount(1);
 });
 
 test("caught up: Practice other topics opens a dive over objectives nobody flagged", async ({ page, student }) => {
@@ -67,7 +67,7 @@ test("a flag on an objective with no questions writes them, and the quick review
   await page.locator("[data-part=path-show-all]").click();
   await page.locator('[data-part="node"]').nth(1).click();
   await page.locator('[data-part="flag-topic"]').click();
-  await expect(page.getByText("0 of 3 weak spots mastered")).toBeVisible();
+  await expect(page.locator('[data-part="topic-ring"][data-mastered="0"][data-of="3"]')).toHaveCount(1);
   // Two of the three have questions now; the third gets its own from the top-up the flags started.
   await expect(page.getByText("Covers 3 objectives")).toBeVisible({ timeout: 60_000 });
   const after = await stored(page, student);
@@ -115,7 +115,7 @@ test("a flag ends in questions even when the browser never asks: the server asks
   await page.locator("[data-part=path-show-all]").click();
   await page.locator('[data-part="node"]').nth(1).click();
   await page.locator('[data-part="flag-topic"]').click();
-  await expect(page.getByText("0 of 3 weak spots mastered")).toBeVisible();
+  await expect(page.locator('[data-part="topic-ring"][data-mastered="0"][data-of="3"]')).toHaveCount(1);
   // POST /api/evidence asked for the top-up itself (owner, 2026-11-10).
   await expect.poll(async () => Object.values((await stored(page, student)).questionBank[F.course] ?? {}).flat().filter((q) => q.objectiveId === X.bare).length, { timeout: 60_000 }).toBeGreaterThan(0);
 });

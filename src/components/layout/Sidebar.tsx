@@ -12,6 +12,7 @@ import type { Course } from "@/lib/data";
 import type { TodoCard } from "@/lib/mastery/todo";
 import { CaughtUp, useCaughtUp } from "./CaughtUp";
 import { NavBar } from "./NavBar";
+import { CramCards } from "./CramCards";
 
 export const SIDEBAR_W = 340;
 
@@ -131,6 +132,8 @@ export function Sidebar() {
       style={{ width: SIDEBAR_W }}
     >
       <div className="flex flex-col gap-[28px] overflow-y-auto">
+        {/* Courses in cram mode first, urgent and red (owner, 2026-11-22); on a course page, only that course. */}
+        <CramCards courses={course ? [course] : courses} />
         {course ? (
           <CourseToday course={course} hydrated={hydrated} items={visibleTodos.filter((d) => d.when === "today")} courses={byId} />
         ) : (

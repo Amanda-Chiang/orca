@@ -77,5 +77,5 @@ test("the page's plan: an exam 5 days out, 6 hours by day with one day out, noth
   assert.deepEqual(plan.diagnostic, { minutes: 10, topicIds: ["t"] });
   assert.deepEqual(plan.today, [{ topicId: "t", minutes: 80 }]);
   assert.deepEqual(plan.topics[0].weakSpots, ["a"]);
-  assert.equal(plan.line, "5 days to the exam. Today: a quick sweep (one question per topic), then Two's Complement. Verified: 0%.");
+  assert.equal(plan.line, "5 days to the exam. Today: a quick sweep (one question per topic), then Two's Complement. Ready: 0%.");
 });

@@ -2,7 +2,7 @@ import { admin, expect, F, FIXTURE_STATE, fixtureFlags, seedState, test } from "
 
 /**
  * Cram mode you enter (owner, 2026-11-22; plan docs/superpowers/plans/2026-11-22-cram-mode-immersive.md):
- * while a course crams for an exam its pages go dark below the light top bar (data-cram), the due sidebar, quick
+ * while a course crams for an exam its pages go dark under a dark grey top bar (data-cram), the due sidebar, quick
  * reviews, warm-up and the course-wide dive go, Path and List show the exam's topics (the rest behind
  * "Show N other topics"), the Atlas fades the others, a CRAM MODE banner sits on top, and the home
  * map's island is at night with its cards dropped. Cram mode ends by itself once the exam has passed.
@@ -27,7 +27,9 @@ test("cram mode: dark course pages on the exam's topics, reviews paused, banner,
   await page.goto(`/course/${SLUG}`);
   const banner = page.locator("[data-part=cram-banner]");
   await expect(banner).toContainText("Final");
-  await expect(page.locator("[data-cram]")).toHaveCount(1);
+  await expect(page.locator("main").locator("xpath=..")).toHaveAttribute("data-cram", "1");
+  // The top bar is dark grey over a course in cram mode.
+  await expect(page.locator("[data-part=top-bar]")).toHaveAttribute("data-cram", "1");
   // The nav (calendar, add material, the course's settings) stays, floating at the bottom right.
   await expect(page.locator("[data-cram] nav[aria-label=Primary] a")).toHaveCount(3);
   await expect(page.locator("[data-part=enter-cram]")).toHaveCount(0);
@@ -55,8 +57,17 @@ test("cram mode: dark course pages on the exam's topics, reviews paused, banner,
   // Home: light again, the island at night, the course's cards gone from the sidebar.
   await page.goto("/");
   await expect(page.locator("[data-part=island-spot][data-cramming] [data-part=island-halo]")).toHaveCount(1);
-  await expect(page.locator("[data-cram]")).toHaveCount(0);
+  // The island and its name in cram mode's dark look; the top bar is the usual light one off the course's pages.
+  await expect(page.locator("[data-part=island-spot][data-cramming] [data-cram]")).toHaveCount(2);
+  await expect(page.locator("[data-part=top-bar]")).not.toHaveAttribute("data-cram", "1");
   await expect(page.locator("aside [data-todo]")).toHaveCount(0);
+  // The sidebar's cram card, first: the course, the exam, days left and the share ready; it opens the plan.
+  const cramCard = page.locator("aside [data-part=cram-card]");
+  await expect(cramCard).toContainText("Cram for Logic Fixture");
+  await expect(cramCard).toContainText("Final");
+  await expect(cramCard.locator("[data-part=cram-card-days]")).toHaveText("5 days left");
+  await expect(cramCard.locator("[data-part=cram-card-progress]")).toHaveText("0% ready");
+  await expect(cramCard).toHaveAttribute("href", `/course/${SLUG}/cram`);
 
   // Calendar: a Cramming key, and the course marked in the filter.
   await page.goto("/calendar");

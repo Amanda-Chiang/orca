@@ -67,7 +67,7 @@ export const TIPS: readonly Tip[] = [
   { id: "reject", route: REVIEW, target: '[data-part="new-topic"]', title: "Not relevant? Reject it", body: "These are the topics I found. Reject a topic, or a single objective, if it isn't really part of the class, and I'll stop asking about it." },
 
   /* ── The course page ── */
-  { id: "weak-count", route: COURSE, target: '[data-part="weak-count"]', title: "Your path", body: "The path shows your weak spots: topics where you flagged or missed something. Master them and this count goes up. \"Show all topics\" brings back the rest." },
+  { id: "weak-count", route: COURSE, target: '[data-part="weak-count"]', title: "Your path", body: "The path shows your weak spots: topics where you flagged or missed something. Master them and this bar fills up. \"Show all topics\" brings back the rest." },
   { id: "atlas-switch", route: COURSE, target: '[data-part="atlas-switch"]', after: "weak-count", title: "The Atlas", body: "The Atlas shows how the concepts in this class connect to each other." },
   { id: "edit-exams", route: COURSE, target: '[data-part="edit-exams"]', after: "weak-count", title: "Add your exams", body: "Tell me when your exams are and what they cover. I'll plan review for the week before and put them on your calendar." },
   { id: "flag-topic", route: COURSE_OR_ATLAS, target: '[data-part="dive-start"]', title: "Dive, or flag it", body: "Start a dive for harder questions on this topic. If the whole topic is shaky, flag it below and it joins your weak spots." },

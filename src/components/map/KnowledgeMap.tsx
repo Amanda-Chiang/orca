@@ -38,7 +38,7 @@ type View = { scale: number; x: number; y: number };
  * around, and zoom with − + or fit it again. Clicking an island
  * or its name opens its path.
  */
-/** `cramming`: courses in cram mode (owner, 2026-11-22), drawn with the path's pulsing halo behind them. */
+/** `cramming`: courses in cram mode (owner, 2026-11-22): the island and its name in cram mode's dark look, the path's pulsing halo behind. */
 export function KnowledgeMap({ courses, dueCount, cramming = () => false }: { courses: Course[]; dueCount: (courseId: string) => number; cramming?: (courseId: string) => boolean }) {
   const router = useRouter();
   const mastery = useMasteryByCourse();
@@ -125,9 +125,10 @@ export function KnowledgeMap({ courses, dueCount, cramming = () => false }: { co
                     animate={pulseHalo}
                   />
                 )}
-                <Island variant={c.variant} level={levelOf(c.id)} float seed={i} />
+                {/* In cram mode the island and its name take cram mode's dark look (owner, 2026-11-22); the halo stays light. */}
+                <Island variant={c.variant} level={levelOf(c.id)} float seed={i} data-cram={cramming(c.id) ? "1" : undefined} />
               </motion.button>
-              <div className="absolute left-1/2 -translate-x-1/2" style={{ top: 196 }}>
+              <div className="absolute left-1/2 -translate-x-1/2" style={{ top: 196 }} data-cram={cramming(c.id) ? "1" : undefined}>
                 <LabelPill count={dueCount(c.id)} onClick={() => router.push(`/course/${c.slug}`)} aria-label={`Open ${c.name}, ${dueCount(c.id)} due today`} title={c.name} style={{ maxWidth: ISLAND_LAYOUT.pillMax }}>
                   <span className="min-w-0 truncate">{c.name}</span>
                 </LabelPill>

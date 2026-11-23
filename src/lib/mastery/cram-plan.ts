@@ -128,7 +128,7 @@ export interface CramPlan {
    * scope as it stands, with whether they were met when the minutes studied are known.
    */
   days: CramPlanDay[];
-  /** "9 days to the exam. Done: A. Today: a quick sweep, then C, then D. Verified: 60%. Practice test: Mon. If time runs short: E." (day of: "Exam day. Light review only, nothing new.") */
+  /** "9 days to the exam. Done: A. Today: a quick sweep, then C, then D. Ready: 60%. Practice test: Mon. If time runs short: E." (day of: "Exam day. Light review only, nothing new.") */
   line: string;
   /** The budget was assumed: DEFAULT_HOURS_PER_DAY a study day from today, nothing spent. Claude says so and asks. */
   defaulted: boolean;
@@ -365,7 +365,7 @@ export function cramPlan(input: CramPlanInput): CramPlan {
     if (doneNames.length) line += ` Done: ${doneNames.join(", ")}.`;
     // At most three named, so the line stays one sentence; the page and the plan list them all.
     if (steps.length) line += ` Today: ${steps.slice(0, 3).join(", then ")}${steps.length > 3 ? ` and ${steps.length - 3} more` : ""}.`;
-    line += byType ? ` Ready for ${done} of ${total} kinds of problem.` : ` Verified: ${Math.round(share * 100)}%.`;
+    line += byType ? ` Ready for ${done} of ${total} kinds of problem.` : ` Ready: ${Math.round(share * 100)}%.`;
     const nextMock = [...mocks.keys()].sort().find((d) => d > today);
     if (nextMock) line += ` Practice test: ${shortDay(nextMock)}.`;
     if (cutIds.length) line += ` If time runs short: ${cutIds.slice(0, 3).map((id) => nameOf.get(id) ?? id).join(", ")}${cutIds.length > 3 ? ` and ${cutIds.length - 3} more` : ""}.`;
