@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { CramSetup } from "@/components/course/CramSetup";
+import { CramCurtain } from "@/components/course/CramCurtain";
 import { useConnectorStatus, useCramPlan, useStudyLog } from "@/components/course/useCram";
 import { MASTERY_LABEL } from "@/components/review/parts";
 import { fadeUp, overlayFade, popIn, stagger } from "@/lib/motion";
@@ -100,6 +101,9 @@ export default function CramPage({ params, searchParams }: PageProps<"/course/[s
   const vault = mine.filter((mat) => mat.heldBack);
 
   return (
+    <>
+    {/* Outside the page's data-cram, so the curtain shows the old look. */}
+    <CramCurtain cram={exam.cramming} />
     <Screen bg="ocean" className="overflow-auto" data-cram={exam.cramming ? "1" : undefined}>
       <header className="flex items-center gap-[12px] px-[24px] pt-[20px]">
         <BackButton href={`/course/${course.slug}`} />
@@ -140,6 +144,7 @@ export default function CramPage({ params, searchParams }: PageProps<"/course/[s
         )}
       </motion.div>
     </Screen>
+    </>
   );
 }
 

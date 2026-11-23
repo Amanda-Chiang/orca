@@ -18,6 +18,8 @@
 
   /* The sea behind full screens (owner's pick, 2026-10-06); cards and chips stay alice. */
   --color-ocean: #9cc3e7;
+  /* The deep sea: cram mode's ocean (owner, 2026-11-22), and the bottom of the dive into it. */
+  --color-abyss: #081d33;
 
   /* Concept Atlas edges (Figma: E1 · Concept graph v4): has a kind, alternative to, related. "Used in" is wisteria-deep. */
   --color-link-kind: #c2418f;
@@ -135,7 +137,7 @@
    top bar stays light. */
 [data-cram] {
   color-scheme: dark;
-  --color-ocean: #081d33;
+  --color-ocean: var(--color-abyss);
   --color-parchment: #0e2a46;
   --color-parchment-deep: #234967;
   --color-alice: #163a5c;
