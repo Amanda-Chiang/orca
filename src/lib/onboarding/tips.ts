@@ -41,6 +41,7 @@ const ADD_MATERIAL = /^\/add-material$/;
 const REVIEW = /^\/course\/[^/]+\/review$/;
 const ATLAS = /^\/course\/[^/]+\/atlas$/;
 const COURSE_OR_ATLAS = /^\/course\/[^/]+(\/atlas)?$/;
+const COURSE_TABS = /^\/course\/[^/]+(\/list|\/atlas)?$/;
 const SESSION = /^\/session\/[^/]+$/;
 const SETTINGS = /^\/settings$/;
 /** The pages with the sidebar: the map and a course's trail. */
@@ -70,6 +71,7 @@ export const TIPS: readonly Tip[] = [
   { id: "atlas-switch", route: COURSE, target: '[data-part="atlas-switch"]', after: "weak-count", title: "The Atlas", body: "The Atlas shows how the concepts in this class connect to each other." },
   { id: "edit-exams", route: COURSE, target: '[data-part="edit-exams"]', after: "weak-count", title: "Add your exams", body: "Tell me when your exams are and what they cover. I'll plan review for the week before and put them on your calendar." },
   { id: "flag-topic", route: COURSE_OR_ATLAS, target: '[data-part="dive-start"]', title: "Dive, or flag it", body: "Start a dive for harder questions on this topic. If the whole topic is shaky, flag it below and it joins your weak spots." },
+  { id: "cram-banner", route: COURSE_TABS, target: '[data-part="cram-banner"]', title: "Cram mode", body: "This class is all about the exam now: reviews pause and you only see its topics. Stop cramming any time, and it ends by itself after the exam." },
   { id: "atlas-edges", route: ATLAS, target: '[data-part="topic"]', title: "How topics connect", body: "Each circle is a topic, bigger when more topics build on it. Hover a line between two to see how they're related." },
 
   /* ── In a session ── */

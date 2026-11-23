@@ -6,16 +6,20 @@ import { KnowledgeMap } from "@/components/map/KnowledgeMap";
 import { OrcaLogo } from "@/components/brand/OrcaLogo";
 import { StudyStats } from "@/components/map/StudyStats";
 import { IconPlus } from "@/components/icons";
-import { useOrca, useTodos } from "@/lib/store";
+import { useDayKey, useOrca, useTodos } from "@/lib/store";
+import { crammingExam } from "@/lib/course/exam-card";
+import { useNow } from "@/hooks/useNow";
 
 export default function HomePage() {
-  const { courses, hydrated, isAdmin } = useOrca();
+  const { courses, hydrated, isAdmin, exams } = useOrca();
+  const dayKey = useDayKey();
+  const today = dayKey(new Date(useNow()).toISOString());
   const todos = useTodos();
   const dueCount = (courseId: string) => todos.filter((d) => d.courseId === courseId && d.when === "today").length;
 
   return (
     <AppShell bg="ocean">
-      <KnowledgeMap courses={courses} dueCount={dueCount} />
+      <KnowledgeMap courses={courses} dueCount={dueCount} cramming={(id) => crammingExam(exams, id, today) !== null} />
 
       {hydrated && courses.length === 0 && (
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-[8px] text-center" data-part="no-islands">
