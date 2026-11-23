@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useCallback, useState } from "react";
+import { use, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
 import { DiveModal } from "@/components/quiz/DiveModal";
@@ -30,10 +30,20 @@ export default function ListPage({ params }: PageProps<"/course/[slug]/list">) {
   const closeDive = useCallback(() => setDiving(null), []);
   const router = useRouter();
   const { hydrated, configs, markMastered, flagObjectives } = useOrca();
-  // A status the student dragged a topic to, waiting for the pop-up's answer.
-  const [pending, setPending] = useState<{ topicId: string; name: string; to: WeakSpotStatus; ids: string[] } | null>(null);
+  // A status the student dragged a topic to: waiting for the pop-up's answer, then (confirmed) held on
+  // the slider until the server's snapshots say the same, since status is read from them, not from
+  // the event the browser just sent.
+  const [pending, setPending] = useState<{ topicId: string; name: string; to: WeakSpotStatus; ids: string[]; confirmed: boolean } | null>(null);
   const course = useCourse(slug);
   const mastery = useMasteryByCourse();
+  const m = course ? mastery[course.id] : undefined;
+  const settled = pending?.confirmed && m ? weakSpotStatus(m.topicObjectives.get(pending.topicId) ?? [], m.objectives) === pending.to : false;
+  useEffect(() => {
+    if (!pending?.confirmed) return;
+    // The server's state arrived; or the save failed and won't (the store says so): show what's true.
+    const t = setTimeout(() => setPending(null), settled ? 0 : 10_000);
+    return () => clearTimeout(t);
+  }, [pending, settled]);
 
   if (!course) {
     return (
@@ -45,7 +55,6 @@ export default function ListPage({ params }: PageProps<"/course/[slug]/list">) {
       </AppShell>
     );
   }
-  const m = mastery[course.id];
   if (!m) throw new Error(`No mastery computed for course ${course.id}`);
 
   const rows = trailTopics(course).flatMap((topic) => {
@@ -128,6 +137,7 @@ export default function ListPage({ params }: PageProps<"/course/[slug]/list">) {
                           topicId: topic.id,
                           name: topic.name,
                           to,
+                          confirmed: false,
                           ids: weakSpots.filter((s) => to === "needs-review" || !(s.status === "mastered" || s.status === "retired")).map((s) => s.objectiveId),
                         })
                       }
@@ -151,7 +161,7 @@ export default function ListPage({ params }: PageProps<"/course/[slug]/list">) {
         </div>
       </div>
       <AnimatePresence>
-        {pending && (
+        {pending && !pending.confirmed && (
           <motion.div
             key="status-confirm"
             initial={{ opacity: 0 }}
@@ -182,7 +192,7 @@ export default function ListPage({ params }: PageProps<"/course/[slug]/list">) {
                   onClick={() => {
                     if (pending.to === "mastered") markMastered(course.id, pending.ids);
                     else flagObjectives(course.id, pending.ids);
-                    setPending(null);
+                    setPending({ ...pending, confirmed: true });
                   }}
                   data-part="status-confirm-yes"
                 >
