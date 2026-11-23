@@ -63,7 +63,7 @@ function Glyph({ strength, r }: { strength: TopicStrength; r: number }) {
 type View = { x: number; y: number; w: number; h: number };
 
 /** `muted`: topics not on the exam being crammed for (owner, 2026-11-22), faint until they or a neighbour are hovered. */
-export function TopicGraph({ graph, onOpen, muted = null }: { graph: Graph; onOpen: (topicId: string) => void; muted?: ReadonlySet<string> | null }) {
+export function TopicGraph({ graph, onOpen, muted = null, raiseZoom = false }: { graph: Graph; onOpen: (topicId: string) => void; muted?: ReadonlySet<string> | null; raiseZoom?: boolean }) {
   const full = useMemo<View>(() => ({ x: 0, y: 0, w: graph.width, h: graph.height }), [graph.width, graph.height]);
   // Starts fitted; the page remounts this (key) when the graph's size changes.
   const [view, setView] = useState<View>(full);
@@ -320,7 +320,8 @@ export function TopicGraph({ graph, onOpen, muted = null }: { graph: Graph; onOp
         </div>
       )}
 
-      <div className="absolute bottom-[20px] right-[20px]">
+      {/* Raised in cram mode, where the page's nav floats at the bottom right. */}
+      <div className={`absolute right-[20px] ${raiseZoom ? "bottom-[96px]" : "bottom-[20px]"}`}>
         <ZoomControls onZoomOut={() => zoom(1.25)} onZoomIn={() => zoom(0.8)} onFit={() => setView(full)} />
       </div>
     </div>

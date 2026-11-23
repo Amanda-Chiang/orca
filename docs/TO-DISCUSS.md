@@ -17,12 +17,12 @@ in the doc it affects (usually `docs/BACKEND-ROADMAP.md`) and move it to "Decide
      else the exam's topics, else every topic).
   3. The calendar drops the crammed course's scheduled reviews too; exams and homework stay.
   4. A session opened by its link still runs; only the buttons that start one are hidden.
-  5. The top bar goes dark with the page; session and settings pages stay light.
+  5. Session and settings pages stay light (the top bar stays light too, owner 2026-11-22).
   6. The banner holds Open plan, Study with Claude (until connected) and Stop cramming; Edit scope is on the cram page.
      The exam card is gone (owner: redundant), and with it the course page's only "days until the exam" outside a
      cram; the course-wide Dive in pill gave its place to Enter cram mode (owner), so a course-wide dive starts from
      the sidebar's "Dive in" card when one is due, and topic dives from the path's play buttons.
-  7. The home island: the same art dimmed to night with a "Cram mode" tag; its due count reads 0.
+  7. The home island: the path's pulsing halo behind it (owner, 2026-11-22); its due count reads 0.
   8. List in cram mode still lists only topics with weak spots (its purpose), now only the exam's.
 
 ### Cram mode (2026-11-10)
