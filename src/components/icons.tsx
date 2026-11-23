@@ -93,6 +93,16 @@ export function IconCalendar({ size = 26, ...props }: IconProps) {
   );
 }
 
+/** A stopwatch: study time (the progress page, 2026-11-22). */
+export function IconTimer({ size = 26, ...props }: IconProps) {
+  return (
+    <svg viewBox="0 0 26 26" {...base(size, props)} strokeWidth={2.71}>
+      <circle cx="13" cy="14.5" r="8.5" />
+      <path d="M13 14.5V10M10.5 3.25h5M20 7.5l1.5-1.5" />
+    </svg>
+  );
+}
+
 export function IconUpload({ size = 26, ...props }: IconProps) {
   return (
     <svg viewBox="0 0 26 26" {...base(size, props)} strokeWidth={2.71}>

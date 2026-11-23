@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { IconCalendar, IconSettings, IconUpload } from "@/components/icons";
+import { IconCalendar, IconSettings, IconTimer, IconUpload } from "@/components/icons";
 import { useOrca } from "@/lib/store";
 import { cn } from "@/lib/cn";
 
 const ITEMS = [
+  { href: "/progress", label: "Your progress", Icon: IconTimer },
   { href: "/calendar", label: "Calendar", Icon: IconCalendar },
   { href: "/add-material", label: "Add material", Icon: IconUpload },
   { href: "/settings", label: "Settings", Icon: IconSettings },
@@ -16,7 +17,7 @@ const BUTTON = "pressable inline-flex h-[48px] w-[48px] items-center justify-cen
 const IDLE = "border-alice-deep bg-parchment text-prussian lip-alice";
 
 /**
- * Three-icon nav pinned to the bottom of the sidebar. A course's settings button goes to that
+ * Four-icon nav pinned to the bottom of the sidebar. A course's settings button goes to that
  * course's separate override page; elsewhere it goes to master Settings.
  */
 export function NavBar({ className }: { className?: string }) {

@@ -64,6 +64,8 @@ export const LIMITS = {
     connector: { max: 120, windowSeconds: 60 },
     /** The browser's "still here" (POST /api/heartbeat): once per 5 minutes per tab; a few tabs fit, a loop doesn't (2026-11-10). */
     heartbeat: { max: 6, windowSeconds: 300 },
+    /** Starting or stopping the study timer (POST /api/study-timer, 2026-11-22). */
+    timer: { max: 30, windowSeconds: 3600 },
   },
 
   /** One model call: the longest it may take, and how often a transient failure is retried. */
