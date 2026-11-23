@@ -3,7 +3,7 @@
 import { use, useMemo } from "react";
 import { motion } from "motion/react";
 import { type Objective, type Topic } from "@/lib/data";
-import { useCourse, useMasteryByCourse, useOrca } from "@/lib/store";
+import { useCourse, useCramming, useMasteryByCourse, useOrca } from "@/lib/store";
 import { courseObjectiveWeights, topicWeight } from "@/lib/course/weights";
 import { confirmObjective, mergeObjectives, rejectObjective, restoreObjective, restoreTopic } from "@/lib/course/ops";
 import { Screen } from "@/components/layout/Screen";
@@ -20,6 +20,8 @@ export default function ObjectivesPage({ params }: PageProps<"/course/[slug]/obj
   const { slug } = use(params);
   const { hydrated, objectives, relations, editStructure, flagObjectives } = useOrca();
   const course = useCourse(slug);
+  // Cram mode: every page of a cramming course is dark (owner, 2026-11-22).
+  const cram = useCramming(course?.id);
   const mastery = useMasteryByCourse();
   const catalogue = useMemo(() => (course ? (objectives[course.id] ?? {}) : {}), [course, objectives]);
   const objectiveWeights = useMemo(
@@ -46,7 +48,7 @@ export default function ObjectivesPage({ params }: PageProps<"/course/[slug]/obj
   const rejectedTopics = course.topics.filter((t) => t.review === "archived" && !t.mergedInto);
 
   return (
-    <Screen bg="ocean" className="overflow-y-auto">
+    <Screen bg="ocean" className="overflow-y-auto" data-cram={cram ? "1" : undefined}>
       <header className="relative flex justify-center px-[100px] pt-[28px] text-center">
         <div className="absolute left-[28px] top-[28px]">
           <BackButton href={`/course/${course.slug}`} />

@@ -104,15 +104,16 @@ export interface IslandProps extends Omit<HTMLMotionProps<"div">, "children"> {
   /** Seed to desynchronize floating neighbours. */
   seed?: number;
   /**
-   * A course in cram mode (owner, 2026-11-22): drawn like a not-started topic on cram mode's path, a dark
-   * face with a muted blue rim and muted trees. Pair with `data-cram`, which turns the tokens dark.
+   * A course in cram mode (owner, 2026-11-22): a dark face with the muted blue rim of a not-started topic on
+   * cram mode's path, and the usual purple middle and trees. Pair with `data-cram`, which turns the tokens dark.
+   * Periwinkle isn't remapped by cram mode, so the middle stays light.
    */
   cram?: boolean;
 }
 
 export function Island({ variant, level, scale = 1, float = false, seed = 0, cram = false, className, style, ...rest }: IslandProps) {
   const b = BLOBS[variant];
-  const look = cram ? { ...LOOK[level], stroke: "var(--color-alice-deep)", inner: "var(--color-alice)" } : LOOK[level];
+  const look = cram ? { ...LOOK[level], stroke: "var(--color-alice-deep)", inner: "var(--color-periwinkle)" } : LOOK[level];
   const t = b.treeOffset;
 
   return (
@@ -139,7 +140,7 @@ export function Island({ variant, level, scale = 1, float = false, seed = 0, cra
           <g data-part="trees" transform={`translate(${t.x} ${t.y})`}>
             {look.trees.map((tree) => (
               <g key={`${tree.cx}-${tree.cy}`} data-part="tree">
-                <motion.circle cx={tree.cx} cy={tree.cy} r={tree.r} fill={cram ? "var(--color-periwinkle-deep)" : tree.fill} />
+                <motion.circle cx={tree.cx} cy={tree.cy} r={tree.r} fill={tree.fill} />
                 <motion.rect
                   x={tree.cx - 2}
                   y={tree.cy + tree.r * 0.78}
