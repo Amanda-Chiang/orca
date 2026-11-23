@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { masteryPercent, reviewPhrase } from "../../src/lib/mastery/percent.ts";
 import type { ObjectiveState } from "../../src/lib/mastery/types.ts";
 
-const base: ObjectiveState = { objectiveId: "o", status: "learning", credit: 0, creditDays: 0, stabilityDays: null, dueAt: null, spacedChecks: 0, recall: null, lastEvidenceAt: null };
+const base: ObjectiveState = { objectiveId: "o", status: "learning", credit: 0, creditDays: 0, stabilityDays: null, dueAt: null, spacedChecks: 0, recall: null, lastEvidenceAt: null, markedByStudent: false };
 
 test("the display percent climbs with credit before mastery and follows recall after it", () => {
   assert.equal(masteryPercent(undefined), 0);

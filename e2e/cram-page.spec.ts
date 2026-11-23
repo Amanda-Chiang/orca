@@ -41,7 +41,7 @@ test("setup picks the files and the hours for each day, one at 0; the page then 
 
   await page.goto(`/course/${SLUG}/cram`);
   const setup = page.locator("[data-part=cram-setup]");
-  await expect(setup).toContainText("Cram for Midterm");
+  await expect(page.locator("h1")).toContainText("Cram for Midterm");
   // The files: one checkbox per material; lectures ticked, the past exam shown held back and unticked. The count follows the pick.
   const files = setup.locator("[data-part=cram-materials] [data-part=cram-material]");
   await expect(files).toHaveCount(3);

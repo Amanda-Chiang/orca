@@ -21,7 +21,8 @@ The model is in `docs/MASTERY-PLAN.md`; the code is `src/lib/mastery/`.
   A flag never adds credit. Every live objective holds state with or without questions
   (`src/lib/mastery/attribution.ts`).
 - Connector activity, upload and reading signals may raise priority later; they never produce
-  mastery. An answer through the connector is evidence with `source: "connector"`: graded by Orca
+  mastery. The one exception is the student's own `mark` (the List view's "Mastered", rules v5,
+  `applyMark`): mastered at once, `markedByStudent`, checked `markedCheckDays` later. An answer through the connector is evidence with `source: "connector"`: graded by Orca
   (`check_answer`: `grader` choice, exact or rubric, full credit) or, only when Orca's grader can't
   run, by Claude (`record_answer`: `grader: "self"`, half credit). `verified` takes an unaided
   correct answer; a self-marked correct proves nothing. The student's words ride `response`

@@ -14,6 +14,7 @@ const s = (status: ObjectiveStatus, extra: Partial<ObjectiveState> = {}): Object
   spacedChecks: 0,
   recall: null,
   lastEvidenceAt: null,
+  markedByStudent: false,
   ...extra,
 });
 const termsOf = (p: ReturnType<typeof objectivePriority>) => Object.fromEntries(p.terms.map((t) => [t.term, t.value]));

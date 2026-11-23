@@ -654,6 +654,8 @@ now, so that part needs rethinking before it's planned.
   and island level are computed from events and the clock. Never store or write mastery directly.
 - Exposure is not mastery. Uploads, reading and connector signals may raise priority; only scored
   answers count toward mastery, and self-marked answers count half. A grading failure records nothing.
+  The one exception (owner, 2026-11-22): the student marking a weak spot mastered in the List view
+  (a `mark` event, rules v5) masters it at once, shown as marked by them, with a spaced check later.
 - Check exactly when the domain allows (bit strings, numbers, Boolean expressions by truth table).
   Use a model grader only with a structured rubric.
 - Course-specific questions carry a source anchor into the course material. Questions for inferred
