@@ -70,3 +70,42 @@ test("cram mode: dark course pages on the exam's topics, reviews paused, banner,
   await expect(page.locator("[data-cram]")).toHaveCount(0);
   await expect(page.locator("[data-part=enter-cram]")).toHaveAttribute("href", `/course/${SLUG}/cram`);
 });
+
+test("cram mode's sound: bubbles when it starts or stops, unless the banner's speaker turned it off (kept in this browser)", async ({ page, student }) => {
+  // Count what the page tries to play (a headless browser has no speakers to listen to).
+  await page.addInitScript(() => {
+    const w = window as unknown as { plays: string[] };
+    w.plays = [];
+    HTMLMediaElement.prototype.play = function () {
+      w.plays.push(this.src);
+      return Promise.resolve();
+    };
+  });
+  const plays = () => page.evaluate(() => (window as unknown as { plays: string[] }).plays);
+  await seedState(student, FIXTURE_STATE);
+  const final = { id: crypto.randomUUID(), owner_id: student.id, course_id: F.course, title: "Final", date: inDays(5), topic_ids: [F.twosComplement], cramming: true, scope: null };
+  if ((await admin().from("exams").insert(final)).error) throw new Error("Couldn't seed the exam");
+
+  // Opening a page already in cram mode plays nothing.
+  await page.goto(`/course/${SLUG}`);
+  const sound = page.locator("[data-part=cram-banner] [data-part=cram-sound]");
+  await expect(sound).toHaveAttribute("aria-pressed", "true");
+  expect(await plays()).toEqual([]);
+
+  // Stop cramming: the bubbles play once, with the dive back up.
+  await page.locator("[data-part=cram-banner] [data-part=cram-stop]").click();
+  await expect.poll(plays).toHaveLength(1);
+  expect((await plays())[0]).toContain("/sounds/cram-bubbles.mp3");
+
+  // Muted on the banner, kept after a reload: stopping again plays nothing.
+  await admin().from("exams").update({ cramming: true }).eq("id", final.id);
+  await page.goto(`/course/${SLUG}`);
+  await sound.click();
+  await expect(sound).toHaveAttribute("aria-pressed", "false");
+  await page.reload();
+  await expect(sound).toHaveAttribute("aria-pressed", "false");
+  await page.locator("[data-part=cram-banner] [data-part=cram-stop]").click();
+  await expect(page.locator("[data-part=cram-banner]")).toHaveCount(0);
+  await page.waitForTimeout(300);
+  expect(await plays()).toEqual([]);
+});

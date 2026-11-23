@@ -8,6 +8,8 @@ import { useConnectorStatus } from "@/components/course/useCram";
 import { useOrca } from "@/lib/store";
 import { useToday } from "@/hooks/useToday";
 import { fadeUp } from "@/lib/motion";
+import { setCramSoundOn, useCramSoundOn } from "@/lib/cram-sound";
+import { IconSound, IconSoundOff } from "@/components/icons";
 
 /** Height of the banner: the course pages push their header down by this in cram mode. */
 export const CRAM_BANNER_H = 48;
@@ -25,6 +27,7 @@ export function CramBanner({ course, exam }: { course: Pick<Course, "slug">; exa
   const { updateExam } = useOrca();
   const today = useToday();
   const connected = useConnectorStatus(true);
+  const soundOn = useCramSoundOn();
   return (
     <motion.div
       variants={fadeUp}
@@ -40,6 +43,18 @@ export function CramBanner({ course, exam }: { course: Pick<Course, "slug">; exa
         {today && <span className="font-semibold"> · {daysText(daysUntil(exam.date, today))}</span>}
       </span>
       <div className="ml-auto flex shrink-0 items-center gap-[8px]">
+        {/* The dive's bubbles (src/lib/cram-sound.ts): on until turned off, kept in this browser. */}
+        <button
+          type="button"
+          onClick={() => setCramSoundOn(!soundOn)}
+          aria-pressed={soundOn}
+          aria-label={soundOn ? "Turn cram mode's sound off" : "Turn cram mode's sound on"}
+          title={soundOn ? "Sound on" : "Sound off"}
+          data-part="cram-sound"
+          className={`${PILL} flex items-center px-[8px]!`}
+        >
+          {soundOn ? <IconSound size={16} /> : <IconSoundOff size={16} />}
+        </button>
         <Link href={`/course/${course.slug}/cram`} data-part="cram-plan" className={PILL}>
           Open plan
         </Link>
