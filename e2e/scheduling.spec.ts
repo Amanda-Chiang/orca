@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test";
 import type { AnswerEvent } from "../src/lib/mastery/types";
-import { expect, test, F, FIXTURE_STATE, daysAgo, fixtureFlags, seedPages, seedState, stored } from "./fixture";
+import { expect, test, F, FIXTURE_STATE, daysAgo, fixtureFlags, pastMiss, seedPages, seedState, stored } from "./fixture";
 import { fakeCalls, fakeModel } from "./fake-model";
 
 const COURSE = "logic-e2e";
@@ -27,6 +27,7 @@ async function answerAll(page: Page, right: boolean) {
     if (answer === undefined) throw new Error(`No fixture answer for "${prompt}"`);
     await page.getByPlaceholder("Type your answer").fill(right ? answer : "0");
     await page.getByRole("button", { name: "Check" }).click();
+    if (!right) await pastMiss(page);
     const finish = page.getByRole("button", { name: "Finish" });
     if (await finish.isVisible()) {
       await finish.click();
