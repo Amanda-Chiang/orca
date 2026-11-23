@@ -23,6 +23,8 @@ import { fadeUp, stagger } from "@/lib/motion";
 import { COURSE_NAME_MAX, DEFAULT_CONFIG, trailTopics } from "@/lib/data";
 import { useNow } from "@/hooks/useNow";
 import Link from "next/link";
+import { IconTimer } from "@/components/icons";
+import { useStudyTime } from "@/components/study/StudyTime";
 
 export default function CoursePage({ params }: PageProps<"/course/[slug]">) {
   const { slug } = use(params);
@@ -30,6 +32,7 @@ export default function CoursePage({ params }: PageProps<"/course/[slug]">) {
   const [diving, setDiving] = useState<{ id: string; name: string } | null>(null);
   const closeDive = useCallback(() => setDiving(null), []);
   const [editingExams, setEditingExams] = useState(false);
+  const timer = useStudyTime();
   const closeExams = useCallback(() => setEditingExams(false), []);
   const router = useRouter();
   const { hydrated, objectives, renameCourse, configs, flagObjectives, questionBank, feedback } = useOrca();
@@ -134,6 +137,13 @@ export default function CoursePage({ params }: PageProps<"/course/[slug]">) {
       </motion.header>
 
       <motion.div variants={fadeUp} initial="hidden" animate="show" role="group" aria-label="Practice" className={`absolute right-[28px] flex items-center gap-[10px] ${cram ? "top-[80px]" : "top-[32px]"}`}>
+        {/* The study timer for this course (owner, 2026-11-22); while one runs, the floating pill has its clock and Stop. */}
+        {!timer.running && (
+          <button type="button" disabled={timer.busy} onClick={() => void timer.start(course.id)} data-part="course-start-timer" className="pressable inline-flex items-center gap-[6px] rounded-pill bg-study-mint px-[14px] py-[7px] text-[13px] font-bold text-prussian lip-2 lip-ink disabled:opacity-60">
+            <IconTimer size={16} />
+            Start study session
+          </button>
+        )}
         <button type="button" onClick={() => setEditingExams(true)} data-part="edit-exams" className="pressable rounded-pill bg-prussian px-[14px] py-[7px] text-[13px] font-bold text-parchment lip-2 lip-ink">
           Edit Exams
         </button>

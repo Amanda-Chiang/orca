@@ -55,6 +55,14 @@
   --color-bad-deep: #b8443a;
   --color-bad-text: #a63a30;
 
+  /* Study time (the progress page, 2026-11-22): a course's color in the charts, by its order. */
+  --color-study-sky: #4fb3e8;
+  --color-study-gold: #f2b84b;
+  --color-study-rose: #e56fa3;
+  --color-study-mint: #4fc59c;
+  --color-study-coral: #f0805f;
+  --color-study-violet: #8f7cf0;
+
   --font-sans: var(--font-gabarito), ui-sans-serif, system-ui, sans-serif;
 
   --radius-card: 20px;

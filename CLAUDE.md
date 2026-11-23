@@ -155,6 +155,14 @@ own courses (Data Structures, Fundamentals of Computer Systems) on the hosted pr
   `show-solution`), then "What went wrong?" chips beside the key (shown against the grader's `errorType`, not saved;
   `spot-mistake`, `spot-skip`), then the Feedback card. A miss also slots another question on the same objective 3
   questions later, which counts. e2e specs pass a miss with `pastMiss(page)`. Assumptions in `docs/TO-DISCUSS.md`.
+- **Your progress and the study timer** (2026-11-22, branch `study-time`): `/progress` (nav item "Your progress", a link in
+  the home stats popover) adds up every minute studied: finished sessions in Orca, Claude's connector stretches and
+  logged sittings, and the study timer, counted once where they overlap in a course (`src/lib/course/study-time.ts`);
+  tiles, the last two weeks stacked by course color (`study-*` tokens in `globals.css`), sources, and each exam's time
+  since the exam before it. The timer (`study_timers`, migration `20261123090000`, server-write only through
+  `POST /api/study-timer`; `GET /api/study-time`) runs one at a time, counts at most 4 hours, and floats as a pill
+  (`src/components/study/StudyTime.tsx`); a course page has Start study session. The cram plan doesn't count timer
+  time yet.
 - **Upload toasts** (2026-11-08, `src/components/layout/UploadToasts.tsx`, mounted in `providers.tsx`): an upload
   that finishes (done or failed) while the app is open, from any tab or device, pops a toast unless the student is on
   that course's uploads; uploads of one course finishing while its toast is up share it. One upload's toast opens
