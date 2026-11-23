@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import { cramDive, cramDiveFade } from "@/lib/motion";
+import { playCramSound } from "@/lib/cram-sound";
 
 /** Bubbles in the strip: across (%), down the strip (%), size (px). Fixed, so every dive looks the same. */
 const BUBBLES: ReadonlyArray<readonly [number, number, number]> = [
@@ -26,6 +27,11 @@ export function CramCurtain({ cram }: { cram: boolean }) {
     setPrev(cram);
     setRun({ into: cram, n: (run?.n ?? 0) + 1 });
   }
+  // The bubbles' sound, for as long as the dive (src/lib/cram-sound.ts); played with reduced motion too.
+  const runN = run?.n;
+  useEffect(() => {
+    if (runN !== undefined) playCramSound();
+  }, [runN]);
   if (!run || reduced) return null;
   return (
     <motion.div

@@ -19,7 +19,6 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { CramSetup } from "@/components/course/CramSetup";
-import { useCramTheme } from "@/components/course/CramTheme";
 import { useConnectorStatus, useCramPlan, useStudyLog, type StudySplit } from "@/components/course/useCram";
 import { CramProgress } from "@/components/course/CramProgress";
 import { WeakSpotBubbles } from "@/components/course/WeakSpotBubbles";

@@ -141,6 +141,24 @@ export function IconLogOut({ size = 24, ...props }: IconProps) {
   );
 }
 
+export function IconSound({ size = 20, ...props }: IconProps) {
+  return (
+    <svg viewBox="0 0 20 20" {...base(size, props)} strokeWidth={2}>
+      <path d="M3.5 7.5h3l4-3.5v12l-4-3.5h-3z" />
+      <path d="M13.5 7a4 4 0 0 1 0 6M15.5 4.5a7.5 7.5 0 0 1 0 11" />
+    </svg>
+  );
+}
+
+export function IconSoundOff({ size = 20, ...props }: IconProps) {
+  return (
+    <svg viewBox="0 0 20 20" {...base(size, props)} strokeWidth={2}>
+      <path d="M3.5 7.5h3l4-3.5v12l-4-3.5h-3z" />
+      <path d="m13.5 7.5 5 5M18.5 7.5l-5 5" />
+    </svg>
+  );
+}
+
 export function IconBell({ size = 20, ...props }: IconProps) {
   return (
     <svg viewBox="0 0 20 20" {...base(size, props)} strokeWidth={2.08}>
