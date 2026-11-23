@@ -17,6 +17,8 @@ import { KnowledgePath } from "@/components/path/KnowledgePath";
 import { AtlasSwitch } from "@/components/atlas/AtlasSwitch";
 import { ExamsModal } from "@/components/config/ExamsModal";
 import { ExamCard } from "@/components/course/ExamCard";
+import { CramBanner } from "@/components/course/CramBanner";
+import { useCramTheme } from "@/components/course/CramTheme";
 import { UploadsLink } from "@/components/course/UploadsLink";
 import { duration, useUserMetrics } from "@/components/settings/YourMetrics";
 import { fadeUp, stagger } from "@/lib/motion";
@@ -38,6 +40,7 @@ export default function CoursePage({ params }: PageProps<"/course/[slug]">) {
   const agendas = useAgenda();
   // Cram mode (owner, 2026-11-22): the exam being crammed for and its topics; null otherwise.
   const cram = useCramming(course?.id);
+  useCramTheme(!!cram);
 
   if (!course) {
     return (
@@ -71,7 +74,8 @@ export default function CoursePage({ params }: PageProps<"/course/[slug]">) {
   const warmUp = !cram && warm.length ? { topicName: course.topics.find((t) => t.id === warm[0].topicId)?.name ?? course.name, href: `/session/${course.slug}?kind=quick&warmup=1`, questions: warm.length } : null;
 
   return (
-    <AppShell bg="ocean">
+    <AppShell bg="ocean" sidebar={!cram}>
+      {cram && <CramBanner course={course} exam={cram.exam} />}
       {topics.length === 0 ? (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-[12px] text-center">
           <p className="text-[22px] font-bold text-prussian">This island is uncharted.</p>
@@ -81,10 +85,10 @@ export default function CoursePage({ params }: PageProps<"/course/[slug]">) {
           </Button>
         </div>
       ) : (
-        <KnowledgePath course={course} progress={m.topics} onStart={(t) => setDiving({ id: t.id, name: t.name })} warmUp={warmUp} />
+        <KnowledgePath course={course} progress={m.topics} onStart={(t) => setDiving({ id: t.id, name: t.name })} warmUp={warmUp} examTopics={cram?.topics ?? null} />
       )}
 
-      <motion.header variants={stagger()} initial="hidden" animate="show" className="absolute left-[28px] top-[28px] flex items-start gap-[16px]">
+      <motion.header variants={stagger()} initial="hidden" animate="show" className={`absolute left-[28px] flex items-start gap-[16px] ${cram ? "top-[76px]" : "top-[28px]"}`}>
         <motion.div variants={fadeUp}>
           <BackButton />
         </motion.div>
@@ -131,7 +135,7 @@ export default function CoursePage({ params }: PageProps<"/course/[slug]">) {
         </div>
       </motion.header>
 
-      <motion.div variants={fadeUp} initial="hidden" animate="show" role="group" aria-label="Practice" className="absolute right-[28px] top-[32px] flex items-center gap-[10px]">
+      <motion.div variants={fadeUp} initial="hidden" animate="show" role="group" aria-label="Practice" className={`absolute right-[28px] flex items-center gap-[10px] ${cram ? "top-[80px]" : "top-[32px]"}`}>
         <button type="button" onClick={() => setEditingExams(true)} data-part="edit-exams" className="pressable rounded-pill bg-prussian px-[14px] py-[7px] text-[13px] font-bold text-parchment lip-2 lip-ink">
           Edit Exams
         </button>
@@ -149,9 +153,11 @@ export default function CoursePage({ params }: PageProps<"/course/[slug]">) {
         )}
       </motion.div>
       {/* The soonest upcoming exam (or the one being crammed for): days left, scope, verified share, Cram for this exam. */}
-      <div className="absolute right-[28px] top-[84px]">
-        <ExamCard course={course} mastery={m} />
-      </div>
+      {!cram && (
+        <div className="absolute right-[28px] top-[84px]">
+          <ExamCard course={course} mastery={m} />
+        </div>
+      )}
       <ExamsModal course={editingExams ? course : null} onClose={closeExams} />
       <DiveModal
         topic={diving}

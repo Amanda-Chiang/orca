@@ -15,7 +15,7 @@ const PILL = "pressable rounded-pill bg-parchment px-[12px] py-[6px] text-[13px]
 /** Button/Primary, size sm, as a link. */
 const PRIMARY = "pressable inline-flex items-center justify-center rounded-[20px] bg-wisteria px-5 py-3 text-[15px] font-bold leading-none text-parchment lip-5 lip-wisteria";
 
-const daysText = (days: number) => (days === 0 ? "Today" : days === 1 ? "Tomorrow" : days > 1 ? `${days} days left` : days === -1 ? "Yesterday" : `${-days} days ago`);
+export const daysText = (days: number) => (days === 0 ? "Today" : days === 1 ? "Tomorrow" : days > 1 ? `${days} days left` : days === -1 ? "Yesterday" : `${-days} days ago`);
 const sourceName: Record<string, string> = {
   "practice-exam": "the practice exam",
   professor: "your professor's words",

@@ -4,7 +4,7 @@ import { admin, expect, F, FIXTURE_STATE, seedFixtureCourse, stored, test } from
  * The exam card on the course page (cram mode contract, sections 5 and 6): the soonest upcoming
  * exam with its days left, scope size and verified share; Cram for this exam goes to the cram
  * page's setup (the professor's words, the files, Add material held back, what feels shaky, hours a day), Confirm stores
- * cramming, the scope and the budget (hours by day), the card then links to the plan, and Stop cramming clears
+ * cramming, the scope and the budget (hours by day), the course page then shows the cram mode banner, and Stop cramming clears
  * it. Edit Exams has the same switch per exam.
  */
 const SLUG = FIXTURE_STATE.courses[0].slug;
@@ -58,14 +58,14 @@ test("the exam card shows the soonest exam; Cram for this exam opens the page's 
   await expect(setup).toBeHidden();
   await expect(page.locator("[data-part=cram-page]")).toHaveAttribute("data-cramming", "1");
 
-  // Back on the course page, the card links to the plan; the scope and plan lines stay on the cram page.
+  // Back on the course page, cram mode: the banner takes the card's place and links to the plan.
   await page.goto(`/course/${SLUG}`);
-  await expect(card).toHaveAttribute("data-cramming", "1");
-  await expect(card.locator("[data-part=cram-plan]")).toHaveText("Open plan");
-  await expect(card.locator("[data-part=cram-plan]")).toHaveAttribute("href", `/course/${SLUG}/cram`);
-  await expect(card.locator("[data-part=study-with-claude]")).toHaveAttribute("href", "/settings#connector");
-  await expect(card.locator("[data-part=exam-scope]")).toHaveCount(0);
-  await expect(card).not.toContainText("Scope from");
+  const banner = page.locator("[data-part=cram-banner]");
+  await expect(banner).toContainText("Midterm");
+  await expect(card).toHaveCount(0);
+  await expect(banner.locator("[data-part=cram-plan]")).toHaveText("Open plan");
+  await expect(banner.locator("[data-part=cram-plan]")).toHaveAttribute("href", `/course/${SLUG}/cram`);
+  await expect(banner.locator("[data-part=study-with-claude]")).toHaveAttribute("href", "/settings#connector");
 
   let state = await stored(page, student);
   let exam = state.exams.find((e) => e.id === examId)!;
@@ -84,31 +84,32 @@ test("the exam card shows the soonest exam; Cram for this exam opens the page's 
   // Nothing is flagged at setup: Claude maps the words to objectives in the first session.
   expect(state.evidence.filter((e) => e.kind === "confusion" && e.flagSource === "manual")).toEqual([]);
 
-  // Edit scope reopens the page's setup with the words and each day's hours already there.
-  await card.locator("[data-part=cram-edit]").click();
-  await expect(page).toHaveURL(`/course/${SLUG}/cram?edit=1`);
+  // Edit on the plan reopens the setup with the words and each day's hours already there.
+  await banner.locator("[data-part=cram-plan]").click();
+  await expect(page).toHaveURL(`/course/${SLUG}/cram`);
+  await page.locator("[data-part=cram-edit]").click();
   await expect(setup.locator("[data-part=professor-words]")).toHaveValue(WORDS);
   await expect(setup.locator("[data-part=cram-worries]")).toHaveValue(WORRY);
   await expect(hoursOn(inDays(1))).toHaveValue("1");
   await expect(hoursOn(inDays(3))).toHaveValue("0");
 
   await page.goto(`/course/${SLUG}`);
-  await card.locator("[data-part=cram-stop]").click();
+  await banner.locator("[data-part=cram-stop]").click();
+  await expect(banner).toHaveCount(0);
   await expect(card.locator("[data-part=cram-start]")).toBeVisible();
   state = await stored(page, student);
   exam = state.exams.find((e) => e.id === examId)!;
   expect(exam.cramming).toBe(false);
   expect(exam.scope?.sources).toEqual(["professor"]);
 
-  // Edit Exams has a Cramming switch per exam, stored the same way; the card then links to the page.
+  // Edit Exams has a Cramming switch per exam, stored the same way; the banner then links to the page.
   await page.locator("[data-part=edit-exams]").click();
   const toggle = page.locator("[data-part=exams-modal] [data-part=exam-cramming]").getByRole("switch", { name: "Cramming for Midterm" });
   await expect(toggle).toHaveAttribute("aria-checked", "false");
   await toggle.click();
   await expect(toggle).toHaveAttribute("aria-checked", "true");
   await page.keyboard.press("Escape");
-  await expect(card).toHaveAttribute("data-cramming", "1");
-  await expect(card.locator("[data-part=cram-plan]")).toHaveAttribute("href", `/course/${SLUG}/cram`);
+  await expect(banner.locator("[data-part=cram-plan]")).toHaveAttribute("href", `/course/${SLUG}/cram`);
   state = await stored(page, student);
   expect(state.exams.find((e) => e.id === examId)!.cramming).toBe(true);
 });
