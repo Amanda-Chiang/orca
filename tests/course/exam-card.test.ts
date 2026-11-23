@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { ExamScope, Objective, Topic } from "../../src/lib/data.ts";
-import { NOT_IN_FILES, cardExam, daysUntil, examObjectives, objectiveMaterialIds, protectScope, scopeFromSetup, splitByMaterials } from "../../src/lib/course/exam-card.ts";
+import { NOT_IN_FILES, cardExam, crammingExam, examTopicIds, daysUntil, examObjectives, objectiveMaterialIds, protectScope, scopeFromSetup, splitByMaterials } from "../../src/lib/course/exam-card.ts";
 
 const topic = (id: string, extra: Partial<Topic> = {}): Topic => ({ id, name: id, review: "confirmed", pos: { x: 0, y: 0 }, source: [], ...extra });
 const objective = (id: string, topicId: string, extra: Partial<Objective> = {}): Objective => ({ id, topicId, name: id, description: "", origin: "material", review: "confirmed", materialId: "m", runId: "r", signals: [], ...extra });
@@ -134,4 +134,20 @@ test("protectScope puts back a file-pick zero on a weak spot or unanchored objec
   assert.equal(out.objectives.find((o) => o.objectiveId === "opFlag")?.weight, 0);
   // Without a file pick nothing changes.
   assert.deepEqual(protectScope({ ...scope, materialIds: undefined }, lines).raised, []);
+});
+
+test("cram mode: the course's cramming exam from today on; a past one has ended it", () => {
+  assert.equal(crammingExam([exam("2026-11-20"), exam("2026-11-25", { cramming: true })], "c", "2026-11-22")?.date, "2026-11-25");
+  assert.equal(crammingExam([exam("2026-11-22", { cramming: true })], "c", "2026-11-22")?.date, "2026-11-22", "on the exam's day it's still on");
+  assert.equal(crammingExam([exam("2026-11-21", { cramming: true })], "c", "2026-11-22"), null, "the day after, it's off");
+  assert.equal(crammingExam([exam("2026-11-25")], "c", "2026-11-22"), null, "an exam not crammed for isn't cram mode");
+  assert.equal(crammingExam([exam("2026-11-25", { cramming: true, courseId: "d" })], "c", "2026-11-22"), null);
+});
+
+test("the exam's topics: those holding an objective in scope, merges followed", () => {
+  assert.deepEqual([...examTopicIds({ topicIds: ["t1"], scope: null }, topics, objectives)], ["t1"]);
+  assert.deepEqual([...examTopicIds({ topicIds: ["old"], scope: null }, topics, objectives)], ["t2"], "a merged topic counts as its survivor");
+  const scope = { sources: [], objectives: [{ objectiveId: "b", weight: 1, evidence: [] }, { objectiveId: "a", weight: 0, evidence: [] }] } as ExamScope;
+  assert.deepEqual([...examTopicIds({ topicIds: ["t1", "t2"], scope }, topics, objectives)], ["t2"], "weight 0 leaves a topic out");
+  assert.deepEqual([...examTopicIds({ topicIds: [], scope: null }, topics, objectives)].sort(), ["t1", "t2"], "no topics named: every live topic with objectives");
 });
