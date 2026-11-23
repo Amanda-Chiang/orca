@@ -6,6 +6,25 @@ in the doc it affects (usually `docs/BACKEND-ROADMAP.md`) and move it to "Decide
 
 ## Open
 
+### Cram mode you enter: assumptions (2026-11-22)
+- **Source:** the owner's ask (cram mode as a space the student enters: dark, exam topics only, reviews paused, a
+  banner) and answers (off-exam reviews hidden completely; dives on exam topics only; ends after the exam or on Stop;
+  the home island and the cram page change too; the home sidebar drops the course's cards; Path and List hide the
+  rest behind "Show N other topics"). Plan `docs/superpowers/plans/2026-11-22-cram-mode-immersive.md`.
+- **Assumed, for the owner to confirm:**
+  1. One exam per course crams at a time: turning it on for one turns it off for the others.
+  2. "On the exam" means topics holding an objective the exam counts (`examObjectives`: the scope's weights above 0,
+     else the exam's topics, else every topic).
+  3. The calendar drops the crammed course's scheduled reviews too; exams and homework stay.
+  4. A session opened by its link still runs; only the buttons that start one are hidden.
+  5. The top bar goes dark with the page; session and settings pages stay light.
+  6. The banner holds Open plan, Study with Claude (until connected) and Stop cramming; Edit scope is on the cram page.
+     The exam card is gone (owner: redundant), and with it the course page's only "days until the exam" outside a
+     cram; the course-wide Dive in pill gave its place to Enter cram mode (owner), so a course-wide dive starts from
+     the sidebar's "Dive in" card when one is due, and topic dives from the path's play buttons.
+  7. The home island: the same art dimmed to night with a "Cram mode" tag; its due count reads 0.
+  8. List in cram mode still lists only topics with weak spots (its purpose), now only the exam's.
+
 ### Cram mode (2026-11-10)
 - **Source:** the owner's Cram Mode plan (2026-11-09) and decisions (2026-11-10); contract
   `docs/superpowers/specs/2026-11-10-cram-mode-contracts.md`, branch `cram-mode`. What is built:

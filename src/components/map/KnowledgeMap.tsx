@@ -38,7 +38,8 @@ type View = { scale: number; x: number; y: number };
  * around, and zoom with − + or fit it again. Clicking an island
  * or its name opens its path.
  */
-export function KnowledgeMap({ courses, dueCount }: { courses: Course[]; dueCount: (courseId: string) => number }) {
+/** `cramming`: courses in cram mode (owner, 2026-11-22), drawn at night with a "Cram mode" tag. */
+export function KnowledgeMap({ courses, dueCount, cramming = () => false }: { courses: Course[]; dueCount: (courseId: string) => number; cramming?: (courseId: string) => boolean }) {
   const router = useRouter();
   const mastery = useMasteryByCourse();
   const levelOf = (courseId: string) => {
@@ -106,7 +107,7 @@ export function KnowledgeMap({ courses, dueCount }: { courses: Course[]; dueCoun
         {courses.map((c, i) => {
           const spot = spots[i];
           return (
-            <div key={c.id} className="absolute" style={{ left: spot.x, top: spot.y, width: ISLAND_W, height: ISLAND_H }} data-part="island-spot">
+            <div key={c.id} className="absolute" style={{ left: spot.x, top: spot.y, width: ISLAND_W, height: ISLAND_H }} data-part="island-spot" data-cram={cramming(c.id) ? "1" : undefined}>
               <motion.button
                 type="button"
                 aria-label={`Open ${c.name}`}
@@ -115,13 +116,20 @@ export function KnowledgeMap({ courses, dueCount }: { courses: Course[]; dueCoun
                 whileHover={{ scale: 1.04 }}
                 whileTap={{ scale: 0.98 }}
               >
-                <Island variant={c.variant} level={levelOf(c.id)} float seed={i} />
+                <Island variant={c.variant} level={levelOf(c.id)} float seed={i} style={cramming(c.id) ? { filter: "brightness(0.55) saturate(0.8) hue-rotate(-10deg)" } : undefined} />
               </motion.button>
               <div className="absolute left-1/2 -translate-x-1/2" style={{ top: 196 }}>
                 <LabelPill count={dueCount(c.id)} onClick={() => router.push(`/course/${c.slug}`)} aria-label={`Open ${c.name}, ${dueCount(c.id)} due today`} title={c.name} style={{ maxWidth: ISLAND_LAYOUT.pillMax }}>
                   <span className="min-w-0 truncate">{c.name}</span>
                 </LabelPill>
-                {levelOf(c.id) === "uncharted" && (mastery[c.id]?.objectives.size ?? 0) > 0 && (
+                {cramming(c.id) && (
+                  <p className="mt-[6px] flex justify-center">
+                    <span data-part="island-cram" className="eyebrow rounded-pill bg-prussian px-[10px] py-[3px] text-[11px] text-parchment">
+                      Cram mode
+                    </span>
+                  </p>
+                )}
+                {levelOf(c.id) === "uncharted" && !cramming(c.id) && (mastery[c.id]?.objectives.size ?? 0) > 0 && (
                   <p data-part="island-note" className="mt-[6px] whitespace-nowrap text-center text-[13px] font-semibold text-wisteria-deep">
                     No weak spots flagged yet
                   </p>

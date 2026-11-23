@@ -12,6 +12,23 @@ export function cardExam<E extends Pick<Exam, "courseId" | "date" | "cramming">>
   return mine[0] ?? null;
 }
 
+/** The exam the course is cramming for: cramming and not yet past (the day after, cram mode is over by itself), soonest first; null when none. */
+export function crammingExam<E extends Pick<Exam, "courseId" | "date" | "cramming">>(exams: readonly E[], courseId: string, today: string): E | null {
+  return exams.filter((e) => e.courseId === courseId && e.cramming && e.date >= today).sort((a, b) => a.date.localeCompare(b.date))[0] ?? null;
+}
+
+/** The topics an exam is about: the surviving topic of every objective `examObjectives` counts. */
+export function examTopicIds(exam: Pick<Exam, "topicIds" | "scope">, topics: readonly Topic[], objectives: Readonly<Record<string, Objective>>): Set<string> {
+  const byId = new Map(topics.map((t) => [t.id, t]));
+  const ids = new Set<string>();
+  for (const id of examObjectives(exam, topics, objectives)) {
+    const o = objectives[id];
+    const t = o ? survivingTopic(o.topicId, byId) : null;
+    if (t) ids.add(t.id);
+  }
+  return ids;
+}
+
 const utcDay = (day: string) => {
   const [y, m, d] = day.split("-").map(Number);
   return Date.UTC(y, m - 1, d);

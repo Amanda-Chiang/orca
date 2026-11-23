@@ -62,7 +62,8 @@ function Glyph({ strength, r }: { strength: TopicStrength; r: number }) {
 
 type View = { x: number; y: number; w: number; h: number };
 
-export function TopicGraph({ graph, onOpen }: { graph: Graph; onOpen: (topicId: string) => void }) {
+/** `muted`: topics not on the exam being crammed for (owner, 2026-11-22), faint until they or a neighbour are hovered. */
+export function TopicGraph({ graph, onOpen, muted = null }: { graph: Graph; onOpen: (topicId: string) => void; muted?: ReadonlySet<string> | null }) {
   const full = useMemo<View>(() => ({ x: 0, y: 0, w: graph.width, h: graph.height }), [graph.width, graph.height]);
   // Starts fitted; the page remounts this (key) when the graph's size changes.
   const [view, setView] = useState<View>(full);
@@ -240,7 +241,7 @@ export function TopicGraph({ graph, onOpen }: { graph: Graph; onOpen: (topicId: 
 
         <motion.g variants={stagger(0.05, 0.03)} initial="hidden" animate="show">
           {nodes.map((n) => (
-            <TopicNode key={n.topic.id} node={n} active={hover === n.topic.id} dim={neighbours !== null && !neighbours.has(n.topic.id)} onHover={setHover} onOpen={openNode} onDragStart={startNodeDrag} />
+            <TopicNode key={n.topic.id} node={n} active={hover === n.topic.id} dim={neighbours !== null && !neighbours.has(n.topic.id)} faint={!!muted?.has(n.topic.id) && !neighbours?.has(n.topic.id)} offExam={!!muted?.has(n.topic.id)} onHover={setHover} onOpen={openNode} onDragStart={startNodeDrag} />
           ))}
         </motion.g>
 
@@ -326,7 +327,7 @@ export function TopicGraph({ graph, onOpen }: { graph: Graph; onOpen: (topicId: 
   );
 }
 
-function TopicNode({ node: n, active, dim, onHover, onOpen, onDragStart }: { node: GraphNode; active: boolean; dim: boolean; onHover: (id: string | null) => void; onOpen: (id: string) => void; onDragStart: (node: GraphNode, event: React.PointerEvent<SVGGElement>) => void }) {
+function TopicNode({ node: n, active, dim, faint, offExam, onHover, onOpen, onDragStart }: { node: GraphNode; active: boolean; dim: boolean; faint: boolean; offExam: boolean; onHover: (id: string | null) => void; onOpen: (id: string) => void; onDragStart: (node: GraphNode, event: React.PointerEvent<SVGGElement>) => void }) {
   const style = NODE[n.strength];
   const id = n.topic.id;
   return (
@@ -339,6 +340,7 @@ function TopicNode({ node: n, active, dim, onHover, onOpen, onDragStart }: { nod
       tabIndex={0}
       aria-label={`${n.topic.name}, ${STRENGTH_LABEL[n.strength]}: ${topicSummary(n)}`}
       className="cursor-grab outline-none active:cursor-grabbing"
+      data-off-exam={offExam ? "1" : undefined}
       style={{ opacity: dim ? 0.3 : 1, transition: "opacity 150ms" }}
       onPointerEnter={() => onHover(id)}
       onPointerLeave={() => onHover(null)}
@@ -348,7 +350,8 @@ function TopicNode({ node: n, active, dim, onHover, onOpen, onDragStart }: { nod
       onClick={() => onOpen(id)}
       onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onOpen(id))}
     >
-      <g id={`topic-art-${id}`} transform={`translate(${n.x} ${n.y})`}>
+      {/* Faint on its own group: the entrance animation drives the outer group's opacity. */}
+      <g id={`topic-art-${id}`} transform={`translate(${n.x} ${n.y})`} opacity={faint ? 0.25 : 1} style={{ transition: "opacity 150ms" }}>
         {n.usedIn > 0 && <circle r={n.r + 5} fill={style.fill} opacity={0.6} />}
         {active && <circle r={n.r + 4} fill="none" stroke="var(--color-wisteria-deep)" strokeWidth={2} data-part="topic-ring" />}
         <circle r={n.r} fill={style.fill} stroke={style.stroke} strokeWidth={2.5} strokeDasharray={style.dash} />

@@ -35,12 +35,14 @@ function statusLine(p: TopicProgress) {
  * trail, laid out again in their order; "Show all N topics" brings back the whole course on its
  * stored layout. With no weak spots anywhere, the trail says so and offers the same.
  */
-export function KnowledgePath({ course, progress, onStart, warmUp }: {
+export function KnowledgePath({ course, progress, onStart, warmUp, examTopics = null }: {
   course: Course;
   progress: ReadonlyMap<string, TopicProgress>;
   onStart: (topic: Topic) => void;
   /** Nothing flagged yet, but questions to try: START on that topic (owner, 2026-11-08). */
   warmUp?: { topicName: string; href: string; questions: number } | null;
+  /** Cram mode (owner, 2026-11-22): the exam's topics. They replace the weak-spot filter; "Show N other topics" adds the rest, faint and not playable. */
+  examTopics?: ReadonlySet<string> | null;
 }) {
   const progressOf = (t: Topic) => {
     const p = progress.get(t.id);
@@ -50,13 +52,16 @@ export function KnowledgePath({ course, progress, onStart, warmUp }: {
   const all = trailTopics(course);
   const [showAll, setShowAll] = useState(false);
   const weak = all.filter((t) => progressOf(t).status !== "not-started");
-  const filtered = !showAll && weak.length < all.length;
-  // The weak topics take the first spots of the default layout, so the trail has no gaps.
-  const spots = filtered ? defaultTopicPositions(weak.length) : null;
-  const topics = filtered ? weak.map((t, i) => ({ ...t, pos: spots![i] })) : all;
-  // START goes to the first topic in progress, else the first not started; none when everything is done.
-  const firstInProgress = topics.findIndex((t) => progressOf(t).status === "in-progress");
-  const current = firstInProgress >= 0 ? firstInProgress : topics.findIndex((t) => progressOf(t).status === "not-started");
+  const onExam = examTopics ? all.filter((t) => examTopics.has(t.id)) : null;
+  const base = onExam ?? weak;
+  const filtered = !showAll && base.length < all.length;
+  // The shown topics take the first spots of the default layout, so the trail has no gaps.
+  const spots = filtered ? defaultTopicPositions(base.length) : null;
+  const topics = filtered ? base.map((t, i) => ({ ...t, pos: spots![i] })) : all;
+  const offExam = (t: Topic) => !!examTopics && !examTopics.has(t.id);
+  // START goes to the first topic in progress, else the first not started; none when everything is done. Never a topic off the exam being crammed for.
+  const firstInProgress = topics.findIndex((t) => !offExam(t) && progressOf(t).status === "in-progress");
+  const current = firstInProgress >= 0 ? firstInProgress : topics.findIndex((t) => !offExam(t) && progressOf(t).status === "not-started");
   const currentTopic = current >= 0 ? topics[current] : null;
   const currentTopicId = currentTopic?.id;
   const currentTopicY = currentTopic?.pos.y;
@@ -83,13 +88,23 @@ export function KnowledgePath({ course, progress, onStart, warmUp }: {
   }, [course.id, currentTopicId, currentTopicY, ref, scale]);
 
   const toggle =
-    weak.length < all.length ? (
+    base.length < all.length ? (
       <Button size="sm" variant="ghost" onClick={() => setShowAll((v) => !v)} data-part="path-show-all">
-        {showAll ? "Show weak spots only" : `Show all ${all.length} topics`}
+        {onExam ? (showAll ? "Show exam topics only" : `Show ${all.length - base.length} other topic${all.length - base.length === 1 ? "" : "s"}`) : showAll ? "Show weak spots only" : `Show all ${all.length} topics`}
       </Button>
     ) : null;
 
-  if (filtered && weak.length === 0) {
+  if (filtered && onExam && onExam.length === 0) {
+    return (
+      <div className="absolute inset-0 flex flex-col items-center justify-center gap-[12px] px-[80px] text-center" data-part="path-no-exam-topics">
+        <p className="text-[22px] font-bold text-prussian">No topics on this exam yet.</p>
+        <p className="max-w-[460px] text-[16px] text-wisteria-deep">Edit the exam&apos;s scope on the plan to pick what it covers.</p>
+        {toggle}
+      </div>
+    );
+  }
+
+  if (filtered && weak.length === 0 && !onExam) {
     return (
       <div className="absolute inset-0 flex flex-col items-center justify-center gap-[12px] px-[80px] text-center" data-part="path-no-weak-spots">
         <p className="text-[22px] font-bold text-prussian">No weak spots flagged yet.</p>
@@ -146,7 +161,9 @@ export function KnowledgePath({ course, progress, onStart, warmUp }: {
             name={t.name}
             sub={statusLine(progressOf(t))}
             ring={progressOf(t).weak > 0 ? { mastered: progressOf(t).mastered, of: progressOf(t).weak } : undefined}
-            onClick={() => onStart(t)}
+            topicId={t.id}
+            offExam={offExam(t)}
+            onClick={offExam(t) ? undefined : () => onStart(t)}
           />
         ))}
       </div>

@@ -9,13 +9,16 @@ import { weakSpotStatus, type WeakSpotStatus } from "@/lib/mastery/progress";
 import { isInRotation } from "@/lib/mastery/flags";
 import { StatusSlider } from "@/components/course/StatusSlider";
 import { Button } from "@/components/ui/Button";
+import { cn } from "@/lib/cn";
 import { AtlasSwitch } from "@/components/atlas/AtlasSwitch";
 import { UploadsLink } from "@/components/course/UploadsLink";
 import { AppShell } from "@/components/layout/AppShell";
 import { BackButton } from "@/components/layout/BackButton";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { DEFAULT_CONFIG, trailTopics } from "@/lib/data";
-import { useCourse, useMasteryByCourse, useOrca } from "@/lib/store";
+import { useCourse, useCramming, useMasteryByCourse, useOrca } from "@/lib/store";
+import { CramBanner } from "@/components/course/CramBanner";
+import { useCramTheme } from "@/components/course/CramTheme";
 import { fadeUp, popIn, stagger } from "@/lib/motion";
 
 /**
@@ -23,6 +26,8 @@ import { fadeUp, popIn, stagger } from "@/lib/motion";
  * review, in progress, mastered; colours from the Atlas) and a play button that opens its dive.
  * The status is a 3-stop slider (owner, 2026-11-22): moving it to Mastered marks the topic's weak
  * spots mastered (MarkEvent, rules v5), to Needs review flags them hard again; a pop-up confirms.
+ * All, Current and Previous tabs (owner, 2026-11-22): mastered topics move to Previous, with the day
+ * they were mastered; All lists the current ones first, then the mastered.
  */
 export default function ListPage({ params }: PageProps<"/course/[slug]/list">) {
   const { slug } = use(params);
@@ -34,8 +39,13 @@ export default function ListPage({ params }: PageProps<"/course/[slug]/list">) {
   // the slider until the server's snapshots say the same, since status is read from them, not from
   // the event the browser just sent.
   const [pending, setPending] = useState<{ topicId: string; name: string; to: WeakSpotStatus; ids: string[]; confirmed: boolean } | null>(null);
+  const [tab, setTab] = useState<"all" | "current" | "previous">("current");
   const course = useCourse(slug);
   const mastery = useMasteryByCourse();
+  // Cram mode (owner, 2026-11-22): only the exam's topics, the rest behind "Show N other topics".
+  const cram = useCramming(course?.id);
+  useCramTheme(!!cram);
+  const [showOthers, setShowOthers] = useState(false);
   const m = course ? mastery[course.id] : undefined;
   const settled = pending?.confirmed && m ? weakSpotStatus(m.topicObjectives.get(pending.topicId) ?? [], m.objectives) === pending.to : false;
   useEffect(() => {
@@ -57,7 +67,7 @@ export default function ListPage({ params }: PageProps<"/course/[slug]/list">) {
   }
   if (!m) throw new Error(`No mastery computed for course ${course.id}`);
 
-  const rows = trailTopics(course).flatMap((topic) => {
+  const allRows = trailTopics(course).flatMap((topic) => {
     const ids = m.topicObjectives.get(topic.id) ?? [];
     const status = weakSpotStatus(ids, m.objectives);
     const progress = m.topics.get(topic.id);
@@ -67,8 +77,20 @@ export default function ListPage({ params }: PageProps<"/course/[slug]/list">) {
       if (!s) throw new Error(`No state computed for objective ${id}`);
       return isInRotation(s.status) || s.status === "check-due" ? [s] : [];
     });
-    return status ? [{ topic, status, progress, weakSpots }] : [];
+    // When the topic became mastered: the last of its weak spots to get there (from the evidence; null if the log doesn't show it).
+    const days = weakSpots.map((s) => m.masteredAt.get(s.objectiveId) ?? null);
+    const masteredOn = status === "mastered" && days.length && days.every((d) => d !== null) ? days.reduce((a, b) => (a! > b! ? a : b)) : null;
+    // A confirmed change shows at once (the slider holds it), so the row changes tab with it.
+    const shown = pending?.confirmed && pending.topicId === topic.id ? pending.to : status;
+    return status ? [{ topic, status, shown, progress, weakSpots, masteredOn, offExam: !!cram && !cram.topics.has(topic.id) }] : [];
   });
+  const others = allRows.filter((r) => r.offExam);
+  const rows = cram && !showOthers ? allRows.filter((r) => !r.offExam) : allRows;
+  const counted = allRows.length - others.length;
+  const current = rows.filter((r) => r.shown !== "mastered");
+  const previous = rows.filter((r) => r.shown === "mastered");
+  // All: what still needs work first, then what's mastered, each in course order.
+  const listed = tab === "current" ? current : tab === "previous" ? previous : [...current, ...previous];
 
   // The same header as Path (title, line, progress bar, then the pills), so the pills sit at the same height on every tab.
   const trail = trailTopics(course).map((t) => {
@@ -80,8 +102,9 @@ export default function ListPage({ params }: PageProps<"/course/[slug]/list">) {
   const pct = weak ? trail.reduce((sum, p) => sum + p.mastered, 0) / weak : 0;
 
   return (
-    <AppShell bg="ocean">
-      <div className="absolute inset-0 overflow-auto px-[28px] pb-[28px] pt-[28px]">
+    <AppShell bg="ocean" sidebar={!cram}>
+      {cram && <CramBanner course={course} exam={cram.exam} />}
+      <div className={`absolute inset-0 overflow-auto px-[28px] pb-[28px] ${cram ? "pt-[76px]" : "pt-[28px]"}`}>
         {/* The list sits in the header's column, so it lines up with the title and the Path pill. */}
         <div className="flex items-start gap-[16px]">
           <motion.div variants={fadeUp} initial="hidden" animate="show">
@@ -93,7 +116,11 @@ export default function ListPage({ params }: PageProps<"/course/[slug]/list">) {
                 {course.name}
               </motion.h1>
               <motion.p variants={fadeUp} className="text-[15px] font-medium text-wisteria-deep" data-part="list-summary">
-                {rows.length ? `${rows.length} topic${rows.length === 1 ? "" : "s"} with weak spots` : "No weak spots flagged yet"}
+                {cram
+                  ? `${counted} exam topic${counted === 1 ? "" : "s"} with weak spots`
+                  : rows.length
+                    ? `${rows.length} topic${rows.length === 1 ? "" : "s"} with weak spots`
+                    : "No weak spots flagged yet"}
               </motion.p>
               <motion.div variants={fadeUp} className="mt-[6px] w-[240px]">
                 <ProgressBar value={pct} height={12} label="Course progress" track="parchment" />
@@ -104,24 +131,66 @@ export default function ListPage({ params }: PageProps<"/course/[slug]/list">) {
               </motion.div>
             </motion.header>
 
-            {rows.length === 0 ? (
+            {rows.length > 0 && (
+              <div role="tablist" aria-label="Which topics" className="mt-[24px] flex justify-end gap-[6px]" data-part="list-tabs">
+                {(
+                  [
+                    ["all", "All", rows.length],
+                    ["current", "Current", current.length],
+                    ["previous", "Previous", previous.length],
+                  ] as const
+                ).map(([key, label, count]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    role="tab"
+                    aria-selected={tab === key}
+                    onClick={() => setTab(key)}
+                    data-part="list-tab"
+                    data-tab={key}
+                    className={cn(
+                      "pressable flex cursor-pointer items-center gap-[6px] rounded-pill px-[14px] py-[6px] text-[13px] font-bold lip-2",
+                      tab === key ? "bg-wisteria text-parchment lip-wisteria" : "bg-parchment text-prussian ring-2 ring-inset ring-alice-deep lip-alice",
+                    )}
+                  >
+                    {label}
+                    <span className={cn("text-[12px]", tab === key ? "text-parchment/80" : "text-prussian/50")}>{count}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {rows.length === 0 || listed.length === 0 ? (
               <p className="mt-[40px] text-[16px] text-wisteria-deep" data-part="list-empty">
-                Flag what&apos;s hard, or miss a question, and its topic shows up here.
+                {rows.length === 0
+                  ? "Flag what's hard, or miss a question, and its topic shows up here."
+                  : tab === "current"
+                    ? "Nothing to work on right now. Topics you've mastered are under Previous."
+                    : "Topics you master show up here."}
               </p>
             ) : (
-              <motion.ul variants={stagger()} initial="hidden" animate="show" className="mt-[24px] flex flex-col gap-[12px]" data-part="weak-list">
-                {rows.map(({ topic, status, progress, weakSpots }) => (
+              <motion.ul key={tab} variants={stagger()} initial="hidden" animate="show" className="mt-[12px] flex flex-col gap-[12px]" data-part="weak-list">
+                {listed.map(({ topic, status, shown, progress, weakSpots, masteredOn, offExam }) => (
                   <motion.li
                     key={topic.id}
                     variants={fadeUp}
                     data-part="weak-row"
                     data-status={status}
-                    className="flex items-center gap-[16px] rounded-[20px] bg-parchment px-[22px] py-[14px] lip-4 lip-alice"
+                    data-topic={topic.id}
+                    data-off-exam={offExam ? "1" : undefined}
+                    // Faint through its children: the entrance animation drives the row's own opacity.
+                    className={`${offExam ? "[&>*]:opacity-40 " : ""}flex items-center gap-[16px] rounded-[20px] bg-parchment px-[22px] py-[14px] lip-4 lip-alice`}
                   >
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-[19px] font-bold text-prussian">{topic.name}</p>
                       <p className="text-[14px] text-wisteria-deep">
-                        {progress.mastered} of {progress.weak} weak spot{progress.weak === 1 ? "" : "s"} mastered
+                        {shown === "mastered" ? (
+                          <span data-part="mastered-on">{masteredOn ? `Mastered ${new Date(masteredOn).toLocaleDateString(undefined, { month: "short", day: "numeric" })}` : "Mastered"}</span>
+                        ) : (
+                          <>
+                            {progress.mastered} of {progress.weak} weak spot{progress.weak === 1 ? "" : "s"} mastered
+                          </>
+                        )}
                         {weakSpots.some((s) => s.markedByStudent) && <span data-part="marked-by-you"> · marked by you</span>}
                       </p>
                     </div>
@@ -142,7 +211,7 @@ export default function ListPage({ params }: PageProps<"/course/[slug]/list">) {
                         })
                       }
                     />
-                    <button
+                    {!offExam && <button
                       type="button"
                       onClick={() => setDiving({ id: topic.id, name: topic.name })}
                       aria-label={`Dive into ${topic.name}`}
@@ -152,10 +221,17 @@ export default function ListPage({ params }: PageProps<"/course/[slug]/list">) {
                       <svg width="14" height="16" viewBox="0 0 14 16" aria-hidden="true">
                         <path d="M2 1.5v13l11-6.5z" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
                       </svg>
-                    </button>
+                    </button>}
                   </motion.li>
                 ))}
               </motion.ul>
+            )}
+            {cram && others.length > 0 && (
+              <div className="mt-[16px]">
+                <Button size="sm" variant="ghost" onClick={() => setShowOthers((v) => !v)} data-part="list-show-all">
+                  {showOthers ? "Show exam topics only" : `Show ${others.length} other topic${others.length === 1 ? "" : "s"}`}
+                </Button>
+              </div>
             )}
           </div>
         </div>
