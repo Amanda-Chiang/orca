@@ -589,7 +589,10 @@ export function OrcaProvider({ children }: { children: React.ReactNode }) {
       // A change to the scope or budget is logged on the scope, as the student's (the connector logs Claude's).
       const was = stateRef.current.exams.find((e) => e.id === id);
       const change = given.scope !== undefined && was ? { ...given, scope: withHistory(was.scope, given.scope, "student", new Date().toISOString(), { before: was.date, after: given.date ?? was.date }) } : given;
-      setState((s) => ({ ...s, exams: s.exams.map((e) => (e.id === id ? { ...e, ...change } : e)) }));
+      // One cram per course (owner, 2026-11-22): starting one stops the course's others.
+      const others = change.cramming && was ? stateRef.current.exams.filter((e) => e.courseId === was.courseId && e.id !== id && e.cramming).map((e) => e.id) : [];
+      setState((s) => ({ ...s, exams: s.exams.map((e) => (e.id === id ? { ...e, ...change } : others.includes(e.id) ? { ...e, cramming: false } : e)) }));
+      if (others.length) save(async () => mustChange(await browserSupabase().from("exams").update({ cramming: false }).in("id", others).select("id")));
       const row = {
         ...(change.title !== undefined ? { title: change.title } : {}),
         ...(change.date !== undefined ? { date: change.date } : {}),
