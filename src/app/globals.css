@@ -20,6 +20,8 @@
   --color-ocean: #9cc3e7;
   /* The deep sea: cram mode's ocean (owner, 2026-11-22), and the bottom of the dive into it. */
   --color-abyss: #081d33;
+  /* The top bar over a course in cram mode (owner, 2026-11-22): dark grey, lighter than the abyss. */
+  --color-slate: #30343d;
 
   /* Concept Atlas edges (Figma: E1 · Concept graph v4): has a kind, alternative to, related. "Used in" is wisteria-deep. */
   --color-link-kind: #c2418f;
