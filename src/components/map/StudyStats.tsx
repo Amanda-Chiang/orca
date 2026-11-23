@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { AnimatePresence, motion } from "motion/react";
 import { OrcaLogo } from "@/components/brand/OrcaLogo";
 import { IconDown } from "@/components/icons";
@@ -58,6 +59,9 @@ export function StudyStats({ usage }: { usage: boolean }) {
               <h2 className="text-[20px] font-bold text-prussian">Your progress</h2>
               <p className="text-[13px] font-medium text-wisteria-deep">From finished study sessions and answered questions.</p>
             </div>
+            <Link href="/progress" data-part="stats-progress-link" className="pressable rounded-pill bg-prussian px-[14px] py-[8px] text-center text-[14px] font-bold text-parchment lip-3 lip-ink">
+              See all your study time
+            </Link>
             <YourMetrics metrics={metrics} problem={problem} />
             {usage && (
               <div className="border-t border-alice-deep pt-[12px]">

@@ -30,8 +30,8 @@ test("cram mode: dark course pages on the exam's topics, reviews paused, banner,
   await expect(page.locator("main").locator("xpath=..")).toHaveAttribute("data-cram", "1");
   // The top bar is dark grey over a course in cram mode.
   await expect(page.locator("[data-part=top-bar]")).toHaveAttribute("data-cram", "1");
-  // The nav (calendar, add material, the course's settings) stays, floating at the bottom right.
-  await expect(page.locator("[data-cram] nav[aria-label=Primary] a")).toHaveCount(3);
+  // The nav (your progress, calendar, add material, the course's settings) stays, floating at the bottom right.
+  await expect(page.locator("[data-cram] nav[aria-label=Primary] a")).toHaveCount(4);
   await expect(page.locator("[data-part=enter-cram]")).toHaveCount(0);
   await expect(page.locator("aside")).toHaveCount(0);
   await expect(page.locator(`[data-visual][data-topic="${F.twosComplement}"] [data-part=node]`)).toBeVisible();

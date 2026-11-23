@@ -150,6 +150,14 @@ own courses (Data Structures, Fundamentals of Computer Systems) on the hosted pr
   hovered (`TopicGraph muted`), the red CRAM MODE banner (`CramBanner`, `data-part="cram-banner"`) sits on top, the nav (calendar, add material, the course's settings) floats at the bottom right, the top bar over those pages is dark grey (`slate`), the dive covers the whole window, the home island and its name take the dark look with the path's pulsing halo behind (`island-halo`, the spot `data-cramming`), the sidebar opens with a red cram card per cramming course (`CramCards`, `data-part="cram-card"`: the course, the exam, days left, % of its objectives verified, to the cram page), and the calendar marks the crammed exam red and the course's other entries with a red ring, with a Cramming key and "· cramming" in the course filter. One exam per course crams at a time
   (the store's `updateExam` and the connector's `set_exam`). Assumptions in `docs/TO-DISCUSS.md`; e2e
   `e2e/cram-immersive.spec.ts`.
+- **Your progress and the study timer** (2026-11-22, branch `study-time`): `/progress` (nav item "Your progress", a link in
+  the home stats popover) adds up every minute studied: finished sessions in Orca, Claude's connector stretches and
+  logged sittings, and the study timer, counted once where they overlap in a course (`src/lib/course/study-time.ts`);
+  tiles, the last two weeks stacked by course color (`study-*` tokens in `globals.css`), sources, and each exam's time
+  since the exam before it. The timer (`study_timers`, migration `20261123090000`, server-write only through
+  `POST /api/study-timer`; `GET /api/study-time`) runs one at a time, counts at most 4 hours, and floats as a pill
+  (`src/components/study/StudyTime.tsx`); a course page has Start study session. The cram plan doesn't count timer
+  time yet.
 - **Upload toasts** (2026-11-08, `src/components/layout/UploadToasts.tsx`, mounted in `providers.tsx`): an upload
   that finishes (done or failed) while the app is open, from any tab or device, pops a toast unless the student is on
   that course's uploads; uploads of one course finishing while its toast is up share it. One upload's toast opens
