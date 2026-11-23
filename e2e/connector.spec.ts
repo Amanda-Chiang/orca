@@ -373,7 +373,7 @@ test("the exam map: Claude reads a held-back exam (never the reserved one), stor
   await expect(left.locator("[data-part=cram-bookmark]")).toHaveText("Drill 2 half done");
   await expect(left.locator("[data-part=cram-next-steps] li")).toHaveText(["Finish Drill 2", "A timed conversion problem"]);
   await page.locator("[data-part=cram-tab-progress]").click();
-  await expect(page.locator("[data-part=cram-budget-note]")).toContainText("45 min studied");
+  await expect(page.locator("[data-part=cram-budget-note]")).toContainText("45m studied");
   const map = page.locator("[data-part=cram-exam-map]");
   await expect(map).toHaveAttribute("data-mapped", "1");
   await expect(map.locator("[data-part=cram-rules]")).toHaveText("Closed book · simple calculator · 75 min");

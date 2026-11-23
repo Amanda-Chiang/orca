@@ -11,7 +11,7 @@ import { clock, TIMER_MAX_MINUTES, type StudyTimer } from "@/lib/study-timer";
 /** What only the server holds of the study record (GET /api/study-time). */
 export interface ServerStudyTime {
   timers: StudyTimer[];
-  sittings: Array<{ courseId: string; day: string; minutes: number }>;
+  sittings: Array<{ courseId: string; day: string; minutes: number; at: string }>;
 }
 
 interface StudyTimeValue {
@@ -114,7 +114,7 @@ export function useElapsed(startedAt: string | null): number {
 }
 
 /**
- * The running study session, floating on every page but the progress page (which shows it large):
+ * The running study session, floating at the bottom of every page but the progress page (which shows it large):
  * the course, the clock and Stop. Mounted once the store is ready (src/app/providers.tsx).
  */
 export function TimerPill() {
@@ -127,8 +127,8 @@ export function TimerPill() {
   return (
     <AnimatePresence>
       {show && (
-        <motion.div variants={popIn} initial="hidden" animate="show" exit="exit" className="fixed left-1/2 top-[98px] z-40 -translate-x-1/2" data-part="timer-pill">
-          <div className="flex items-center gap-[10px] rounded-pill border-2 border-study-mint bg-parchment py-[6px] pl-[14px] pr-[6px] text-[14px] font-bold text-prussian lip-3 lip-alice">
+        <motion.div variants={popIn} initial="hidden" animate="show" exit="exit" className="pointer-events-none fixed inset-x-0 bottom-[24px] z-40 flex justify-center" data-part="timer-pill">
+          <div className="pointer-events-auto flex items-center gap-[10px] rounded-pill border-2 border-study-mint bg-parchment py-[6px] pl-[14px] pr-[6px] text-[14px] font-bold text-prussian lip-3 lip-alice">
             <span className="relative flex h-[10px] w-[10px]" aria-hidden>
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-study-mint opacity-60" />
               <span className="relative inline-flex h-[10px] w-[10px] rounded-full bg-study-mint" />

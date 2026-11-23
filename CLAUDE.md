@@ -161,8 +161,10 @@ own courses (Data Structures, Fundamentals of Computer Systems) on the hosted pr
   tiles, the last two weeks stacked by course color (`study-*` tokens in `globals.css`), sources, and each exam's time
   since the exam before it. The timer (`study_timers`, migration `20261123090000`, server-write only through
   `POST /api/study-timer`; `GET /api/study-time`) runs one at a time, counts at most 4 hours, and floats as a pill
-  (`src/components/study/StudyTime.tsx`); a course page has Start study session. The cram plan doesn't count timer
-  time yet.
+  (`src/components/study/StudyTime.tsx`); a course page has Start study session. The cram plan counts the same minutes
+  (`useStudyDays` scoped to the course from the cram's start, a running timer included), and the cram page's Your
+  Progress uses the same tiles, source colors and timer (`src/components/study/StudyParts.tsx`); the connector's
+  `course_state` still counts only Orca and Claude time.
 - **Upload toasts** (2026-11-08, `src/components/layout/UploadToasts.tsx`, mounted in `providers.tsx`): an upload
   that finishes (done or failed) while the app is open, from any tab or device, pops a toast unless the student is on
   that course's uploads; uploads of one course finishing while its toast is up share it. One upload's toast opens
