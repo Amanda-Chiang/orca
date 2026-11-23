@@ -30,7 +30,7 @@ export function CramBanner({ course, exam }: { course: Pick<Course, "slug">; exa
       variants={fadeUp}
       initial="hidden"
       animate="show"
-      className="absolute inset-x-0 top-0 z-20 flex items-center gap-[12px] bg-wisteria px-[28px] text-parchment"
+      className="absolute inset-x-0 top-0 z-20 flex items-center gap-[12px] bg-bad px-[28px] text-prussian"
       style={{ height: CRAM_BANNER_H }}
       data-part="cram-banner"
     >

@@ -18,7 +18,6 @@ import { ProgressBar } from "@/components/ui/ProgressBar";
 import { DEFAULT_CONFIG, trailTopics } from "@/lib/data";
 import { useCourse, useCramming, useMasteryByCourse, useOrca } from "@/lib/store";
 import { CramBanner } from "@/components/course/CramBanner";
-import { useCramTheme } from "@/components/course/CramTheme";
 import { fadeUp, popIn, stagger } from "@/lib/motion";
 
 /**
@@ -44,7 +43,6 @@ export default function ListPage({ params }: PageProps<"/course/[slug]/list">) {
   const mastery = useMasteryByCourse();
   // Cram mode (owner, 2026-11-22): only the exam's topics, the rest behind "Show N other topics".
   const cram = useCramming(course?.id);
-  useCramTheme(!!cram);
   const [showOthers, setShowOthers] = useState(false);
   const m = course ? mastery[course.id] : undefined;
   const settled = pending?.confirmed && m ? weakSpotStatus(m.topicObjectives.get(pending.topicId) ?? [], m.objectives) === pending.to : false;
@@ -102,7 +100,7 @@ export default function ListPage({ params }: PageProps<"/course/[slug]/list">) {
   const pct = weak ? trail.reduce((sum, p) => sum + p.mastered, 0) / weak : 0;
 
   return (
-    <AppShell bg="ocean" sidebar={!cram}>
+    <AppShell bg="ocean" cram={!!cram}>
       {cram && <CramBanner course={course} exam={cram.exam} />}
       <div className={`absolute inset-0 overflow-auto px-[28px] pb-[28px] ${cram ? "pt-[76px]" : "pt-[28px]"}`}>
         {/* The list sits in the header's column, so it lines up with the title and the Path pill. */}

@@ -142,12 +142,12 @@ own courses (Data Structures, Fundamentals of Computer Systems) on the hosted pr
 - **Since 2026-11-22: cram mode you enter** (plan `docs/superpowers/plans/2026-11-22-cram-mode-immersive.md`; owner):
   while a course crams for an exam (`crammingExam` in `src/lib/course/exam-card.ts`: `cramming` and the date not past,
   so it ends by itself the day after; `useCramming(courseId)` in the store gives the exam and `examTopicIds`), its
-  Path, List, Atlas and cram page are dark (`useCramTheme` sets `data-cram` on `<html>`; `:root[data-cram]` in
+  Path, List, Atlas and cram page are dark below the light top bar (`AppShell cram`, or `data-cram` on the cram page's Screen; `[data-cram]` in
   `globals.css` redefines the light tokens), the due sidebar goes (`AppShell sidebar={false}`), the course's to-do
   cards drop out everywhere (`useTodos`; the home count and the calendar's reviews too), the warm-up and the
   course-wide Dive in pill hide (topic dives stay, exam topics only), Path and List show the exam's topics ("Show N
   other topics": faint, `data-off-exam`, not playable), the Atlas draws the others faint until a neighbour is
-  hovered (`TopicGraph muted`), the CRAM MODE banner (`CramBanner`, `data-part="cram-banner"`) sits on top, and the home island is at night with a "Cram mode" tag (`island-cram`). One exam per course crams at a time
+  hovered (`TopicGraph muted`), the red CRAM MODE banner (`CramBanner`, `data-part="cram-banner"`) sits on top, the nav (calendar, add material, the course's settings) floats at the bottom right, the home island has the path's pulsing halo (`island-halo`, the spot `data-cramming`), and the calendar marks the crammed exam red and the course's other entries with a red ring, with a Cramming key and "· cramming" in the course filter. One exam per course crams at a time
   (the store's `updateExam` and the connector's `set_exam`). Assumptions in `docs/TO-DISCUSS.md`; e2e
   `e2e/cram-immersive.spec.ts`.
 - **Upload toasts** (2026-11-08, `src/components/layout/UploadToasts.tsx`, mounted in `providers.tsx`): an upload
