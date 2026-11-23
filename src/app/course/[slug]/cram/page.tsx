@@ -137,7 +137,7 @@ export default function CramPage({ params, searchParams }: PageProps<"/course/[s
 
       <motion.div variants={stagger(0.05, 0.08)} initial="hidden" animate="show" className="flex items-start gap-[12px] px-[24px] pb-[28px] pt-[20px]" data-part="cram-page" data-cramming={exam.cramming ? "1" : undefined}>
         {cramming ? (
-          <CrammingView course={course} today={today} plan={planned.plan} topics={planned.topics} spentMinutes={planned.spentMinutes} split={planned.split} examDate={exam.date} lastQuiz={lastQuiz} tab={tab} onTab={setTab} objectiveName={(id) => catalogue[id]?.name ?? planned.plan.topics.find((t) => t.id === id)?.name ?? id} vault={vault.map((v) => ({ id: v.id, filename: v.filename }))} lastSession={log?.sessions[0] ?? null} readiness={planned.readiness} scope={exam.scope} onReserve={(id) => updateExam(exam.id, { scope: reserveIn(exam.scope, id) })} connected={connected} onEdit={() => setEditing(true)} onStop={() => updateExam(exam.id, { cramming: false })} />
+          <CrammingView course={course} today={today} plan={planned.plan} topics={planned.topics} spentMinutes={planned.spentMinutes} split={planned.split} studyLoaded={planned.studyLoaded} examDate={exam.date} lastQuiz={lastQuiz} tab={tab} onTab={setTab} objectiveName={(id) => catalogue[id]?.name ?? planned.plan.topics.find((t) => t.id === id)?.name ?? id} vault={vault.map((v) => ({ id: v.id, filename: v.filename }))} lastSession={log?.sessions[0] ?? null} readiness={planned.readiness} scope={exam.scope} onReserve={(id) => updateExam(exam.id, { scope: reserveIn(exam.scope, id) })} connected={connected} onEdit={() => setEditing(true)} onStop={() => updateExam(exam.id, { cramming: false })} />
         ) : (
           <motion.div variants={fadeUp} className="w-[600px]">
             <Card className="px-[28px] pb-[24px] pt-[24px]">
@@ -157,7 +157,7 @@ const ADD_EXAM_LABEL = "Add a past or practice exam (kept hidden from you until 
 
 const isVerified = (s: ObjectiveStatus) => s === "verified" || s === "mastered";
 
-function CrammingView({ course, today, plan, topics, spentMinutes, split, examDate, objectiveName, vault, lastSession, lastQuiz, readiness, scope, onReserve, connected, tab, onTab, onEdit, onStop }: { lastSession: SessionLine | null; lastQuiz: LastQuiz | null; readiness: ExamReadiness | null; course: { slug: string }; today: string; plan: CramPlan; topics: CramPlanInput["topics"]; spentMinutes: SpentMinutes; split: StudySplit; examDate: string; objectiveName: (id: string) => string; vault: Array<{ id: string; filename: string }>; scope: ExamScope | null; onReserve: (materialId: string | null) => void; connected: boolean | null; tab: CramTab; onTab: (tab: CramTab) => void; onEdit: () => void; onStop: () => void }) {
+function CrammingView({ course, today, plan, topics, spentMinutes, split, studyLoaded, examDate, objectiveName, vault, lastSession, lastQuiz, readiness, scope, onReserve, connected, tab, onTab, onEdit, onStop }: { lastSession: SessionLine | null; lastQuiz: LastQuiz | null; readiness: ExamReadiness | null; course: { id: string; slug: string }; today: string; plan: CramPlan; topics: CramPlanInput["topics"]; spentMinutes: SpentMinutes; split: StudySplit; studyLoaded: boolean; examDate: string; objectiveName: (id: string) => string; vault: Array<{ id: string; filename: string }>; scope: ExamScope | null; onReserve: (materialId: string | null) => void; connected: boolean | null; tab: CramTab; onTab: (tab: CramTab) => void; onEdit: () => void; onStop: () => void }) {
   void today;
   const studied = spentMinutes.beforeToday + spentMinutes.today;
   const topicName = new Map(plan.topics.map((t) => [t.id, t.name]));
@@ -186,7 +186,7 @@ function CrammingView({ course, today, plan, topics, spentMinutes, split, examDa
       </motion.div>
 
       {tab === "progress" ? (
-        <CramProgress plan={plan} topics={topics} studied={studied} studiedToday={spentMinutes.today} split={split} examDate={examDate} />
+        <CramProgress plan={plan} topics={topics} studied={studied} studiedToday={spentMinutes.today} split={split} examDate={examDate} courseId={course.id} studyLoaded={studyLoaded} today={today} />
       ) : (
         <>
           <div className="flex items-stretch gap-[12px]">

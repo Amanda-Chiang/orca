@@ -14,14 +14,10 @@ import { Card } from "@/components/ui/Card";
 import { StudyTimerCard } from "@/components/study/StudyTimerCard";
 import { useStudyTime } from "@/components/study/StudyTime";
 import { useStudyDays } from "@/components/study/useStudyDays";
+import { SourcesCard, StatTile, TILE_ACCENTS } from "@/components/study/StudyParts";
 
 /** A course's color in the charts, by its order on the map. */
 const COURSE_COLORS = ["bg-study-sky", "bg-study-gold", "bg-study-rose", "bg-study-mint", "bg-study-coral", "bg-study-violet"] as const;
-const SOURCES = [
-  { key: "app", label: "In Orca", color: "bg-wisteria" },
-  { key: "claude", label: "With Claude", color: "bg-study-coral" },
-  { key: "timer", label: "Study timer", color: "bg-study-mint" },
-] as const;
 const CHART_DAYS = 14;
 
 /** "Tue 11" for a YYYY-MM-DD day (pure date arithmetic, so the zone can't shift it). */
@@ -72,7 +68,7 @@ export default function ProgressPage() {
             </motion.div>
             <motion.div variants={fadeUp} className="flex w-[340px] shrink-0 flex-col gap-[14px]">
               <StudyTimerCard />
-              <Sources days={days} />
+              <SourcesCard totals={{ app: days.reduce((t, d) => t + d.app, 0), claude: days.reduce((t, d) => t + d.claude, 0), timer: days.reduce((t, d) => t + d.timer, 0) }} />
             </motion.div>
           </div>
           <motion.div variants={fadeUp}>
@@ -89,24 +85,12 @@ function Tiles({ days, today, streak }: { days: StudyDay[]; today: string; strea
   const before = sumDays(days, addDays(today, -13), addDays(today, -7));
   const delta = week - before;
   const all = days.reduce((s, d) => s + minutesOf(d), 0);
-  const tiles = [
-    { label: "Today", value: hoursMinutes(sumDays(days, today, today)), note: null, accent: "bg-study-sky", part: "progress-today" },
-    { label: "Past 7 days", value: hoursMinutes(week), note: before || week ? `${delta >= 0 ? "▲" : "▼"} ${hoursMinutes(Math.abs(delta))} vs the week before` : null, accent: "bg-study-gold", part: "progress-week" },
-    { label: "All time", value: hoursMinutes(all), note: null, accent: "bg-study-rose", part: "progress-all" },
-    { label: "Streak", value: `${streak} ${streak === 1 ? "day" : "days"}`, note: null, accent: "bg-study-mint", part: "progress-streak" },
-  ];
   return (
     <motion.div variants={fadeUp} className="grid grid-cols-4 gap-[14px]">
-      {tiles.map((t) => (
-        <Card key={t.label} radius={20} lip={4} className="relative flex flex-col gap-[6px] overflow-hidden px-[18px] pb-[14px] pt-[18px]">
-          <span className={`absolute inset-x-0 top-0 h-[6px] ${t.accent}`} aria-hidden />
-          <p className="eyebrow text-[12px] text-wisteria-deep">{t.label}</p>
-          <p className="text-[28px] font-bold leading-none text-prussian" data-part={t.part}>
-            {t.value}
-          </p>
-          {t.note && <p className="text-[12px] font-semibold text-wisteria-deep">{t.note}</p>}
-        </Card>
-      ))}
+      <StatTile label="Today" value={hoursMinutes(sumDays(days, today, today))} accent={TILE_ACCENTS[0]} part="progress-today" />
+      <StatTile label="Past 7 days" value={hoursMinutes(week)} note={before || week ? `${delta >= 0 ? "▲" : "▼"} ${hoursMinutes(Math.abs(delta))} vs the week before` : null} accent={TILE_ACCENTS[1]} part="progress-week" />
+      <StatTile label="All time" value={hoursMinutes(all)} accent={TILE_ACCENTS[2]} part="progress-all" />
+      <StatTile label="Streak" value={`${streak} ${streak === 1 ? "day" : "days"}`} accent={TILE_ACCENTS[3]} part="progress-streak" />
     </motion.div>
   );
 }
@@ -152,31 +136,6 @@ function DayChart({ days, today, colorOf, courses }: { days: StudyDay[]; today: 
       ) : (
         <p className="text-[13px] font-medium text-wisteria-deep">Nothing studied in the last two weeks. Start a study session or a quick review.</p>
       )}
-    </Card>
-  );
-}
-
-/** Where the time came from, all time: one bar split by source. */
-function Sources({ days }: { days: StudyDay[] }) {
-  const totals = SOURCES.map((s) => ({ ...s, minutes: days.reduce((sum, d) => sum + d[s.key], 0) }));
-  const all = totals.reduce((s, t) => s + t.minutes, 0);
-  return (
-    <Card radius={24} lip={5} className="flex flex-1 flex-col gap-[10px] px-[22px] pb-[18px] pt-[18px]" data-part="progress-sources">
-      <h2 className="text-[20px] font-bold text-prussian">Where the time went</h2>
-      <div className="flex h-[14px] w-full overflow-hidden rounded-pill bg-alice">
-        {all > 0 && totals.map((t) => <div key={t.key} className={t.color} style={{ width: `${(t.minutes / all) * 100}%` }} />)}
-      </div>
-      <ul className="flex flex-col gap-[4px]">
-        {totals.map((t) => (
-          <li key={t.key} className="flex items-center justify-between gap-[8px] text-[14px] font-semibold text-prussian" data-part="progress-source" data-source={t.key}>
-            <span>
-              <span className={`mr-[6px] inline-block h-[10px] w-[10px] rounded-full align-middle ${t.color}`} />
-              {t.label}
-            </span>
-            <span className="text-wisteria-deep">{hoursMinutes(t.minutes)}</span>
-          </li>
-        ))}
-      </ul>
     </Card>
   );
 }

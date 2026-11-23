@@ -42,3 +42,22 @@ test("the progress page adds up a quiz and a timer once where they overlap, per 
   await expect(page.locator("[data-part=study-timer]")).not.toHaveAttribute("data-running", "1");
   await expect(page.locator("[data-part=progress-all]")).toHaveText("45m");
 });
+
+test("the cram page's Your Progress counts study-timer time, as the progress page does", async ({ page, student }) => {
+  await seedState(student, FIXTURE_STATE);
+  const since = new Date(Date.now() - 86_400_000 - 60_000).toISOString();
+  const perDay = { [inDays(-1)]: 1, [inDays(0)]: 2, [inDays(1)]: 1 };
+  const exam = await admin()
+    .from("exams")
+    .insert({ id: crypto.randomUUID(), owner_id: student.id, course_id: F.course, title: "Quiz 3", date: inDays(2), topic_ids: [], cramming: true, scope: { objectives: [], sources: [], budget: { hours: 4, daysOut: [], since, perDay } } });
+  if (exam.error) throw new Error(`Couldn't seed the exam: ${exam.error.message}`);
+  const timer = await admin()
+    .from("study_timers")
+    .insert({ owner_id: student.id, course_id: F.course, started_at: new Date(Date.now() - 50 * 60_000).toISOString(), ended_at: new Date(Date.now() - 10 * 60_000).toISOString() });
+  if (timer.error) throw new Error(`Couldn't seed the timer: ${timer.error.message}`);
+
+  await page.goto(`/course/${SLUG}/cram?tab=progress`);
+  await expect(page.locator("[data-part=cram-budget-note]")).toHaveText("40m studied");
+  await expect(page.locator("[data-part=cram-spent]")).toHaveText("40m");
+  await expect(page.locator("[data-part=progress-source][data-source=timer]")).toContainText("40m");
+});

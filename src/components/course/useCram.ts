@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import type { SessionLine } from "@/lib/connector/mcp";
 import { examReadiness, typePlanTopics, typesTouchedSince, type ExamReadiness, type ProblemAttempt } from "@/lib/course/readiness";
 import type { Course, Exam } from "@/lib/data";
-import { claudeMinutesByDay, connectorMinutesByDay, planTopics, spentMinutesByDayInOrca, spentMinutesInOrca, touchedObjectives } from "@/lib/course/cram-page";
+import { planTopics, touchedObjectives } from "@/lib/course/cram-page";
+import { useStudyDays } from "@/components/study/useStudyDays";
 import { cramPlan, type CramPlan, type CramPlanInput, type SpentMinutes } from "@/lib/mastery/cram-plan";
 import type { CourseMastery } from "@/lib/mastery/course-mastery";
 import { useDayKey, useOrca } from "@/lib/store";
@@ -13,49 +14,42 @@ import { useNow } from "@/hooks/useNow";
 /**
  * The exam's cram plan, computed in the browser from the store (cram mode contract, section 6):
  * null until the exam has a time budget (set at the page's setup). Spent minutes are the course's
- * finished sessions since the budget's `since` plus the time studied with Claude (its connector
- * evidence in stretches, `connectorMinutesByDay`, as `course_state` counts it), split at today and by
- * day. The topics' covered state reads the store's evidence since then. The vault's held-back exams
- * are the practice tests the plan places on days.
+ * study time since the budget's `since`, counted as the progress page counts it (`useStudyDays`:
+ * finished sessions, time with Claude, the study timer including a running one, overlaps once),
+ * split at today and by day; `studyLoaded` is false until the server's part of that is read (the plan
+ * then knows no day's minutes). The topics' covered state reads the store's evidence since then. The
+ * vault's held-back exams are the practice tests the plan places on days.
  */
-export function useCramPlan(course: Course | undefined, exam: Exam | null, mastery: CourseMastery | undefined, log: StudyLog | null = null): { plan: CramPlan; spentMinutes: SpentMinutes; topics: CramPlanInput["topics"]; readiness: ExamReadiness | null; split: StudySplit } | null {
-  const { objectives, relations, results, evidence, materials } = useOrca();
+export function useCramPlan(course: Course | undefined, exam: Exam | null, mastery: CourseMastery | undefined, log: StudyLog | null = null): { plan: CramPlan; spentMinutes: SpentMinutes; topics: CramPlanInput["topics"]; readiness: ExamReadiness | null; split: StudySplit; studyLoaded: boolean } | null {
+  const { objectives, relations, evidence, materials } = useOrca();
   const dayKey = useDayKey();
   const nowMs = useNow();
   const budget = exam?.scope?.budget;
+  const days = useStudyDays(course && budget ? { courseId: course.id, since: budget.since } : { courseId: "", since: "" });
   return useMemo(() => {
     if (!course || !mastery || !exam || !budget) return null;
     const today = dayKey(new Date(nowMs).toISOString());
-    const inOrca = spentMinutesInOrca(results, course.id, budget.since, today, dayKey);
-    const spentByDay = spentMinutesByDayInOrca(results, course.id, budget.since, dayKey);
-    const mine = evidence.filter((e) => e.courseId === course.id && e.at >= budget.since);
-    const estimated = connectorMinutesByDay(mine.map((e) => ({ at: e.at, source: "source" in e ? e.source : null, flagSource: e.kind === "confusion" ? e.flagSource : null })), dayKey);
-    // What Claude logged for a day (log_session) wins when it's more than the estimate; sittings before the cram started don't count.
-    const logged: Record<string, number> = {};
-    for (const sitting of log?.sittings ?? []) if (sitting.at >= budget.since) logged[sitting.day] = (logged[sitting.day] ?? 0) + sitting.minutes;
-    const withClaude = claudeMinutesByDay(estimated, logged);
-    const spentMinutes = { ...inOrca };
-    // Each day's minutes in the app and with Claude, kept apart for the progress tab's chart.
+    const spentMinutes = { beforeToday: 0, today: 0 };
     const split: StudySplit = {};
-    for (const [day, minutes] of Object.entries(spentByDay)) split[day] = { app: minutes, claude: 0 };
-    for (const [day, minutes] of withClaude) {
-      spentByDay[day] = (spentByDay[day] ?? 0) + minutes;
-      split[day] = { app: split[day]?.app ?? 0, claude: minutes };
-      if (day === today) spentMinutes.today += minutes;
-      else if (day < today) spentMinutes.beforeToday += minutes;
+    for (const d of days ?? []) {
+      const minutes = d.app + d.claude + d.timer;
+      split[d.day] = { app: d.app, claude: d.claude, timer: d.timer };
+      if (d.day === today) spentMinutes.today += minutes;
+      else if (d.day < today) spentMinutes.beforeToday += minutes;
     }
+    const spentByDay = days ? Object.fromEntries(Object.entries(split).map(([day, x]) => [day, x.app + x.claude + x.timer])) : undefined;
     // With an exam map the plan's units are its kinds of problem (ready = done, touched = attempted since); else the course's topics.
     const types = exam.scope?.problemTypes ?? [];
     const readiness = types.length ? examReadiness(types, log?.attempts ?? []) : null;
     const topics = readiness ? typePlanTopics(readiness) : planTopics(exam, course.topics, objectives[course.id] ?? {}, relations[course.id] ?? [], (id) => mastery.objectives.get(id)?.status ?? "unseen");
     const touchedObjectiveIds = readiness ? typesTouchedSince(log?.attempts ?? [], budget.since) : touchedObjectives(evidence, course.id, budget.since);
     const mocks = materials.filter((m) => m.courseId === course.id && m.heldBack).sort((a, b) => Number(b.id === exam.scope?.reservedMaterialId) - Number(a.id === exam.scope?.reservedMaterialId)).map((m) => ({ materialId: m.id, name: m.filename, ...(exam.scope?.format?.minutes ? { minutes: exam.scope.format.minutes } : {}) }));
-    return { plan: cramPlan({ today, examDate: exam.date, budget, topics, spentMinutes, spentByDay, touchedObjectiveIds, mocks, unit: readiness ? "problem-type" : "topic" }), spentMinutes, topics, readiness, split };
-  }, [exam, budget, course, objectives, relations, results, evidence, materials, mastery, dayKey, nowMs, log]);
+    return { plan: cramPlan({ today, examDate: exam.date, budget, topics, spentMinutes, ...(spentByDay ? { spentByDay } : {}), touchedObjectiveIds, mocks, unit: readiness ? "problem-type" : "topic" }), spentMinutes, topics, readiness, split, studyLoaded: days !== null };
+  }, [exam, budget, course, objectives, relations, evidence, materials, mastery, dayKey, nowMs, log, days]);
 }
 
-/** Minutes studied each day since the cram started, in the app (finished sessions) and with Claude. */
-export type StudySplit = Record<string, { app: number; claude: number }>;
+/** Minutes studied each day since the cram started, by source: in Orca, with Claude and on the study timer. */
+export type StudySplit = Record<string, { app: number; claude: number; timer: number }>;
 
 /**
  * Whether the student's Claude is connected (a connector token exists), read once a cramming state
