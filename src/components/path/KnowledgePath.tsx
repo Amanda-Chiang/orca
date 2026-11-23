@@ -14,6 +14,8 @@ import { revealDown } from "@/lib/motion";
 
 export const PATH_W = 854;
 
+type CramView = "weak" | "exam" | "all";
+
 const WAVES: Array<{ x: number; y: number; w: 60 | 70 | 80 | 90 }> = [
   { x: 60, y: 300, w: 70 },
   { x: 700, y: 480, w: 80 },
@@ -51,10 +53,13 @@ export function KnowledgePath({ course, progress, onStart, warmUp, examTopics = 
   };
   const all = trailTopics(course);
   const [showAll, setShowAll] = useState(false);
+  // Cram mode's view (owner, 2026-11-22): the exam's topics with weak spots, all the exam's topics, or every topic (the rest faint).
+  const [cramView, setCramView] = useState<CramView>("exam");
   const weak = all.filter((t) => progressOf(t).status !== "not-started");
   const onExam = examTopics ? all.filter((t) => examTopics.has(t.id)) : null;
-  const base = onExam ?? weak;
-  const filtered = !showAll && base.length < all.length;
+  const weakOnExam = onExam ? onExam.filter((t) => progressOf(t).status !== "not-started") : null;
+  const base = onExam ? (cramView === "weak" ? weakOnExam! : onExam) : weak;
+  const filtered = onExam ? cramView !== "all" && base.length < all.length : !showAll && base.length < all.length;
   // The shown topics take the first spots of the default layout, so the trail has no gaps.
   const spots = filtered ? defaultTopicPositions(base.length) : null;
   const topics = filtered ? base.map((t, i) => ({ ...t, pos: spots![i] })) : all;
@@ -87,12 +92,44 @@ export function KnowledgePath({ course, progress, onStart, warmUp, examTopics = 
     return () => cancelAnimationFrame(frame);
   }, [course.id, currentTopicId, currentTopicY, ref, scale]);
 
-  const toggle =
-    base.length < all.length ? (
-      <Button size="sm" variant="ghost" onClick={() => setShowAll((v) => !v)} data-part="path-show-all">
-        {onExam ? (showAll ? "Show exam topics only" : `Show ${all.length - base.length} other topic${all.length - base.length === 1 ? "" : "s"}`) : showAll ? "Show weak spots only" : `Show all ${all.length} topics`}
-      </Button>
-    ) : null;
+  const toggle = onExam ? (
+    <div role="tablist" aria-label="Which topics" className="flex items-center gap-[6px] rounded-pill bg-parchment p-[4px] ring-2 ring-inset ring-alice-deep" data-part="path-cram-view">
+      {(
+        [
+          ["weak", "Weak spots", weakOnExam!.length],
+          ["exam", "Exam", onExam.length],
+          ["all", "All", all.length],
+        ] as const
+      ).map(([key, label, count]) => (
+        <button
+          key={key}
+          type="button"
+          role="tab"
+          aria-selected={cramView === key}
+          onClick={() => setCramView(key)}
+          data-view={key}
+          className={`pressable flex items-center gap-[6px] rounded-pill px-[14px] py-[6px] text-[13px] font-bold ${cramView === key ? "bg-wisteria text-parchment" : "text-prussian"}`}
+        >
+          {label}
+          <span className="text-[12px] opacity-70">{count}</span>
+        </button>
+      ))}
+    </div>
+  ) : weak.length < all.length ? (
+    <Button size="sm" variant="ghost" onClick={() => setShowAll((v) => !v)} data-part="path-show-all">
+      {showAll ? "Show weak spots only" : `Show all ${all.length} topics`}
+    </Button>
+  ) : null;
+
+  if (filtered && onExam && cramView === "weak" && base.length === 0) {
+    return (
+      <div className="absolute inset-0 flex flex-col items-center justify-center gap-[12px] px-[80px] text-center" data-part="path-no-exam-weak-spots">
+        <p className="text-[22px] font-bold text-prussian">No weak spots on this exam&apos;s topics yet.</p>
+        <p className="max-w-[460px] text-[16px] text-wisteria-deep">Study with Claude, or try a topic: a miss becomes a weak spot.</p>
+        {toggle}
+      </div>
+    );
+  }
 
   if (filtered && onExam && onExam.length === 0) {
     return (

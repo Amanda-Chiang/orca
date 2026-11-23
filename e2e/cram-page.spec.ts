@@ -93,9 +93,9 @@ test("setup picks the files and the hours for each day, one at 0; the page then 
   // The budget is on the Your Progress tab; the page opens on Today.
   await cram.locator("[data-part=cram-tab-progress]").click();
   await expect(cram.locator("[data-part=cram-budget]")).toHaveText("9.5 of 9.5 h");
-  await expect(cram.locator("[data-part=cram-budget-note]")).toHaveText("0 min studied");
-  await expect(cram.locator("[data-part=cram-spent]")).toHaveText("0 of 120 min");
-  await expect(cram.locator("[data-part=cram-spent-note]")).toHaveText("120 min left today");
+  await expect(cram.locator("[data-part=cram-budget-note]")).toHaveText("0m studied");
+  await expect(cram.locator("[data-part=cram-spent]")).toHaveText("0m");
+  await expect(cram.locator("[data-part=cram-spent-note]")).toHaveText("of 2h 00m · 2h 00m left");
   await expect(cram.locator("[data-part=cram-plan]")).toHaveText("0%");
   await expect(cram.locator("[data-part=cram-exam-day]")).toHaveText("In 5 days");
   await cram.locator("[data-part=cram-tab-today]").click();
@@ -194,8 +194,8 @@ test("the schedule shows a column per day of the cram with its hours and topics,
   const cram = page.locator("[data-part=cram-page]");
   await expect(cram).toHaveAttribute("data-cramming", "1");
   await cram.locator("[data-part=cram-tab-progress]").click();
-  await expect(cram.locator("[data-part=cram-budget-note]")).toHaveText("60 min studied");
-  await expect(cram.locator("[data-part=cram-spent-note]")).toHaveText("120 min left today");
+  await expect(cram.locator("[data-part=cram-budget-note]")).toHaveText("1h 00m studied");
+  await expect(cram.locator("[data-part=cram-spent-note]")).toHaveText("of 2h 00m · 2h 00m left");
   await cram.locator("[data-part=cram-tab-today]").click();
   // Three columns, yesterday to tomorrow, each with its hours; today highlighted; yesterday past and met (60 minutes studied of the 60 asked).
   const cols = cram.locator("[data-part=cram-schedule] [data-part=cram-day-col]");

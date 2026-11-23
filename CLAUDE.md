@@ -145,9 +145,9 @@ own courses (Data Structures, Fundamentals of Computer Systems) on the hosted pr
   pages (Path, List, Atlas, the cram page, uploads & review, objectives, settings) are dark below the light top bar (`AppShell cram`, or `data-cram` on the cram page's Screen; `[data-cram]` in
   `globals.css` redefines the light tokens), the due sidebar goes (`AppShell sidebar={false}`), the course's to-do
   cards drop out everywhere (`useTodos`; the home count and the calendar's reviews too), the warm-up and the
-  course-wide Dive in pill hide (topic dives stay, exam topics only), Path and List show the exam's topics ("Show N
+  course-wide Dive in pill hide (topic dives stay, exam topics only), Path has a Weak spots / Exam / All switch (`path-cram-view`, Exam by default), Path and List show the exam's topics ("Show N
   other topics": faint, `data-off-exam`, not playable), the Atlas draws the others faint until a neighbour is
-  hovered (`TopicGraph muted`), the red (`cram` token) CRAM MODE banner (`CramBanner`, `data-part="cram-banner"`) sits on top, the nav (calendar, add material, the course's settings) floats at the bottom right, the top bar over those pages is the blue of cram mode's path rims (`alice-deep` under its tokens), the logo's orca keeps its colours (`orca-body`, `orca-belly`), the dive covers the whole window, the home island (a dark face and the rim of a not-started topic on cram mode's path around the usual purple middle, `Island cram`) and its name take the dark look with the path's pulsing halo behind (`island-halo`, the spot `data-cramming`), the sidebar opens with a red cram card per cramming course (`CramCards`, `data-part="cram-card"`: the course, the exam, days left, % of its objectives verified, to the cram page), and the calendar marks the crammed exam red and the course's other entries with a red ring, with a Cramming key and "· cramming" in the course filter. One exam per course crams at a time
+  hovered (`TopicGraph muted`), the red (`cram` token) CRAM MODE banner (`CramBanner`, `data-part="cram-banner"`) sits on top, the nav (calendar, add material, the course's settings) floats at the bottom right, the top bar over those pages is the blue of cram mode's path rims (`alice-deep` under its tokens), the logo's orca keeps its colours (`orca-body`, `orca-belly`), the dive covers the whole window, the home island (the rim of a not-started topic on cram mode's path, a purple ring inside it and a dark centre, `Island cram`) and its name take the dark look with the path's pulsing halo behind (`island-halo`, the spot `data-cramming`), the sidebar opens with a red cram card per cramming course (`CramCards`, `data-part="cram-card"`: the course, the exam, days left, % of its objectives verified, to the cram page), and the calendar marks the crammed exam red and the course's other entries with a red ring, with a Cramming key and "· cramming" in the course filter. One exam per course crams at a time
   (the store's `updateExam` and the connector's `set_exam`). Assumptions in `docs/TO-DISCUSS.md`; e2e
   `e2e/cram-immersive.spec.ts`.
 - **After a wrong answer** (2026-11-22, owner; `src/lib/quiz/after-miss.ts`, `src/components/quiz/AfterMiss.tsx`): the
@@ -161,8 +161,10 @@ own courses (Data Structures, Fundamentals of Computer Systems) on the hosted pr
   tiles, the last two weeks stacked by course color (`study-*` tokens in `globals.css`), sources, and each exam's time
   since the exam before it. The timer (`study_timers`, migration `20261123090000`, server-write only through
   `POST /api/study-timer`; `GET /api/study-time`) runs one at a time, counts at most 4 hours, and floats as a pill
-  (`src/components/study/StudyTime.tsx`); a course page has Start study session. The cram plan doesn't count timer
-  time yet.
+  (`src/components/study/StudyTime.tsx`); a course page has Start study session. The cram plan counts the same minutes
+  (`useStudyDays` scoped to the course from the cram's start, a running timer included), and the cram page's Your
+  Progress uses the same tiles, source colors and timer (`src/components/study/StudyParts.tsx`); the connector's
+  `course_state` still counts only Orca and Claude time.
 - **Upload toasts** (2026-11-08, `src/components/layout/UploadToasts.tsx`, mounted in `providers.tsx`): an upload
   that finishes (done or failed) while the app is open, from any tab or device, pops a toast unless the student is on
   that course's uploads; uploads of one course finishing while its toast is up share it. One upload's toast opens
