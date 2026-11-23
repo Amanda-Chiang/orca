@@ -126,7 +126,7 @@ export function KnowledgeMap({ courses, dueCount, cramming = () => false }: { co
                   />
                 )}
                 {/* In cram mode the island and its name take cram mode's dark look (owner, 2026-11-22); the halo stays light. */}
-                <Island variant={c.variant} level={levelOf(c.id)} float seed={i} data-cram={cramming(c.id) ? "1" : undefined} />
+                <Island variant={c.variant} level={levelOf(c.id)} float seed={i} cram={cramming(c.id)} data-cram={cramming(c.id) ? "1" : undefined} />
               </motion.button>
               <div className="absolute left-1/2 -translate-x-1/2" style={{ top: 196 }} data-cram={cramming(c.id) ? "1" : undefined}>
                 <LabelPill count={dueCount(c.id)} onClick={() => router.push(`/course/${c.slug}`)} aria-label={`Open ${c.name}, ${dueCount(c.id)} due today`} title={c.name} style={{ maxWidth: ISLAND_LAYOUT.pillMax }}>

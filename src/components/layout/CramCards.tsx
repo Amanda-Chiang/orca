@@ -38,7 +38,7 @@ export function CramCards({ courses }: { courses: readonly Course[] }) {
             href={`/course/${course.slug}/cram`}
             data-part="cram-card"
             data-course={course.id}
-            className="pressable flex flex-col gap-[6px] rounded-[18px] bg-bad px-[16px] py-[12px] text-parchment lip-4 lip-bad"
+            className="pressable flex flex-col gap-[6px] rounded-[18px] bg-cram px-[16px] py-[12px] text-parchment lip-4 lip-cram"
           >
             <span className="break-words text-[11px] font-bold uppercase tracking-[1.4px]">Cram for {course.name}</span>
             <span className="flex items-baseline justify-between gap-[10px]">
@@ -48,7 +48,7 @@ export function CramCards({ courses }: { courses: readonly Course[] }) {
               </span>
             </span>
             <span className="flex items-center gap-[10px]">
-              <span className="h-[8px] flex-1 overflow-hidden rounded-pill bg-bad-deep" aria-hidden>
+              <span className="h-[8px] flex-1 overflow-hidden rounded-pill bg-cram-deep" aria-hidden>
                 <span className="block h-full rounded-pill bg-parchment" style={{ width: `${share}%` }} />
               </span>
               <span className="shrink-0 text-[13px] font-semibold" data-part="cram-card-progress">

@@ -25,7 +25,7 @@ const ICON_BUTTON = "pressable inline-flex h-[48px] w-[48px] items-center justif
 export function TopBar() {
   const pathname = usePathname();
   const { status, avatar, courses } = useOrca();
-  // Over a course in cram mode: dark grey (slate), with cram mode's tokens for what's on it (owner, 2026-11-22).
+  // Over a course in cram mode: the blue of cram mode's path rims (alice-deep under its tokens), with cram mode's tokens for what's on it (owner, 2026-11-22).
   const slug = CRAM_PAGES.exec(pathname)?.[1];
   const cram = useCramming(slug ? courses.find((c) => c.slug === slug)?.id : undefined);
   const { preview } = useAvatarPreview();
@@ -37,7 +37,7 @@ export function TopBar() {
       data-part="top-bar"
       data-cram={cram ? "1" : undefined}
       // Above cram mode's dive (CramCurtain), which covers the whole window when the bar has scrolled away.
-      className={`relative z-50 flex h-[var(--topbar-h)] shrink-0 items-center justify-between border-b-2 border-line px-[20px] sm:px-[28px] ${cram ? "bg-slate" : "bg-page"}`}
+      className={`relative z-50 flex h-[var(--topbar-h)] shrink-0 items-center justify-between border-b-2 border-line px-[20px] sm:px-[28px] ${cram ? "bg-alice-deep" : "bg-page"}`}
     >
       <Link href="/" aria-label="Orca home" className="flex items-center gap-[12px]">
         <OrcaLogo waves shadow={false} width={60} />

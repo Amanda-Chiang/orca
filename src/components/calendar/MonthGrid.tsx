@@ -81,7 +81,7 @@ export function MonthGrid({ cursor, events, today, cram }: { cursor: Date; event
                     title={e.title}
                     data-part="event"
                     data-cramming={cram?.exams.has(e.id) ? "exam" : e.courseId && cram?.courses.has(e.courseId) ? "course" : undefined}
-                    className={cram?.exams.has(e.id) ? "bg-bad! text-parchment" : e.courseId && cram?.courses.has(e.courseId) ? "ring-2 ring-inset ring-bad" : undefined}
+                    className={cram?.exams.has(e.id) ? "bg-cram! text-parchment" : e.courseId && cram?.courses.has(e.courseId) ? "ring-2 ring-inset ring-cram" : undefined}
                   >
                     {e.title}
                   </Tag>

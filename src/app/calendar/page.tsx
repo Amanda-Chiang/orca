@@ -88,7 +88,7 @@ export default function CalendarPage() {
             <Tag key={k} kind={k} size="md" />
           ))}
           {cram.courses.size > 0 && (
-            <span className="inline-flex items-center rounded-pill bg-bad px-[14px] py-[8px] text-[13px] font-bold leading-none text-parchment" data-part="cram-legend">
+            <span className="inline-flex items-center rounded-pill bg-cram px-[14px] py-[8px] text-[13px] font-bold leading-none text-parchment" data-part="cram-legend">
               Cramming
             </span>
           )}

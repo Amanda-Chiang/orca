@@ -43,8 +43,9 @@ function arcPath(r: number): string {
 export function OrcaLogo({ width = 150, swim = false, shadow = true, tone = "dark", waves = false, className, ...rest }: OrcaLogoProps) {
   const boxWidth = waves ? 178 : 150;
   const height = (width * 123.853) / boxWidth;
-  const body = tone === "dark" ? "var(--color-prussian)" : "var(--color-periwinkle)";
-  const belly = tone === "dark" ? "var(--color-parchment)" : "var(--color-alice)";
+  // Its own colours (globals.css), so cram mode's dark tokens don't invert the orca.
+  const body = tone === "dark" ? "var(--color-orca-body)" : "var(--color-periwinkle)";
+  const belly = tone === "dark" ? "var(--color-orca-belly)" : "var(--color-alice)";
 
   return (
     <motion.div
