@@ -29,6 +29,11 @@ export function examTopicIds(exam: Pick<Exam, "topicIds" | "scope">, topics: rea
   return ids;
 }
 
+/** Days left to an exam as the cram banner and sidebar say it: "Exam day", "Tomorrow", "5 days left". */
+export function daysLeftText(days: number): string {
+  return days === 0 ? "Exam day" : days === 1 ? "Tomorrow" : `${days} days left`;
+}
+
 const utcDay = (day: string) => {
   const [y, m, d] = day.split("-").map(Number);
   return Date.UTC(y, m - 1, d);

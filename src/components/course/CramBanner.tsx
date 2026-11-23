@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { motion } from "motion/react";
 import type { Course, Exam } from "@/lib/data";
-import { daysUntil } from "@/lib/course/exam-card";
+import { daysLeftText, daysUntil } from "@/lib/course/exam-card";
 import { useConnectorStatus } from "@/components/course/useCram";
 import { useOrca } from "@/lib/store";
 import { useToday } from "@/hooks/useToday";
@@ -14,7 +14,6 @@ import { IconSound, IconSoundOff } from "@/components/icons";
 /** Height of the banner: the course pages push their header down by this in cram mode. */
 export const CRAM_BANNER_H = 48;
 
-const daysText = (days: number) => (days === 0 ? "Exam day" : days === 1 ? "Tomorrow" : `${days} days left`);
 
 const PILL = "pressable rounded-pill bg-parchment px-[12px] py-[5px] text-[13px] font-bold text-prussian ring-2 ring-inset ring-alice-deep lip-2 lip-alice";
 
@@ -40,7 +39,7 @@ export function CramBanner({ course, exam }: { course: Pick<Course, "slug">; exa
       <span className="text-[14px] font-bold uppercase tracking-[1.5px]">Cram mode</span>
       <span className="truncate text-[15px] font-bold">
         {exam.title}
-        {today && <span className="font-semibold"> · {daysText(daysUntil(exam.date, today))}</span>}
+        {today && <span className="font-semibold"> · {daysLeftText(daysUntil(exam.date, today))}</span>}
       </span>
       <div className="ml-auto flex shrink-0 items-center gap-[8px]">
         {/* The dive's bubbles (src/lib/cram-sound.ts): on until turned off, kept in this browser. */}
