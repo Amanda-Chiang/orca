@@ -33,16 +33,26 @@ test("the status slider: Discard leaves it; Mark mastered records a mark that su
 
   await row.locator('[data-part=status-stop][data-stop="mastered"]').click();
   await page.locator("[data-part=status-confirm-yes]").click();
-  // The slider holds what was confirmed while the server records it (it used to drop back first).
-  expect(await row.locator("[data-part=status-pill]").textContent()).toBe("Mastered");
-  await expect(row).toHaveAttribute("data-status", "mastered");
-  await expect(row.locator("[data-part=marked-by-you]")).toBeVisible();
+  // Mastered topics live under Previous; the row moves there at once and holds Mastered while the server records it.
+  await expect(page.locator("[data-part=weak-row]")).toHaveCount(0);
+  await expect(page.locator("[data-part=list-empty]")).toContainText("Nothing to work on right now");
+  await page.locator('[data-part=list-tab][data-tab="previous"]').click();
+  const done = page.locator("[data-part=weak-row]").first();
+  await expect(done.locator("[data-part=status-pill]")).toHaveText("Mastered");
+  await expect(done).toHaveAttribute("data-status", "mastered");
+  await expect(done.locator("[data-part=marked-by-you]")).toBeVisible();
+  const today = new Date().toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  await expect(done.locator("[data-part=mastered-on]")).toHaveText(`Mastered ${today}`);
   expect((await stored(page, student)).evidence.filter((e) => e.kind === "mark").map((e) => e.objectiveId)).toEqual([F.signExtend]);
   await page.reload();
+  await expect(page.locator('[data-part=list-tab][data-tab="previous"]')).toContainText("1");
+  await page.locator('[data-part=list-tab][data-tab="previous"]').click();
   await expect(page.locator("[data-part=weak-row]").first()).toHaveAttribute("data-status", "mastered");
 
+  // Back to Needs review from Previous: it returns to Current.
   await page.locator('[data-part=weak-row] [data-part=status-stop][data-stop="needs-review"]').click();
   await expect(page.locator("[data-part=status-confirm]")).toContainText("Move Two's Complement back to Needs review?");
   await page.locator("[data-part=status-confirm-yes]").click();
+  await page.locator('[data-part=list-tab][data-tab="current"]').click();
   await expect(page.locator("[data-part=weak-row]").first()).toHaveAttribute("data-status", "needs-review");
 });
