@@ -8,7 +8,7 @@ import { askableQuestions } from "@/lib/askable";
 import { canFlagHard } from "@/lib/mastery/flags";
 import { warmUpCandidates } from "@/lib/mastery/warmup";
 import { durationSeconds } from "@/lib/mastery/session";
-import { useAgenda, useCourse, useCramming, useMasteryByCourse, useOrca } from "@/lib/store";
+import { useAgenda, useCourse, useCramming, useDayKey, useMasteryByCourse, useOrca } from "@/lib/store";
 import { AppShell } from "@/components/layout/AppShell";
 import { BackButton } from "@/components/layout/BackButton";
 import { Button } from "@/components/ui/Button";
@@ -16,13 +16,14 @@ import { ProgressBar } from "@/components/ui/ProgressBar";
 import { KnowledgePath } from "@/components/path/KnowledgePath";
 import { AtlasSwitch } from "@/components/atlas/AtlasSwitch";
 import { ExamsModal } from "@/components/config/ExamsModal";
-import { ExamCard } from "@/components/course/ExamCard";
 import { CramBanner } from "@/components/course/CramBanner";
+import { cardExam } from "@/lib/course/exam-card";
 import { useCramTheme } from "@/components/course/CramTheme";
 import { UploadsLink } from "@/components/course/UploadsLink";
 import { duration, useUserMetrics } from "@/components/settings/YourMetrics";
 import { fadeUp, stagger } from "@/lib/motion";
 import { COURSE_NAME_MAX, DEFAULT_CONFIG, trailTopics } from "@/lib/data";
+import { useNow } from "@/hooks/useNow";
 import Link from "next/link";
 
 export default function CoursePage({ params }: PageProps<"/course/[slug]">) {
@@ -41,6 +42,11 @@ export default function CoursePage({ params }: PageProps<"/course/[slug]">) {
   // Cram mode (owner, 2026-11-22): the exam being crammed for and its topics; null otherwise.
   const cram = useCramming(course?.id);
   useCramTheme(!!cram);
+  const { exams } = useOrca();
+  const dayKey = useDayKey();
+  const nowMs = useNow();
+  // The exam "Enter cram mode" opens the setup for: the course's next one (cardExam).
+  const nextExam = course ? cardExam(exams, course.id, dayKey(new Date(nowMs).toISOString())) : null;
 
   if (!course) {
     return (
@@ -139,25 +145,13 @@ export default function CoursePage({ params }: PageProps<"/course/[slug]">) {
         <button type="button" onClick={() => setEditingExams(true)} data-part="edit-exams" className="pressable rounded-pill bg-prussian px-[14px] py-[7px] text-[13px] font-bold text-parchment lip-2 lip-ink">
           Edit Exams
         </button>
-        {/* A dive can always be started; the cadence only adds "due" when there are weak points. */}
-        {agenda.ranked.length > 0 && !cram && (
-          <div className="group relative">
-            <Link href={`/session/${course.slug}?kind=deep`} data-part="start-deep" aria-describedby="dive-in-info" className="pressable rounded-pill bg-parchment px-[14px] py-[7px] text-[13px] font-bold text-prussian ring-2 ring-inset ring-alice-deep lip-2 lip-alice">
-              Dive in{agenda.deepReview.due ? " · due" : ""}
-            </Link>
-            <div id="dive-in-info" role="tooltip" className="pointer-events-none absolute right-0 top-full z-10 mt-[10px] w-[248px] rounded-[14px] border-2 border-alice-deep bg-parchment px-[14px] py-[11px] text-left text-[13px] font-semibold leading-[1.35] text-prussian opacity-0 shadow-[0_5px_0_var(--color-alice-deep)] transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
-              <span className="block font-bold">A dive.</span>
-              Harder questions on this course, written when you start
-            </div>
-          </div>
+        {/* Cram mode is entered by hand (owner, 2026-11-22): the cram page's setup for the next exam, which Confirm turns on. */}
+        {!cram && nextExam && (
+          <Link href={`/course/${course.slug}/cram`} data-part="enter-cram" className="pressable rounded-pill bg-parchment px-[14px] py-[7px] text-[13px] font-bold text-prussian ring-2 ring-inset ring-alice-deep lip-2 lip-alice">
+            Enter cram mode
+          </Link>
         )}
       </motion.div>
-      {/* The soonest upcoming exam (or the one being crammed for): days left, scope, verified share, Cram for this exam. */}
-      {!cram && (
-        <div className="absolute right-[28px] top-[84px]">
-          <ExamCard course={course} mastery={m} />
-        </div>
-      )}
       <ExamsModal course={editingExams ? course : null} onClose={closeExams} />
       <DiveModal
         topic={diving}

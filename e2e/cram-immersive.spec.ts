@@ -1,12 +1,11 @@
-import { admin, expect, F, FIXTURE_STATE, fixtureFlags, seedState, stored, test } from "./fixture";
+import { admin, expect, F, FIXTURE_STATE, fixtureFlags, seedState, test } from "./fixture";
 
 /**
  * Cram mode you enter (owner, 2026-11-22; plan docs/superpowers/plans/2026-11-22-cram-mode-immersive.md):
  * while a course crams for an exam its pages go dark (data-cram on <html>), the due sidebar, quick
  * reviews, warm-up and the course-wide dive go, Path and List show the exam's topics (the rest behind
  * "Show N other topics"), the Atlas fades the others, a CRAM MODE banner sits on top, and the home
- * map's island is at night with its cards dropped. One exam per course crams at a time, and cram mode
- * ends by itself once the exam has passed.
+ * map's island is at night with its cards dropped. Cram mode ends by itself once the exam has passed.
  */
 const SLUG = FIXTURE_STATE.courses[0].slug;
 const inDays = (n: number) => {
@@ -15,7 +14,7 @@ const inDays = (n: number) => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
 
-test("cram mode: dark course pages on the exam's topics, reviews paused, banner, night island; one cram per course; ends after the exam", async ({ page, student }) => {
+test("cram mode: dark course pages on the exam's topics, reviews paused, banner, night island; ends after the exam", async ({ page, student }) => {
   // Every fixture objective is a due weak spot, so the course has a quick review and a dive to pause.
   await seedState(student, { ...FIXTURE_STATE, evidence: fixtureFlags() });
   const exam = (title: string, date: string, cramming: boolean) => ({ id: crypto.randomUUID(), owner_id: student.id, course_id: F.course, title, date, topic_ids: [F.twosComplement], cramming, scope: null });
@@ -29,8 +28,7 @@ test("cram mode: dark course pages on the exam's topics, reviews paused, banner,
   const banner = page.locator("[data-part=cram-banner]");
   await expect(banner).toContainText("Final");
   await expect(page.locator("html")).toHaveAttribute("data-cram", "1");
-  await expect(page.locator("[data-part=exam-card]")).toHaveCount(0);
-  await expect(page.locator("[data-part=start-deep]")).toHaveCount(0);
+  await expect(page.locator("[data-part=enter-cram]")).toHaveCount(0);
   await expect(page.locator("aside")).toHaveCount(0);
   await expect(page.locator(`[data-visual][data-topic="${F.twosComplement}"] [data-part=node]`)).toBeVisible();
   await expect(page.locator(`[data-visual][data-topic="${F.booleanAlgebra}"]`)).toHaveCount(0);
@@ -58,19 +56,10 @@ test("cram mode: dark course pages on the exam's topics, reviews paused, banner,
   await expect(page.locator("html")).not.toHaveAttribute("data-cram", "1");
   await expect(page.locator("aside [data-todo]")).toHaveCount(0);
 
-  // One cram per course: cramming for the Quiz stops the Final's.
+  // Once the exam has passed, cram mode is over by itself: no banner, light, Enter cram mode back (for the Quiz).
+  await admin().from("exams").update({ date: inDays(-1) }).eq("id", final.id);
   await page.goto(`/course/${SLUG}`);
-  await page.locator("[data-part=edit-exams]").click();
-  await page.locator("[data-part=exams-modal] [data-part=exam-cramming]").getByRole("switch", { name: "Cramming for Quiz" }).click();
-  await page.keyboard.press("Escape");
-  await expect(banner).toContainText("Quiz");
-  await expect.poll(async () => (await stored(page, student)).exams.map((e) => [e.title, e.cramming]).sort()).toEqual([["Final", false], ["Quiz", true]]);
-
-  // Once the exam has passed, cram mode is over by itself: no banner, light, the dive pill and the card back.
-  await admin().from("exams").update({ date: inDays(-1) }).eq("id", quiz.id);
-  await page.goto(`/course/${SLUG}`);
-  await expect(page.locator("[data-part=exam-card]")).toBeVisible();
   await expect(banner).toHaveCount(0);
   await expect(page.locator("html")).not.toHaveAttribute("data-cram", "1");
-  await expect(page.locator("[data-part=start-deep]")).toBeVisible();
+  await expect(page.locator("[data-part=enter-cram]")).toHaveAttribute("href", `/course/${SLUG}/cram`);
 });

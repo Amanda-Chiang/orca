@@ -1,11 +1,11 @@
 import { admin, expect, F, FIXTURE_STATE, seedFixtureCourse, stored, test } from "./fixture";
 
 /**
- * The exam card on the course page (cram mode contract, sections 5 and 6): the soonest upcoming
- * exam with its days left, scope size and verified share; Cram for this exam goes to the cram
- * page's setup (the professor's words, the files, Add material held back, what feels shaky, hours a day), Confirm stores
- * cramming, the scope and the budget (hours by day), the course page then shows the cram mode banner, and Stop cramming clears
- * it. Edit Exams has the same switch per exam.
+ * Entering cram mode (cram mode contract, sections 5 and 6; owner, 2026-11-22): the course page has no
+ * exam card; Enter cram mode opens the cram page's setup for the next exam (the professor's words, the
+ * files, what feels shaky, hours a day), Confirm stores cramming, the scope and the budget (hours by
+ * day), the course page then shows the cram mode banner, and Stop cramming clears it. Edit Exams has no
+ * Cramming switch.
  */
 const SLUG = FIXTURE_STATE.courses[0].slug;
 const inDays = (n: number) => {
@@ -17,7 +17,7 @@ const WORDS = "Only two's complement, no Boolean algebra.";
 const WORRY = "Sign extension, I always mess it up.";
 const weekday = (day: string) => new Date(`${day}T00:00:00Z`).toLocaleDateString("en-US", { weekday: "long", timeZone: "UTC" });
 
-test("the exam card shows the soonest exam; Cram for this exam opens the page's setup, Confirm stores cramming, the scope and the budget, Stop cramming clears it", async ({ page, student }) => {
+test("Enter cram mode opens the next exam's setup; Confirm stores cramming, the scope and the budget, Stop cramming clears it", async ({ page, student }) => {
   await seedFixtureCourse(student);
   const examId = crypto.randomUUID();
   const seeded = await admin()
@@ -26,15 +26,9 @@ test("the exam card shows the soonest exam; Cram for this exam opens the page's 
   if (seeded.error) throw new Error(`Couldn't seed the exam: ${seeded.error.message}`);
 
   await page.goto(`/course/${SLUG}`);
-  const card = page.locator("[data-part=exam-card]");
-  await expect(card).toContainText("Midterm");
-  await expect(card.locator("[data-part=exam-days]")).toHaveText("5 days left");
-  // Two's Complement has two objectives (convert, sign-extend); nothing answered yet.
-  await expect(card.locator("[data-part=exam-scope]")).toHaveText("2 objectives in scope · 0% verified");
-
-  // Cram for this exam is the cram page's setup (no modal on the card any more).
-  await expect(card.locator("[data-part=cram-start]")).toHaveAttribute("href", `/course/${SLUG}/cram`);
-  await card.locator("[data-part=cram-start]").click();
+  // No exam card on the course page (owner, 2026-11-22): Enter cram mode opens the cram page's setup.
+  await expect(page.locator("[data-part=exam-card]")).toHaveCount(0);
+  await page.locator("[data-part=enter-cram]").click();
   await expect(page).toHaveURL(`/course/${SLUG}/cram`);
   const setup = page.locator("[data-part=cram-setup]");
   await expect(page.locator("h1")).toContainText("Cram for Midterm");
@@ -62,7 +56,6 @@ test("the exam card shows the soonest exam; Cram for this exam opens the page's 
   await page.goto(`/course/${SLUG}`);
   const banner = page.locator("[data-part=cram-banner]");
   await expect(banner).toContainText("Midterm");
-  await expect(card).toHaveCount(0);
   await expect(banner.locator("[data-part=cram-plan]")).toHaveText("Open plan");
   await expect(banner.locator("[data-part=cram-plan]")).toHaveAttribute("href", `/course/${SLUG}/cram`);
   await expect(banner.locator("[data-part=study-with-claude]")).toHaveAttribute("href", "/settings#connector");
@@ -96,20 +89,16 @@ test("the exam card shows the soonest exam; Cram for this exam opens the page's 
   await page.goto(`/course/${SLUG}`);
   await banner.locator("[data-part=cram-stop]").click();
   await expect(banner).toHaveCount(0);
-  await expect(card.locator("[data-part=cram-start]")).toBeVisible();
+  await expect(page.locator("[data-part=enter-cram]")).toBeVisible();
   state = await stored(page, student);
   exam = state.exams.find((e) => e.id === examId)!;
   expect(exam.cramming).toBe(false);
   expect(exam.scope?.sources).toEqual(["professor"]);
 
-  // Edit Exams has a Cramming switch per exam, stored the same way; the banner then links to the page.
+  // Edit Exams has no Cramming switch (owner, 2026-11-22): cram mode is entered from the course page.
   await page.locator("[data-part=edit-exams]").click();
-  const toggle = page.locator("[data-part=exams-modal] [data-part=exam-cramming]").getByRole("switch", { name: "Cramming for Midterm" });
-  await expect(toggle).toHaveAttribute("aria-checked", "false");
-  await toggle.click();
-  await expect(toggle).toHaveAttribute("aria-checked", "true");
+  await expect(page.locator("[data-part=exams-modal] input[aria-label='Exam name']")).toHaveValue("Midterm");
+  await expect(page.locator("[data-part=exams-modal] [data-part=exam-cramming]")).toHaveCount(0);
   await page.keyboard.press("Escape");
-  await expect(banner.locator("[data-part=cram-plan]")).toHaveAttribute("href", `/course/${SLUG}/cram`);
-  state = await stored(page, student);
-  expect(state.exams.find((e) => e.id === examId)!.cramming).toBe(true);
+  await expect(page.locator("[data-part=enter-cram]")).toHaveAttribute("href", `/course/${SLUG}/cram`);
 });

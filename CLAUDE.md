@@ -114,7 +114,7 @@ own courses (Data Structures, Fundamentals of Computer Systems) on the hosted pr
   `src/components/ui/MathText.tsx`); question validation refuses math that doesn't render, and exact
   answers stay plain text.
 - **Since 2026-11-10: cram mode** (contract `docs/superpowers/specs/2026-11-10-cram-mode-contracts.md`; branch
-  `cram-mode`): an exam is *cramming* (a flag, from the exam card or `set_exam`) or within the 7-day window; Claude
+  `cram-mode`): an exam is *cramming* (a flag, from Enter cram mode or `set_exam`) or within the 7-day window; Claude
   writes and grades during a cram, Orca stores, counts and schedules (connector v0.4, rules v4, migration
   `20261110130000`); past and practice exams are held back for a practice test. Details under "What exists".
 - **Since 2026-11-22: Orca as the tutor's memory and exam map** (plan
@@ -147,8 +147,7 @@ own courses (Data Structures, Fundamentals of Computer Systems) on the hosted pr
   cards drop out everywhere (`useTodos`; the home count and the calendar's reviews too), the warm-up and the
   course-wide Dive in pill hide (topic dives stay, exam topics only), Path and List show the exam's topics ("Show N
   other topics": faint, `data-off-exam`, not playable), the Atlas draws the others faint until a neighbour is
-  hovered (`TopicGraph muted`), the CRAM MODE banner (`CramBanner`, `data-part="cram-banner"`) replaces the exam
-  card, and the home island is at night with a "Cram mode" tag (`island-cram`). One exam per course crams at a time
+  hovered (`TopicGraph muted`), the CRAM MODE banner (`CramBanner`, `data-part="cram-banner"`) sits on top, and the home island is at night with a "Cram mode" tag (`island-cram`). One exam per course crams at a time
   (the store's `updateExam` and the connector's `set_exam`). Assumptions in `docs/TO-DISCUSS.md`; e2e
   `e2e/cram-immersive.spec.ts`.
 - **Upload toasts** (2026-11-08, `src/components/layout/UploadToasts.tsx`, mounted in `providers.tsx`): an upload
@@ -509,11 +508,11 @@ All 11 Figma screens are built. Where things live:
   pipeline maps a held-back material's objectives but writes no questions and no warm-up from it; top-ups and dives
   skip it (`sourceFor`); "Keep hidden for a practice test" (`data-part="hold-back"`) on Add material and per batch
   row, a "Held back" badge (`data-part="held-back"`) on the upload card. **Cramming** (`exams.cramming`,
-  `exams.scope`): the exam card (`src/components/course/ExamCard.tsx`, `data-part="exam-card"`) on the course page
-  shows the soonest exam, days left, scope size and verified share; Cram for this exam (`cram-start`) opens the setup
-  (the professor's words as `professor` evidence, Add material held back, worries as manual struggled flags, Confirm
-  sets `cramming`); while cramming: the plan line, Study with Claude (`/settings#connector` until a token exists),
-  Edit scope, Stop cramming (`cram-stop`); the Exams modal has a Cramming switch per exam. Inside the window the agenda
+  `exams.scope`): Enter cram mode (`data-part="enter-cram"`, top right of the course page, in place of the old Dive in
+  pill; since 2026-11-22 there is no exam card and no Cramming switch in the Exams modal) opens the cram page's setup
+  for the next exam (the professor's words as `professor` evidence, the files, worries, hours a day; Confirm sets
+  `cramming`); while cramming the CRAM MODE banner has Open plan, Study with Claude (`/settings#connector` until a
+  token exists) and Stop cramming (`cram-stop`); Edit scope is on the cram page. Inside the window the agenda
   weighs objectives by course × scope weight (`useAgenda`). **Since 2026-11-10 (branch `cram-scope`, after the step 8
   deploy):** the setup picks the files the exam covers (`cram-materials`, one `cram-material[data-id]` per non-removed
   material, lectures and notes ticked, held-back files tickable) and asks hours a day (`cram-hours-pick[data-hours]`,

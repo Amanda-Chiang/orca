@@ -80,7 +80,7 @@ export const TIPS: readonly Tip[] = [
 
   /* ── Reviews ── */
   { id: "quick-review", route: WITH_SIDEBAR, target: 'aside [data-todo="quick"]', title: "Your quick review", body: "A few minutes on the weak spots that are due. I space them out so they stick, on the days you set for the class." },
-  { id: "dive", route: COURSE, target: '[data-part="start-deep"]', after: "quick-review", title: "Dive in", body: "For when you have more time: a longer session of harder questions, written fresh when you start." },
+  { id: "enter-cram", route: COURSE, target: '[data-part="enter-cram"]', after: "edit-exams", title: "Exam coming up?", body: "Enter cram mode when you start studying for it. Tell me what it covers and how much time you have, and this class becomes all about that exam." },
 
   /* ── Later: Settings ── */
   { id: "more-settings", route: WITH_SIDEBAR, target: '[data-part="avatar-settings"]', when: settledIn, title: "There's more in Settings", body: "Connect Canvas or Claude, tell me how you mark your notes, and set question preferences for every class." },

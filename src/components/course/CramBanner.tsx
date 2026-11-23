@@ -5,7 +5,6 @@ import { motion } from "motion/react";
 import type { Course, Exam } from "@/lib/data";
 import { daysUntil } from "@/lib/course/exam-card";
 import { useConnectorStatus } from "@/components/course/useCram";
-import { daysText } from "@/components/course/ExamCard";
 import { useOrca } from "@/lib/store";
 import { useToday } from "@/hooks/useToday";
 import { fadeUp } from "@/lib/motion";
@@ -13,10 +12,12 @@ import { fadeUp } from "@/lib/motion";
 /** Height of the banner: the course pages push their header down by this in cram mode. */
 export const CRAM_BANNER_H = 48;
 
+const daysText = (days: number) => (days === 0 ? "Exam day" : days === 1 ? "Tomorrow" : `${days} days left`);
+
 const PILL = "pressable rounded-pill bg-parchment px-[12px] py-[5px] text-[13px] font-bold text-prussian ring-2 ring-inset ring-alice-deep lip-2 lip-alice";
 
 /**
- * Cram mode's banner across the top of a course page (owner, 2026-11-22), in place of the exam card:
+ * Cram mode's banner across the top of a course page (owner, 2026-11-22), (the exam card it replaced is gone):
  * CRAM MODE, the exam and its days left; Open plan, Study with Claude until the connector is set up,
  * and Stop cramming.
  */
