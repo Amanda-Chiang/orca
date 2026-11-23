@@ -46,9 +46,10 @@ export function ShortAnswer({ question, grading, result, noModel, selfMarkNow = 
   const [submittedLocally, setSubmitted] = useState(false);
   const submittedForSelfReport = submittedLocally || (selfMarkNow && needsSelfReport);
 
+  // Focus on each new question, and again when a miss opens the second try.
   useEffect(() => {
-    ref.current?.focus();
-  }, [question.id]);
+    if (!answered) ref.current?.focus();
+  }, [question.id, answered]);
 
   const submit = () => {
     if (!value.trim() || grading || answered) return;

@@ -150,6 +150,11 @@ own courses (Data Structures, Fundamentals of Computer Systems) on the hosted pr
   hovered (`TopicGraph muted`), the red CRAM MODE banner (`CramBanner`, `data-part="cram-banner"`) sits on top, the nav (calendar, add material, the course's settings) floats at the bottom right, the top bar over those pages is dark grey (`slate`), the dive covers the whole window, the home island and its name take the dark look with the path's pulsing halo behind (`island-halo`, the spot `data-cramming`), the sidebar opens with a red cram card per cramming course (`CramCards`, `data-part="cram-card"`: the course, the exam, days left, % of its objectives verified, to the cram page), and the calendar marks the crammed exam red and the course's other entries with a red ring, with a Cramming key and "· cramming" in the course filter. One exam per course crams at a time
   (the store's `updateExam` and the connector's `set_exam`). Assumptions in `docs/TO-DISCUSS.md`; e2e
   `e2e/cram-immersive.spec.ts`.
+- **After a wrong answer** (2026-11-22, owner; `src/lib/quiz/after-miss.ts`, `src/components/quiz/AfterMiss.tsx`): the
+  miss is recorded at once, then the solution waits: a second try (practice only, nothing recorded; `retry-prompt`,
+  `show-solution`), then "What went wrong?" chips beside the key (shown against the grader's `errorType`, not saved;
+  `spot-mistake`, `spot-skip`), then the Feedback card. A miss also slots another question on the same objective 3
+  questions later, which counts. e2e specs pass a miss with `pastMiss(page)`. Assumptions in `docs/TO-DISCUSS.md`.
 - **Your progress and the study timer** (2026-11-22, branch `study-time`): `/progress` (nav item "Your progress", a link in
   the home stats popover) adds up every minute studied: finished sessions in Orca, Claude's connector stretches and
   logged sittings, and the study timer, counted once where they overlap in a course (`src/lib/course/study-time.ts`);

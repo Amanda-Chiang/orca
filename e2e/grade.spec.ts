@@ -60,6 +60,12 @@ test("a prose answer is graded through the fake API against the stored rubric, k
   await page.goto(`/quiz/logic-e2e/${F.twosComplement}`);
   await page.getByPlaceholder(/One or two sentences/).fill(ANSWER);
   await page.getByRole("button", { name: "Check" }).click();
+  // A partial answer gets a second try first: the grader's feedback (which may name the answer)
+  // waits for the solution; the ideas the answer already had are shown.
+  await expect(page.locator("[data-part=retry-had]")).toContainText("Add one to the result");
+  await expect(page.getByText("Half there: you forgot to invert.")).toHaveCount(0);
+  await page.locator("[data-part=show-solution]").click();
+  await page.locator("[data-part=spot-mistake] [data-choice=concept]").click();
   await expect(page.getByText("Half there: you forgot to invert.")).toBeVisible();
   const state = await stored(page, student);
   expect(state.evidence).toEqual([expect.objectContaining({ kind: "answer", questionId: G.prose, objectiveId: F.convert, outcome: "partial", grader: "rubric" })]);

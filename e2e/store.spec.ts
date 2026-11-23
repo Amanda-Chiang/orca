@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test";
 import type { AnswerEvent, EvidenceEvent } from "../src/lib/mastery/types";
-import { expect, test, F, FIXTURE_STATE, fixtureFlags, seedFixtureCourse, seedState, settled, signIn, stored } from "./fixture";
+import { expect, test, F, FIXTURE_STATE, fixtureFlags, pastMiss, seedFixtureCourse, seedState, settled, signIn, stored } from "./fixture";
 
 /**
  * The store on Supabase: what one browser saves another browser of the same student sees; a save
@@ -23,6 +23,7 @@ test("a second browser signed into the same account sees the same courses and pr
   await page.goto(`/quiz/logic-e2e/${F.booleanAlgebra}`);
   await answerShort(page, "nope");
   await expect(page.getByText("Not quite.", { exact: true })).toBeVisible();
+  await pastMiss(page);
   await page.getByRole("button", { name: "Continue" }).click();
   await answerShort(page, "a + c");
   await expect(page.getByText("Correct.")).toBeVisible();
@@ -116,6 +117,7 @@ test("reloading in the middle of a session keeps the answers given, and the rest
   await expect(page.getByText("1 / 6")).toBeVisible();
   const first = (await page.locator("h1").first().textContent())!.trim();
   await answerShort(page, "0");
+  await pastMiss(page);
   await page.getByRole("button", { name: "Continue" }).click();
   await expect(page.locator("h1").first()).not.toHaveText(first);
   await answerShort(page, "0");
@@ -130,11 +132,15 @@ test("reloading in the middle of a session keeps the answers given, and the rest
   // what's recorded: the two answers stay, nothing is re-asked blindly.
   await page.getByRole("button", { name: "Start a new one" }).click();
   const count = await page.getByText(/^1 \/ \d+$/).textContent();
-  const total = Number(/\/ (\d+)/.exec(count ?? "")?.[1] ?? 0);
-  expect(total).toBeGreaterThan(0);
-  for (let i = 0; i < total; i++) {
+  expect(Number(/\/ (\d+)/.exec(count ?? "")?.[1] ?? 0)).toBeGreaterThan(0);
+  // Every answer here is a miss, which can bring back another question on its objective, so the run
+  // may grow: answer until Finish.
+  let total = 0;
+  for (;;) {
     await expect(page.getByPlaceholder("Type your answer")).toBeEnabled();
     await answerShort(page, "0");
+    total += 1;
+    await pastMiss(page);
     const finish = page.getByRole("button", { name: "Finish" });
     if (await finish.isVisible()) {
       await finish.click();
