@@ -372,13 +372,14 @@ test("the exam map: Claude reads a held-back exam (never the reserved one), stor
   const left = page.locator("[data-part=cram-last-session]");
   await expect(left.locator("[data-part=cram-bookmark]")).toHaveText("Drill 2 half done");
   await expect(left.locator("[data-part=cram-next-steps] li")).toHaveText(["Finish Drill 2", "A timed conversion problem"]);
-  await expect(page.locator("[data-part=cram-spent]")).toContainText("45 min studied");
+  await page.locator("[data-part=cram-tab-progress]").click();
+  await expect(page.locator("[data-part=cram-budget-note]")).toContainText("45 min studied");
   const map = page.locator("[data-part=cram-exam-map]");
   await expect(map).toHaveAttribute("data-mapped", "1");
   await expect(map.locator("[data-part=cram-rules]")).toHaveText("Closed book · simple calculator · 75 min");
   await expect(map.locator("[data-part=cram-problem-type]")).toContainText(["Sign-extend a number"]);
   await expect(map.locator("[data-part=cram-type-state]")).toHaveText(["Ready"]);
-  await expect(page.locator("[data-part=cram-plan]")).toContainText("ready for 1 of 1 kinds of problem");
+  await expect(page.locator("[data-part=cram-plan-note]")).toHaveText("1 of 1 kinds of problem");
   await expect(map.locator("[data-part=cram-map-uncertain]")).toBeVisible();
   // The reserved exam is marked; reserving the other one moves the mark and is saved.
   await expect(page.locator('[data-part=cram-vault-item][data-reserved="1"]')).toContainText("Fall23 Quiz 2.pdf");

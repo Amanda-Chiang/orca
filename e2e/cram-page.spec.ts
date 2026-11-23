@@ -90,8 +90,15 @@ test("setup picks the files and the hours for each day, one at 0; the page then 
   const cram = page.locator("[data-part=cram-page]");
   await expect(cram).toHaveAttribute("data-cramming", "1");
   await expect(page.locator("h1")).toHaveText("Cramming for Midterm");
-  await expect(cram.locator("[data-part=cram-budget]")).toHaveText("9.5 hours left of 9.5");
-  await expect(cram.locator("[data-part=cram-spent]")).toHaveText("0 min studied · 120 min left today");
+  // The budget is on the Your Progress tab; the page opens on Today.
+  await cram.locator("[data-part=cram-tab-progress]").click();
+  await expect(cram.locator("[data-part=cram-budget]")).toHaveText("9.5 of 9.5 h");
+  await expect(cram.locator("[data-part=cram-budget-note]")).toHaveText("0 min studied");
+  await expect(cram.locator("[data-part=cram-spent]")).toHaveText("0 of 120 min");
+  await expect(cram.locator("[data-part=cram-spent-note]")).toHaveText("120 min left today");
+  await expect(cram.locator("[data-part=cram-plan]")).toHaveText("0%");
+  await expect(cram.locator("[data-part=cram-exam-day]")).toHaveText("In 5 days");
+  await cram.locator("[data-part=cram-tab-today]").click();
   // The days and their hours are the schedule's columns (the page shows the hours once).
   const chips = cram.locator("[data-part=cram-schedule] [data-part=cram-day-col]");
   await expect(chips).toHaveCount(5);
@@ -99,7 +106,6 @@ test("setup picks the files and the hours for each day, one at 0; the page then 
   await expect(chips.first()).toHaveAttribute("data-hours", "2");
   await expect(cram.locator(`[data-part=cram-day-col][data-day="${dayOut}"]`)).toHaveAttribute("data-hours", "0");
   await expect(cram.locator(`[data-part=cram-day-col][data-day="${inDays(1)}"] [data-part=cram-day-col-hours]`)).toHaveText("1.5 h");
-  await expect(cram.locator("[data-part=cram-plan]")).toHaveText("5 days to the exam · 0% verified");
   // Weak spots on the page; the per-topic scope opens in a side panel.
   await expect(cram.locator("[data-part=cram-weak] [data-part=cram-weak-item]")).toHaveCount(1);
   await expect(cram.locator("[data-part=cram-topic]")).toHaveCount(0);
@@ -154,7 +160,8 @@ test("setup picks the files and the hours for each day, one at 0; the page then 
   await expect(hoursOn(dayOut)).toHaveValue("3");
   await expect(setup.locator("[data-part=cram-hours-total]")).toHaveText(`15 hours before ${weekday(inDays(5))}, 5 study days`);
   await setup.locator("[data-part=cram-confirm]").click();
-  await expect(cram.locator("[data-part=cram-budget]")).toHaveText("15 hours left of 15");
+  await cram.locator("[data-part=cram-tab-progress]").click();
+  await expect(cram.locator("[data-part=cram-budget]")).toHaveText("15 of 15 h");
   state = await stored(page, student);
   exam = state.exams.find((e) => e.id === examId)!;
   expect(exam.scope?.budget).toEqual({ hours: 15, daysOut: [], since, perDay: Object.fromEntries([0, 1, 2, 3, 4].map((n) => [inDays(n), 3])) });
@@ -186,7 +193,10 @@ test("the schedule shows a column per day of the cram with its hours and topics,
   await page.goto(`/course/${SLUG}/cram`);
   const cram = page.locator("[data-part=cram-page]");
   await expect(cram).toHaveAttribute("data-cramming", "1");
-  await expect(cram.locator("[data-part=cram-spent]")).toHaveText("60 min studied · 120 min left today");
+  await cram.locator("[data-part=cram-tab-progress]").click();
+  await expect(cram.locator("[data-part=cram-budget-note]")).toHaveText("60 min studied");
+  await expect(cram.locator("[data-part=cram-spent-note]")).toHaveText("120 min left today");
+  await cram.locator("[data-part=cram-tab-today]").click();
   // Three columns, yesterday to tomorrow, each with its hours; today highlighted; yesterday past and met (60 minutes studied of the 60 asked).
   const cols = cram.locator("[data-part=cram-schedule] [data-part=cram-day-col]");
   await expect(cols).toHaveCount(3);
