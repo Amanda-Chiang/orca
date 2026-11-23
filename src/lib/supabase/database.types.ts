@@ -508,6 +508,25 @@ isOneToOne: false
       referencedColumns: ["id","owner_id"]
     }
                   ]
+                },"study_timers": {
+                  Row: {
+                    "course_id": string,"ended_at": string | null,"exam_id": string | null,"id": string,"owner_id": string,"started_at": string
+                  }
+                  Insert: {
+                    "course_id": string,"ended_at"?: string | null,"exam_id"?: string | null,"id"?: string,"owner_id": string,"started_at"?: string
+                  }
+                  Update: {
+                    "course_id"?: string,"ended_at"?: string | null,"exam_id"?: string | null,"id"?: string,"owner_id"?: string,"started_at"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "study_timers_course_id_owner_id_fkey"
+      columns: ["course_id","owner_id"]
+isOneToOne: false
+      referencedRelation: "courses"
+      referencedColumns: ["id","owner_id"]
+    }
+                  ]
                 },"topics": {
                   Row: {
                     "archived_with_material": boolean,"course_id": string,"created_at": string,"id": string,"material_id": string | null,"merged_into": string | null,"name": string,"owner_id": string,"pos_x": number,"pos_y": number,"review": string,"sort_order": number,"source": NonNullable<Json>,"summary": string | null,"uncertain": Json | null
