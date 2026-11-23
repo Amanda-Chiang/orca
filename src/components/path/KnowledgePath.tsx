@@ -59,9 +59,9 @@ export function KnowledgePath({ course, progress, onStart, warmUp, examTopics = 
   const spots = filtered ? defaultTopicPositions(base.length) : null;
   const topics = filtered ? base.map((t, i) => ({ ...t, pos: spots![i] })) : all;
   const offExam = (t: Topic) => !!examTopics && !examTopics.has(t.id);
-  // START goes to the first topic in progress, else the first not started; none when everything is done.
-  const firstInProgress = topics.findIndex((t) => progressOf(t).status === "in-progress");
-  const current = firstInProgress >= 0 ? firstInProgress : topics.findIndex((t) => progressOf(t).status === "not-started");
+  // START goes to the first topic in progress, else the first not started; none when everything is done. Never a topic off the exam being crammed for.
+  const firstInProgress = topics.findIndex((t) => !offExam(t) && progressOf(t).status === "in-progress");
+  const current = firstInProgress >= 0 ? firstInProgress : topics.findIndex((t) => !offExam(t) && progressOf(t).status === "not-started");
   const currentTopic = current >= 0 ? topics[current] : null;
   const currentTopicId = currentTopic?.id;
   const currentTopicY = currentTopic?.pos.y;

@@ -341,7 +341,7 @@ function TopicNode({ node: n, active, dim, faint, offExam, onHover, onOpen, onDr
       aria-label={`${n.topic.name}, ${STRENGTH_LABEL[n.strength]}: ${topicSummary(n)}`}
       className="cursor-grab outline-none active:cursor-grabbing"
       data-off-exam={offExam ? "1" : undefined}
-      style={{ opacity: dim ? 0.3 : faint ? 0.25 : 1, transition: "opacity 150ms" }}
+      style={{ opacity: dim ? 0.3 : 1, transition: "opacity 150ms" }}
       onPointerEnter={() => onHover(id)}
       onPointerLeave={() => onHover(null)}
       onPointerDown={(e) => onDragStart(n, e)}
@@ -350,7 +350,8 @@ function TopicNode({ node: n, active, dim, faint, offExam, onHover, onOpen, onDr
       onClick={() => onOpen(id)}
       onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onOpen(id))}
     >
-      <g id={`topic-art-${id}`} transform={`translate(${n.x} ${n.y})`}>
+      {/* Faint on its own group: the entrance animation drives the outer group's opacity. */}
+      <g id={`topic-art-${id}`} transform={`translate(${n.x} ${n.y})`} opacity={faint ? 0.25 : 1} style={{ transition: "opacity 150ms" }}>
         {n.usedIn > 0 && <circle r={n.r + 5} fill={style.fill} opacity={0.6} />}
         {active && <circle r={n.r + 4} fill="none" stroke="var(--color-wisteria-deep)" strokeWidth={2} data-part="topic-ring" />}
         <circle r={n.r} fill={style.fill} stroke={style.stroke} strokeWidth={2.5} strokeDasharray={style.dash} />

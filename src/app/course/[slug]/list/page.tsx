@@ -123,8 +123,8 @@ export default function ListPage({ params }: PageProps<"/course/[slug]/list">) {
                     data-status={status}
                     data-topic={topic.id}
                     data-off-exam={offExam ? "1" : undefined}
-                    style={offExam ? { opacity: 0.4 } : undefined}
-                    className="flex items-center gap-[16px] rounded-[20px] bg-parchment px-[22px] py-[14px] lip-4 lip-alice"
+                    // Faint through its children: the entrance animation drives the row's own opacity.
+                    className={`${offExam ? "[&>*]:opacity-40 " : ""}flex items-center gap-[16px] rounded-[20px] bg-parchment px-[22px] py-[14px] lip-4 lip-alice`}
                   >
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-[19px] font-bold text-prussian">{topic.name}</p>

@@ -33,7 +33,7 @@ export function CramBanner({ course, exam }: { course: Pick<Course, "slug">; exa
       style={{ height: CRAM_BANNER_H }}
       data-part="cram-banner"
     >
-      <span className="eyebrow text-[14px]">Cram mode</span>
+      <span className="text-[14px] font-bold uppercase tracking-[1.5px]">Cram mode</span>
       <span className="truncate text-[15px] font-bold">
         {exam.title}
         {today && <span className="font-semibold"> · {daysText(daysUntil(exam.date, today))}</span>}
