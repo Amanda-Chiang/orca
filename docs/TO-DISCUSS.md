@@ -30,7 +30,7 @@ it runs in every web quiz (`src/lib/quiz/after-miss.ts`). Assumed while building
      else the exam's topics, else every topic).
   3. The calendar drops the crammed course's scheduled reviews too; exams and homework stay.
   4. A session opened by its link still runs; only the buttons that start one are hidden.
-  5. Session and settings pages stay light (the top bar stays light too, owner 2026-11-22).
+  5. Every page of the course is dark, settings, objectives and uploads & review included (owner, 2026-11-22); session pages stay light.
   6. The banner holds Open plan, Study with Claude (until connected) and Stop cramming; Edit scope is on the cram page.
      The exam card is gone (owner: redundant), and with it the course page's only "days until the exam" outside a
      cram; the course-wide Dive in pill gave its place to Enter cram mode (owner), so a course-wide dive starts from

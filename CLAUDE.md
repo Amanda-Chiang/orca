@@ -142,7 +142,7 @@ own courses (Data Structures, Fundamentals of Computer Systems) on the hosted pr
 - **Since 2026-11-22: cram mode you enter** (plan `docs/superpowers/plans/2026-11-22-cram-mode-immersive.md`; owner):
   while a course crams for an exam (`crammingExam` in `src/lib/course/exam-card.ts`: `cramming` and the date not past,
   so it ends by itself the day after; `useCramming(courseId)` in the store gives the exam and `examTopicIds`), its
-  Path, List, Atlas and cram page are dark below the light top bar (`AppShell cram`, or `data-cram` on the cram page's Screen; `[data-cram]` in
+  pages (Path, List, Atlas, the cram page, uploads & review, objectives, settings) are dark below the light top bar (`AppShell cram`, or `data-cram` on the cram page's Screen; `[data-cram]` in
   `globals.css` redefines the light tokens), the due sidebar goes (`AppShell sidebar={false}`), the course's to-do
   cards drop out everywhere (`useTodos`; the home count and the calendar's reviews too), the warm-up and the
   course-wide Dive in pill hide (topic dives stay, exam topics only), Path and List show the exam's topics ("Show N

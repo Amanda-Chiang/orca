@@ -4,7 +4,7 @@ import { use, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "motion/react";
 import { type CourseSchedule, type ReviewConfig, NO_SCHEDULE } from "@/lib/data";
-import { useOrca } from "@/lib/store";
+import { useCramming, useOrca } from "@/lib/store";
 import { BackButton } from "@/components/layout/BackButton";
 import { Screen } from "@/components/layout/Screen";
 import { Card } from "@/components/ui/Card";
@@ -34,6 +34,8 @@ export default function CourseSettingsPage({ params }: PageProps<"/course/[slug]
   const router = useRouter();
   const { courses, configs, configOverrides, courseNotes, schedules, defaultConfig, hydrated, refresh } = useOrca();
   const course = courses.find((item) => item.slug === slug);
+  // Cram mode: every page of a cramming course is dark (owner, 2026-11-22).
+  const cram = useCramming(course?.id);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -91,7 +93,7 @@ export default function CourseSettingsPage({ params }: PageProps<"/course/[slug]
   };
 
   return (
-    <Screen bg="ocean" className="overflow-auto">
+    <Screen bg="ocean" className="overflow-auto" data-cram={cram ? "1" : undefined}>
       <header className="flex items-center gap-[12px] px-[24px] pt-[20px]">
         <BackButton href={`/course/${course.slug}`} />
         <div>
