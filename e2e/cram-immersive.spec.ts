@@ -36,7 +36,13 @@ test("cram mode: dark course pages on the exam's topics, reviews paused, banner,
   await expect(page.locator("aside")).toHaveCount(0);
   await expect(page.locator(`[data-visual][data-topic="${F.twosComplement}"] [data-part=node]`)).toBeVisible();
   await expect(page.locator(`[data-visual][data-topic="${F.booleanAlgebra}"]`)).toHaveCount(0);
-  await page.locator("[data-part=path-show-all]").click();
+  // The view switch: the exam's topics with weak spots, all of the exam's (the default), or every topic (the rest faint).
+  const view = page.locator("[data-part=path-cram-view]");
+  await expect(view.locator("[data-view=exam]")).toHaveAttribute("aria-selected", "true");
+  await view.locator("[data-view=weak]").click();
+  await expect(page.locator(`[data-visual][data-topic="${F.twosComplement}"] [data-part=node]`)).toBeVisible();
+  await expect(page.locator(`[data-visual][data-topic="${F.booleanAlgebra}"]`)).toHaveCount(0);
+  await view.locator("[data-view=all]").click();
   await expect(page.locator(`[data-visual][data-topic="${F.booleanAlgebra}"]`)).toHaveAttribute("data-off-exam", "1");
 
   // List: the exam's topic; the other behind "Show 1 other topic", faint and without a play button.
