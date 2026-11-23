@@ -24,8 +24,8 @@ import { fadeUp, popIn, stagger } from "@/lib/motion";
  * review, in progress, mastered; colours from the Atlas) and a play button that opens its dive.
  * The status is a 3-stop slider (owner, 2026-11-22): moving it to Mastered marks the topic's weak
  * spots mastered (MarkEvent, rules v5), to Needs review flags them hard again; a pop-up confirms.
- * Current and Previous tabs (owner, 2026-11-22): mastered topics move to Previous, with the day they
- * were mastered.
+ * All, Current and Previous tabs (owner, 2026-11-22): mastered topics move to Previous, with the day
+ * they were mastered; All lists the current ones first, then the mastered.
  */
 export default function ListPage({ params }: PageProps<"/course/[slug]/list">) {
   const { slug } = use(params);
@@ -37,7 +37,7 @@ export default function ListPage({ params }: PageProps<"/course/[slug]/list">) {
   // the slider until the server's snapshots say the same, since status is read from them, not from
   // the event the browser just sent.
   const [pending, setPending] = useState<{ topicId: string; name: string; to: WeakSpotStatus; ids: string[]; confirmed: boolean } | null>(null);
-  const [tab, setTab] = useState<"current" | "previous">("current");
+  const [tab, setTab] = useState<"all" | "current" | "previous">("current");
   const course = useCourse(slug);
   const mastery = useMasteryByCourse();
   const m = course ? mastery[course.id] : undefined;
@@ -80,7 +80,8 @@ export default function ListPage({ params }: PageProps<"/course/[slug]/list">) {
   });
   const current = rows.filter((r) => r.shown !== "mastered");
   const previous = rows.filter((r) => r.shown === "mastered");
-  const listed = tab === "current" ? current : previous;
+  // All: what still needs work first, then what's mastered, each in course order.
+  const listed = tab === "current" ? current : tab === "previous" ? previous : [...current, ...previous];
 
   // The same header as Path (title, line, progress bar, then the pills), so the pills sit at the same height on every tab.
   const trail = trailTopics(course).map((t) => {
@@ -120,6 +121,7 @@ export default function ListPage({ params }: PageProps<"/course/[slug]/list">) {
               <div role="tablist" aria-label="Which topics" className="mt-[24px] flex justify-end gap-[6px]" data-part="list-tabs">
                 {(
                   [
+                    ["all", "All", rows.length],
                     ["current", "Current", current.length],
                     ["previous", "Previous", previous.length],
                   ] as const

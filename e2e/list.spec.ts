@@ -44,6 +44,8 @@ test("the status slider: Discard leaves it; Mark mastered records a mark that su
   const today = new Date().toLocaleDateString(undefined, { month: "short", day: "numeric" });
   await expect(done.locator("[data-part=mastered-on]")).toHaveText(`Mastered ${today}`);
   expect((await stored(page, student)).evidence.filter((e) => e.kind === "mark").map((e) => e.objectiveId)).toEqual([F.signExtend]);
+  await page.locator('[data-part=list-tab][data-tab="all"]').click();
+  await expect(page.locator("[data-part=weak-row]")).toHaveCount(1);
   await page.reload();
   await expect(page.locator('[data-part=list-tab][data-tab="previous"]')).toContainText("1");
   await page.locator('[data-part=list-tab][data-tab="previous"]').click();
