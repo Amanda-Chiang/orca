@@ -8,7 +8,7 @@ import { askableQuestions } from "@/lib/askable";
 import { canFlagHard } from "@/lib/mastery/flags";
 import { warmUpCandidates } from "@/lib/mastery/warmup";
 import { durationSeconds } from "@/lib/mastery/session";
-import { useAgenda, useCourse, useMasteryByCourse, useOrca } from "@/lib/store";
+import { useAgenda, useCourse, useCramming, useMasteryByCourse, useOrca } from "@/lib/store";
 import { AppShell } from "@/components/layout/AppShell";
 import { BackButton } from "@/components/layout/BackButton";
 import { Button } from "@/components/ui/Button";
@@ -36,6 +36,8 @@ export default function CoursePage({ params }: PageProps<"/course/[slug]">) {
   const mastery = useMasteryByCourse();
   const { metrics } = useUserMetrics();
   const agendas = useAgenda();
+  // Cram mode (owner, 2026-11-22): the exam being crammed for and its topics; null otherwise.
+  const cram = useCramming(course?.id);
 
   if (!course) {
     return (
@@ -66,7 +68,7 @@ export default function CoursePage({ params }: PageProps<"/course/[slug]">) {
   if (!agenda) throw new Error(`No agenda computed for course ${course.id}`);
   // Nothing flagged yet, but questions to try: the trail's START (src/lib/mastery/warmup.ts).
   const warm = agenda.dueToday.length === 0 ? warmUpCandidates(agenda.ranked, askableQuestions(course, questionBank[course.id], objectives[course.id] ?? {}, feedback).byObjective) : [];
-  const warmUp = warm.length ? { topicName: course.topics.find((t) => t.id === warm[0].topicId)?.name ?? course.name, href: `/session/${course.slug}?kind=quick&warmup=1`, questions: warm.length } : null;
+  const warmUp = !cram && warm.length ? { topicName: course.topics.find((t) => t.id === warm[0].topicId)?.name ?? course.name, href: `/session/${course.slug}?kind=quick&warmup=1`, questions: warm.length } : null;
 
   return (
     <AppShell bg="ocean">
@@ -134,7 +136,7 @@ export default function CoursePage({ params }: PageProps<"/course/[slug]">) {
           Edit Exams
         </button>
         {/* A dive can always be started; the cadence only adds "due" when there are weak points. */}
-        {agenda.ranked.length > 0 && (
+        {agenda.ranked.length > 0 && !cram && (
           <div className="group relative">
             <Link href={`/session/${course.slug}?kind=deep`} data-part="start-deep" aria-describedby="dive-in-info" className="pressable rounded-pill bg-parchment px-[14px] py-[7px] text-[13px] font-bold text-prussian ring-2 ring-inset ring-alice-deep lip-2 lip-alice">
               Dive in{agenda.deepReview.due ? " · due" : ""}

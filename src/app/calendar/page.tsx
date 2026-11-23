@@ -6,6 +6,7 @@ import { fadeSwap } from "@/lib/motion";
 import type { EventKind } from "@/lib/data";
 import { useAgenda, useDayKey, useMasteryByCourse, useOrca } from "@/lib/store";
 import { reviewDates } from "@/lib/mastery/calendar";
+import { crammingExam } from "@/lib/course/exam-card";
 import { useToday } from "@/hooks/useToday";
 import { IconBack, IconNext } from "@/components/icons";
 import { Screen } from "@/components/layout/Screen";
@@ -34,7 +35,8 @@ export default function CalendarPage() {
   const shown = useMemo(() => {
     if (!today) return [];
     const reviews = reviewDates(
-      courses.map((c) => {
+      // A course in cram mode has its reviews paused (owner, 2026-11-22).
+      courses.filter((c) => !crammingExam(exams, c.id, today)).map((c) => {
         const agenda = agendas[c.id];
         const m = mastery[c.id];
         if (!agenda || !m) throw new Error(`No agenda computed for course ${c.id}`);
