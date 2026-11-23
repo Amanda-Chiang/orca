@@ -54,6 +54,13 @@ test("cram mode: dark course pages on the exam's topics, reviews paused, banner,
   await expect(page.locator(`[data-part=topic][data-topic="${F.booleanAlgebra}"]`)).toHaveAttribute("data-off-exam", "1");
   await expect(page.locator(`[data-part=topic][data-topic="${F.twosComplement}"]`)).not.toHaveAttribute("data-off-exam", "1");
 
+  // Every other page of the course is dark too: uploads & review, objectives, settings (owner, 2026-11-22).
+  for (const tab of ["review?tab=uploads", "review?tab=review", "objectives", "settings"]) {
+    await page.goto(`/course/${SLUG}/${tab}`);
+    await expect(page.locator("[data-cram]:not([data-part=top-bar])")).toHaveCount(1);
+    await expect(page.locator("[data-part=top-bar]")).toHaveAttribute("data-cram", "1");
+  }
+
   // Home: light again, the island at night, the course's cards gone from the sidebar.
   await page.goto("/");
   await expect(page.locator("[data-part=island-spot][data-cramming] [data-part=island-halo]")).toHaveCount(1);

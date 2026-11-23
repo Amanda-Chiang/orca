@@ -17,8 +17,8 @@ import { useCramming, useOrca } from "@/lib/store";
  * (13 · Sign up: the one being picked), not a link. Height
  * is `--topbar-h` (globals.css), which every full-height screen subtracts.
  */
-/** A course's pages that go dark in cram mode (its settings page doesn't). */
-const CRAM_PAGES = /^\/course\/([^/?#]+)(?:\/(?:list|atlas|cram))?$/;
+/** A course's pages, every one of which goes dark in cram mode (owner, 2026-11-22). */
+const CRAM_PAGES = /^\/course\/([^/?#]+)(?:\/|$)/;
 
 const ICON_BUTTON = "pressable inline-flex h-[48px] w-[48px] items-center justify-center rounded-[16px] border-2 border-line bg-card text-ink lip-2 lip-alice";
 

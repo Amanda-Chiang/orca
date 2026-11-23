@@ -4,7 +4,7 @@ import Link from "next/link";
 import { use, useEffect, useRef } from "react";
 import { motion } from "motion/react";
 import type { Objective, Topic } from "@/lib/data";
-import { useCourse, useOrca } from "@/lib/store";
+import { useCourse, useCramming, useOrca } from "@/lib/store";
 import { courseUploads, pendingReview, uploadsInProgress } from "@/lib/course/review";
 import { isFinished, useRun } from "@/hooks/useRun";
 import { ReviewTabs, type ReviewTab } from "@/components/review/ReviewTabs";
@@ -31,6 +31,8 @@ export default function ReviewPage({ params, searchParams }: PageProps<"/course/
   const runId = typeof sp.run === "string" ? sp.run : undefined;
   const { hydrated, objectives, materials, runs, editStructure, refresh } = useOrca();
   const course = useCourse(slug);
+  // Cram mode: every page of a cramming course is dark (owner, 2026-11-22).
+  const cram = useCramming(course?.id);
   // The upload's job runs on the server; this follows it until it's done.
   const { run, missing } = useRun(runId);
   // An upload started a moment ago isn't in the store's runs yet: read the store again once, so the
@@ -78,7 +80,7 @@ export default function ReviewPage({ params, searchParams }: PageProps<"/course/
   const edit = editStructure.bind(null, course.id);
 
   return (
-    <Screen bg="ocean" className="overflow-y-auto">
+    <Screen bg="ocean" className="overflow-y-auto" data-cram={cram ? "1" : undefined}>
       {/* Everything below the back button sits in the title's column, so it lines up with the course name. */}
       <div className="flex items-start gap-[16px] px-[28px] pt-[28px]">
         <BackButton href={`/course/${course.slug}`} />
@@ -86,9 +88,7 @@ export default function ReviewPage({ params, searchParams }: PageProps<"/course/
           <header className="flex flex-col pt-[2px]">
             <div className="flex flex-col gap-[4px]">
               <h1 className="text-[40px] font-bold leading-none text-prussian">{course.short}: uploads &amp; review</h1>
-              <p className="text-[15px] font-medium text-wisteria-deep">
-                {tab === "uploads" ? "Every file you've added and what it built." : "New topics, marked Unreviewed until you confirm them. Questions come when you flag something, start a dive, or try the warm-up."}
-              </p>
+              {tab === "uploads" && <p className="text-[15px] font-medium text-wisteria-deep">Every file you&apos;ve added and what it built.</p>}
             </div>
           </header>
 
