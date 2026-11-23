@@ -23,7 +23,7 @@ const MAX = 128;
  * The cram page's weak spots as bubbles (owner, 2026-11-22: a map, not a list): one cluster per
  * topic (or kind of problem) in scope, each weak spot a bubble sized by its weight in the exam and
  * colored by its status, bobbing like the islands. Hover shows the whole objective; a click opens the
- * topic's quiz. A topic with no weak spots stays as a faded outline so the exam's whole shape shows.
+ * course's map (the Path; owner, 2026-11-22). A topic with no weak spots stays as a faded outline so the exam's whole shape shows.
  */
 export function WeakSpotBubbles({ plan, topics, slug, objectiveName }: { plan: CramPlan; topics: CramPlanInput["topics"]; slug: string; objectiveName: (id: string) => string }) {
   const objective = new Map(topics.flatMap((t) => t.objectives.map((o) => [o.id, o] as const)));
@@ -32,7 +32,6 @@ export function WeakSpotBubbles({ plan, topics, slug, objectiveName }: { plan: C
   const hi = Math.max(...weights, 1);
   const size = (w: number) => (hi === lo ? (MIN + MAX) / 2 : MIN + ((w - lo) / (hi - lo)) * (MAX - MIN));
   const count = weights.length;
-  const quizzable = plan.unit === "topic";
   // Each bubble bobs on its own beat (floatIsland's seed), numbered in page order.
   const seedOf = new Map(plan.topics.flatMap((t) => t.weakSpots).map((id, i) => [id, i]));
   return (
@@ -66,15 +65,9 @@ export function WeakSpotBubbles({ plan, topics, slug, objectiveName }: { plan: C
                   const label = `${name} · ${MASTERY_LABEL[status]}`;
                   return (
                     <motion.li key={id} animate={floatIsland(seedOf.get(id) ?? 0)} style={{ width: d, height: d }} data-part="cram-weak-item" data-objective={id} data-status={status}>
-                      {quizzable ? (
-                        <Link href={`/quiz/${slug}/${t.id}`} title={label} aria-label={label} className={`${look} h-full w-full`}>
-                          {bubble}
-                        </Link>
-                      ) : (
-                        <span title={label} className={`${look} h-full w-full`}>
-                          {bubble}
-                        </span>
-                      )}
+                      <Link href={`/course/${slug}`} title={label} aria-label={label} className={`${look} h-full w-full`}>
+                        {bubble}
+                      </Link>
                     </motion.li>
                   );
                 })}
