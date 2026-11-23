@@ -33,6 +33,8 @@ test("the status slider: Discard leaves it; Mark mastered records a mark that su
 
   await row.locator('[data-part=status-stop][data-stop="mastered"]').click();
   await page.locator("[data-part=status-confirm-yes]").click();
+  // The slider holds what was confirmed while the server records it (it used to drop back first).
+  expect(await row.locator("[data-part=status-pill]").textContent()).toBe("Mastered");
   await expect(row).toHaveAttribute("data-status", "mastered");
   await expect(row.locator("[data-part=marked-by-you]")).toBeVisible();
   expect((await stored(page, student)).evidence.filter((e) => e.kind === "mark").map((e) => e.objectiveId)).toEqual([F.signExtend]);
