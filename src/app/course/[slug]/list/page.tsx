@@ -16,7 +16,9 @@ import { AppShell } from "@/components/layout/AppShell";
 import { BackButton } from "@/components/layout/BackButton";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { DEFAULT_CONFIG, trailTopics } from "@/lib/data";
-import { useCourse, useMasteryByCourse, useOrca } from "@/lib/store";
+import { useCourse, useCramming, useMasteryByCourse, useOrca } from "@/lib/store";
+import { CramBanner } from "@/components/course/CramBanner";
+import { useCramTheme } from "@/components/course/CramTheme";
 import { fadeUp, popIn, stagger } from "@/lib/motion";
 
 /**
@@ -40,6 +42,10 @@ export default function ListPage({ params }: PageProps<"/course/[slug]/list">) {
   const [tab, setTab] = useState<"all" | "current" | "previous">("current");
   const course = useCourse(slug);
   const mastery = useMasteryByCourse();
+  // Cram mode (owner, 2026-11-22): only the exam's topics, the rest behind "Show N other topics".
+  const cram = useCramming(course?.id);
+  useCramTheme(!!cram);
+  const [showOthers, setShowOthers] = useState(false);
   const m = course ? mastery[course.id] : undefined;
   const settled = pending?.confirmed && m ? weakSpotStatus(m.topicObjectives.get(pending.topicId) ?? [], m.objectives) === pending.to : false;
   useEffect(() => {
@@ -61,7 +67,7 @@ export default function ListPage({ params }: PageProps<"/course/[slug]/list">) {
   }
   if (!m) throw new Error(`No mastery computed for course ${course.id}`);
 
-  const rows = trailTopics(course).flatMap((topic) => {
+  const allRows = trailTopics(course).flatMap((topic) => {
     const ids = m.topicObjectives.get(topic.id) ?? [];
     const status = weakSpotStatus(ids, m.objectives);
     const progress = m.topics.get(topic.id);
@@ -76,8 +82,11 @@ export default function ListPage({ params }: PageProps<"/course/[slug]/list">) {
     const masteredOn = status === "mastered" && days.length && days.every((d) => d !== null) ? days.reduce((a, b) => (a! > b! ? a : b)) : null;
     // A confirmed change shows at once (the slider holds it), so the row changes tab with it.
     const shown = pending?.confirmed && pending.topicId === topic.id ? pending.to : status;
-    return status ? [{ topic, status, shown, progress, weakSpots, masteredOn }] : [];
+    return status ? [{ topic, status, shown, progress, weakSpots, masteredOn, offExam: !!cram && !cram.topics.has(topic.id) }] : [];
   });
+  const others = allRows.filter((r) => r.offExam);
+  const rows = cram && !showOthers ? allRows.filter((r) => !r.offExam) : allRows;
+  const counted = allRows.length - others.length;
   const current = rows.filter((r) => r.shown !== "mastered");
   const previous = rows.filter((r) => r.shown === "mastered");
   // All: what still needs work first, then what's mastered, each in course order.
@@ -93,8 +102,9 @@ export default function ListPage({ params }: PageProps<"/course/[slug]/list">) {
   const pct = weak ? trail.reduce((sum, p) => sum + p.mastered, 0) / weak : 0;
 
   return (
-    <AppShell bg="ocean">
-      <div className="absolute inset-0 overflow-auto px-[28px] pb-[28px] pt-[28px]">
+    <AppShell bg="ocean" sidebar={!cram}>
+      {cram && <CramBanner course={course} exam={cram.exam} />}
+      <div className={`absolute inset-0 overflow-auto px-[28px] pb-[28px] ${cram ? "pt-[76px]" : "pt-[28px]"}`}>
         {/* The list sits in the header's column, so it lines up with the title and the Path pill. */}
         <div className="flex items-start gap-[16px]">
           <motion.div variants={fadeUp} initial="hidden" animate="show">
@@ -106,7 +116,11 @@ export default function ListPage({ params }: PageProps<"/course/[slug]/list">) {
                 {course.name}
               </motion.h1>
               <motion.p variants={fadeUp} className="text-[15px] font-medium text-wisteria-deep" data-part="list-summary">
-                {rows.length ? `${rows.length} topic${rows.length === 1 ? "" : "s"} with weak spots` : "No weak spots flagged yet"}
+                {cram
+                  ? `${counted} exam topic${counted === 1 ? "" : "s"} with weak spots`
+                  : rows.length
+                    ? `${rows.length} topic${rows.length === 1 ? "" : "s"} with weak spots`
+                    : "No weak spots flagged yet"}
               </motion.p>
               <motion.div variants={fadeUp} className="mt-[6px] w-[240px]">
                 <ProgressBar value={pct} height={12} label="Course progress" track="parchment" />
@@ -156,13 +170,16 @@ export default function ListPage({ params }: PageProps<"/course/[slug]/list">) {
               </p>
             ) : (
               <motion.ul key={tab} variants={stagger()} initial="hidden" animate="show" className="mt-[12px] flex flex-col gap-[12px]" data-part="weak-list">
-                {listed.map(({ topic, status, shown, progress, weakSpots, masteredOn }) => (
+                {listed.map(({ topic, status, shown, progress, weakSpots, masteredOn, offExam }) => (
                   <motion.li
                     key={topic.id}
                     variants={fadeUp}
                     data-part="weak-row"
                     data-status={status}
-                    className="flex items-center gap-[16px] rounded-[20px] bg-parchment px-[22px] py-[14px] lip-4 lip-alice"
+                    data-topic={topic.id}
+                    data-off-exam={offExam ? "1" : undefined}
+                    // Faint through its children: the entrance animation drives the row's own opacity.
+                    className={`${offExam ? "[&>*]:opacity-40 " : ""}flex items-center gap-[16px] rounded-[20px] bg-parchment px-[22px] py-[14px] lip-4 lip-alice`}
                   >
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-[19px] font-bold text-prussian">{topic.name}</p>
@@ -194,7 +211,7 @@ export default function ListPage({ params }: PageProps<"/course/[slug]/list">) {
                         })
                       }
                     />
-                    <button
+                    {!offExam && <button
                       type="button"
                       onClick={() => setDiving({ id: topic.id, name: topic.name })}
                       aria-label={`Dive into ${topic.name}`}
@@ -204,10 +221,17 @@ export default function ListPage({ params }: PageProps<"/course/[slug]/list">) {
                       <svg width="14" height="16" viewBox="0 0 14 16" aria-hidden="true">
                         <path d="M2 1.5v13l11-6.5z" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
                       </svg>
-                    </button>
+                    </button>}
                   </motion.li>
                 ))}
               </motion.ul>
+            )}
+            {cram && others.length > 0 && (
+              <div className="mt-[16px]">
+                <Button size="sm" variant="ghost" onClick={() => setShowOthers((v) => !v)} data-part="list-show-all">
+                  {showOthers ? "Show exam topics only" : `Show ${others.length} other topic${others.length === 1 ? "" : "s"}`}
+                </Button>
+              </div>
             )}
           </div>
         </div>

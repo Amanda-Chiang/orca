@@ -129,6 +129,27 @@
   --color-muted: #9fb3c8;
 }
 
+/* Cram mode (owner, 2026-11-22): a cramming course's pages in Orca Ocean Dark. The light tokens are
+   redefined, so every utility (bg-parchment, text-prussian…) turns dark without per-component variants.
+   Set on <html> by useCramTheme (src/components/course/CramTheme.tsx). */
+:root[data-cram] {
+  color-scheme: dark;
+  --color-ocean: #081d33;
+  --color-parchment: #0e2a46;
+  --color-parchment-deep: #234967;
+  --color-alice: #163a5c;
+  --color-alice-deep: #234967;
+  --color-prussian: #f3f7fb;
+  --color-ink-deep: #050f1c;
+  --color-wisteria-deep: #9fb3c8;
+  --color-orca-shadow: #234967;
+  --color-page: #081d33;
+  --color-card: #0e2a46;
+  --color-line: #234967;
+  --color-ink: #f3f7fb;
+  --color-muted: #9fb3c8;
+}
+
 /* Full-height screens below the top bar. */
 @utility h-screen-below-bar { height: calc(100vh - var(--topbar-h)); }
 @utility min-h-screen-below-bar { min-height: calc(100vh - var(--topbar-h)); }
