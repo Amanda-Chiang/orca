@@ -1,3 +1,5 @@
+import { stagedPipeline, pipelineRpc } from "./staged/db";
+import { singleton } from "./staged/admission";
 /**
  * Pasted text (or a public AI-chat link) as material: what `POST /api/materials/text` does once the
  * request is parsed, shared with the connector's `add_material` (docs/superpowers/specs/
@@ -43,6 +45,12 @@ export async function addTextMaterial(db: OrcaSupabase, ownerId: string, input: 
   const rate = await rateLimit(db, ownerId, "text");
   if (!rate.ok) return { status: 429, body: { error: rate.message, retryAfterSeconds: rate.retryAfterSeconds }, verdict: rate };
 
+  // Named before admission, so the upload list shows the material's own name from the start.
+  const filename = input.filename ? sanitize(input.filename, 255).text.trim() || pastedFilename(input.url ? "AI chat" : input.type) : input.url ? aiChatFilename(input.url) : pastedFilename(input.type);
+  const admissionId = stagedPipeline() ? crypto.randomUUID() : undefined;
+  if (admissionId) await singleton(db, ownerId, input.courseId, admissionId, filename, "text");
+  let attached = false;
+  try {
   let text: string;
   let sourceUrl: string | undefined;
   let type = input.type;
@@ -59,15 +67,19 @@ export async function addTextMaterial(db: OrcaSupabase, ownerId: string, input: 
   const chat = type === "AI chat";
   // Stored as the model will see it (decision 13): invisible and control characters removed.
   text = sanitize(text).text;
-  if ((chat ? spokenChars(text) : text.trim().length) < 80) return { status: 422, body: { error: chat ? "Orca couldn't find enough readable chat text. Paste the conversation transcript instead." : "Orca needs at least a paragraph of text to read." } };
+  // Any length of text is taken (owner, 2026-11-24); a chat still needs readable turns, or its transcript wasn't found.
+  if (chat ? spokenChars(text) < 80 : text.trim().length === 0) return { status: 422, body: { error: chat ? "Orca couldn't find enough readable chat text. Paste the conversation transcript instead." : "Paste some text for Orca to read." } };
   const pages = (chat ? chatPages(text) : textPages(text)).map((pageText, i) => ({ n: i + 1, text: pageText }));
   // Jobs read at most this many pages of any material, so longer text is refused, never cut.
   if (pages.length > LIMITS.pagesPerFile) return { status: 413, body: { error: `This text is too long to read in one go (${pages.length} pages; Orca reads at most ${LIMITS.pagesPerFile}). Paste it in parts.` } };
-  const filename = input.filename ? sanitize(input.filename, 255).text.trim() || pastedFilename(type) : sourceUrl ? aiChatFilename(sourceUrl) : pastedFilename(type);
   const hash = createHash("sha256").update(text).digest("hex");
   const { data: same, error: sameError } = await db.from("materials").select("id, filename").eq("owner_id", ownerId).eq("course_id", input.courseId).eq("content_hash", hash).order("created_at").limit(1).maybeSingle();
   if (sameError) return { status: 500, body: { error: "Orca couldn't check that text." } };
-  if (same) return { status: 200, body: { duplicate: same, generation: await startUploadJob(db, ownerId, same.id) } };
+  if (same) {
+    const generation = await startUploadJob(db, ownerId, same.id, admissionId);
+    attached = true;
+    return { status: 200, body: { duplicate: same, generation } };
+  }
   const id = crypto.randomUUID();
   const { data, error } = await db
     .from("materials")
@@ -77,5 +89,10 @@ export async function addTextMaterial(db: OrcaSupabase, ownerId: string, input: 
   if (error) return { status: 500, body: { error: "Orca couldn't save that text." } };
   const saved = await db.from("material_pages").insert(pages.map((p) => ({ owner_id: ownerId, material_id: id, ...p })));
   if (saved.error) return { status: 500, body: { error: "Orca saved that text but couldn't read it." } };
-  return { status: 201, body: { material: materialFromRow(data), pages, generation: await startUploadJob(db, ownerId, id) } };
+  const generation = await startUploadJob(db, ownerId, id, admissionId);
+  attached = true;
+  return { status: 201, body: { material: materialFromRow(data), pages, generation } };
+  } finally {
+    if (admissionId && !attached) await pipelineRpc(db, "ingestion", { ownerId, itemId: admissionId, action: "fail", error: "The material could not be added. Try again." });
+  }
 }

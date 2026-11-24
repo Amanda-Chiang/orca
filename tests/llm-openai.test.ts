@@ -114,3 +114,67 @@ test("an older model gets no explicit cache options and a model without reasonin
   assert.equal(body.reasoning, undefined);
   assert.equal(body.input[0].content[0].prompt_cache_breakpoint, undefined);
 });
+
+test("each provider retry reserves separately and an unknown billed attempt is not refunded", async () => {
+  const settlements: boolean[] = [];
+  let calls = 0; let reservations = 0;
+  const api: typeof fetch = async () => {
+    if (++calls === 1) throw new Error("connection interrupted after sending request");
+    return new Response(JSON.stringify({ status: "completed", model: "gpt-6.1-sol", usage: { input_tokens: 12, output_tokens: 5 }, output: [{ type: "message", content: [{ type: "output_text", text: '{"ok":true}' }] }] }), { status: 200, headers: { "content-type": "application/json" } });
+  };
+  const schema = z.object({ ok: z.boolean() });
+  await completeJson({ provider: "openai", model: "gpt-6.1-sol", apiKey: "fake" }, "sys", "prompt", schema, (text) => schema.parse(JSON.parse(text)), {
+    fetch: api, retryBackoffMs: 0,
+    reserveAttempt: async () => { reservations++; return { settle: async (known) => { settlements.push(known); } }; },
+  });
+  assert.equal(reservations, 2);
+  assert.deepEqual(settlements, [false, true]);
+});
+
+test("a provider error status or a refused connection settles as known; only a lost reply stays held", async () => {
+  const settlements: boolean[] = [];
+  let calls = 0;
+  const refused = Object.assign(new Error("fetch failed"), { cause: Object.assign(new Error("connect ECONNREFUSED"), { code: "ECONNREFUSED" }) });
+  const api: typeof fetch = async () => {
+    calls++;
+    if (calls === 1) return new Response(JSON.stringify({ error: { message: "overloaded" } }), { status: 503, headers: { "content-type": "application/json" } });
+    if (calls === 2) throw refused;
+    return new Response(JSON.stringify({ status: "completed", model: "gpt-6.1-sol", usage: { input_tokens: 12, output_tokens: 5 }, output: [{ type: "message", content: [{ type: "output_text", text: '{"ok":true}' }] }] }), { status: 200, headers: { "content-type": "application/json" } });
+  };
+  const schema = z.object({ ok: z.boolean() });
+  await completeJson({ provider: "openai", model: "gpt-6.1-sol", apiKey: "fake" }, "sys", "prompt", schema, (text) => schema.parse(JSON.parse(text)), {
+    fetch: api, retryBackoffMs: 0,
+    reserveAttempt: async () => ({ settle: async (known) => { settlements.push(known); } }),
+  });
+  assert.deepEqual(settlements, [true, true, true]);
+});
+
+test("a failed usage write is not retried (a retry would be another paid call)", async () => {
+  let calls = 0;
+  const api: typeof fetch = async () => {
+    calls++;
+    return new Response(JSON.stringify({ status: "completed", model: "gpt-6.1-sol", usage: { input_tokens: 12, output_tokens: 5 }, output: [{ type: "message", content: [{ type: "output_text", text: '{"ok":true}' }] }] }), { status: 200, headers: { "content-type": "application/json" } });
+  };
+  const schema = z.object({ ok: z.boolean() });
+  await assert.rejects(completeJson({ provider: "openai", model: "gpt-6.1-sol", apiKey: "fake" }, "sys", "prompt", schema, (text) => schema.parse(JSON.parse(text)), {
+    fetch: api, retryBackoffMs: 0,
+    onUsage: () => { throw new Error("model_usage insert failed"); },
+  }), /model_usage insert failed/);
+  assert.equal(calls, 1);
+});
+
+test("a gateway timeout stays held, and a failed settle never replaces a paid reply", async () => {
+  const settlements: boolean[] = [];
+  let calls = 0;
+  const api: typeof fetch = async () => {
+    if (++calls === 1) return new Response("gateway timeout", { status: 504 });
+    return new Response(JSON.stringify({ status: "completed", model: "gpt-6.1-sol", usage: { input_tokens: 12, output_tokens: 5 }, output: [{ type: "message", content: [{ type: "output_text", text: '{"ok":true}' }] }] }), { status: 200, headers: { "content-type": "application/json" } });
+  };
+  const schema = z.object({ ok: z.boolean() });
+  const out = await completeJson({ provider: "openai", model: "gpt-6.1-sol", apiKey: "fake" }, "sys", "prompt", schema, (text) => schema.parse(JSON.parse(text)), {
+    fetch: api, retryBackoffMs: 0,
+    reserveAttempt: async () => ({ settle: async (known) => { settlements.push(known); if (known) throw new Error("settle_call failed"); } }),
+  });
+  assert.deepEqual(out, { ok: true });
+  assert.deepEqual(settlements, [false, true]);
+});

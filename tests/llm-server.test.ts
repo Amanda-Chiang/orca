@@ -118,6 +118,17 @@ test("a third transient failure gives up; a 400 is never retried", async () => {
   assert.equal(bad.calls.length, 1);
 });
 
+test("a failed usage write after a full reply is neither retried nor metered twice", async () => {
+  const api = fakeFetch([success(), success()]);
+  let metered = 0;
+  await assert.rejects(
+    completeJson(config, "sys", "hi", Out, (t) => Out.parse(JSON.parse(t)), { fetch: api.fetch, retryBackoffMs: 1, onUsage: () => { metered++; throw new Error("model_usage insert failed"); } }),
+    /model_usage insert failed/,
+  );
+  assert.equal(api.calls.length, 1, "one paid call");
+  assert.equal(metered, 1);
+});
+
 test("retryable: only transient failures, never a spend limit", () => {
   assert.equal(retryable(new Error("plain")), false);
 });
