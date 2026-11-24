@@ -611,7 +611,7 @@ All 11 Figma screens are built. Where things live:
 - `src/lib/server/` — route helpers, model step caller (`model.ts`), grading, usage metering, rate limits.
 - `src/lib/model-config.ts`, `llm-server.ts`, `pricing.ts`, `limits.ts` — provider choice, model calls, prices, every limit.
 - `src/lib/untrusted/` — sanitising, prompt data blocks, injection screen, output validation.
-- `src/lib/material/read-pdf.ts`, `read-pptx.ts` (+ `unzip.ts`, `kind.ts`), `src/lib/uploads.ts` — PDFs and .pptx decks to
+- `src/lib/material/read-pdf.ts`, `read-pptx.ts`, `read-docx.ts` (+ `ooxml.ts`, `unzip.ts`, `kind.ts`), `src/lib/uploads.ts` — PDFs, .pptx decks and .docx documents (2026-11-24; how a .docx is cut into pages: `docs/TO-DISCUSS.md`) to
   Storage, read on the server into `material_pages`. The upload page takes several files or a whole folder at once
   (`filesFromDataTransfer` walks dropped folders; `src/components/upload/BatchList.tsx` is the per-file list with
   type and dates prefilled from the page's shared defaults; files are sent one after another, each row showing where

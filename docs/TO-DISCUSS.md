@@ -451,6 +451,19 @@ Judgement calls the agents made to keep building; each is in code behind one con
 - **Atlas strength:** "New" (nothing answered), "Developing", "Strong" (every objective mastered),
   "Fragile" (something fading or mixed up). Confirming a topic doesn't change it.
 
+### How a Word document (.docx) is cut into pages (2026-11-24)
+
+A .docx has no fixed pages, so `src/lib/material/read-docx.ts` cuts its body (paragraphs, then
+tables row by row, cells joined with " | ") into pages: at explicit page breaks when the document
+has any, otherwise before each Title / Heading 1 / Heading 2 (by style name or outline level; a
+heading straight after another stays with it); either way a page past about 3,000 characters (a
+printed page) is cut at the next paragraph. Footnotes and endnotes are added under "[Notes]" on the
+page that cites them. Not read: comments, headers and footers, text boxes, pictures and charts.
+Hidden (`w:vanish`) and under-2-pt text is dropped and counted, as for .pptx. Assumed, decide or
+accept: the 3,000-character page, cutting only at Heading 1/2, leaving comments out, and that a
+.docx is not offered in "Which slides were hard?" (it has no slides) and gets no server-drawn
+previews. Its pages show as "slides" where the app names pages, as a PDF's do.
+
 ### Visuals and graphics in material aren't read (2026-10-10)
 
 Orca reads only the text of uploaded material: a PDF page's text (pdf.js) and a .pptx slide's text,
