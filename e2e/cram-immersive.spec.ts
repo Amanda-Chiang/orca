@@ -1,4 +1,5 @@
-import { admin, expect, F, FIXTURE_STATE, fixtureFlags, seedState, test } from "./fixture";
+import type { Page } from "@playwright/test";
+import { admin, expect, F, FIXTURE_STATE, fixtureFlags, seedPages, seedState, stored, test } from "./fixture";
 
 /**
  * Cram mode you enter (owner, 2026-11-22; plan docs/superpowers/plans/2026-11-22-cram-mode-immersive.md):
@@ -132,4 +133,81 @@ test("cram mode's sound: bubbles when it starts or stops, unless the banner's sp
   await expect(page.locator("[data-part=cram-banner]")).toHaveCount(0);
   await page.waitForTimeout(300);
   expect(await plays()).toEqual([]);
+});
+
+/** One JSON-RPC tool call on the connector, as the student's Claude makes it; the tool's JSON result. */
+let rpcId = 1;
+async function tool(page: Page, url: string, name: string, args: unknown): Promise<Record<string, unknown>> {
+  const res = await page.request.post(url, { data: { jsonrpc: "2.0", id: rpcId++, method: "tools/call", params: { name, arguments: args } } });
+  const body = (await res.json()) as { result: { content: Array<{ text: string }>; isError?: boolean } };
+  if (body.result.isError) throw new Error(`${name} refused: ${body.result.content[0].text}`);
+  return JSON.parse(body.result.content[0].text) as Record<string, unknown>;
+}
+
+test("a cram started from Claude: the app goes dark, a dive into an exam topic counts in the chat, Stop cramming ends it for both", async ({ page, student }) => {
+  test.setTimeout(90_000);
+  await seedState(student, FIXTURE_STATE);
+  await seedPages(student, { [F.material]: [1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => ({ n, text: `Slide ${n}: logic.` })) });
+  await page.goto("/");
+  const minted = await page.request.post("/api/connector");
+  const url = ((await minted.json()) as { url: string }).url;
+
+  await test.step("Claude sets the exam and starts the cram", async () => {
+    const exam = await tool(page, url, "set_exam", { courseId: F.course, title: "Final", date: inDays(5), topicIds: [F.booleanAlgebra], cramming: true });
+    expect(exam.mode).toBe("exam-week");
+  });
+
+  await test.step("the app follows: dark course pages, the banner, the exam's topic only", async () => {
+    await page.goto(`/course/${SLUG}`);
+    await expect(page.locator("[data-part=cram-banner]")).toContainText("Final");
+    await expect(page.locator("[data-part=top-bar]")).toHaveAttribute("data-cram", "1");
+    await expect(page.locator(`[data-visual][data-topic="${F.twosComplement}"]`)).toHaveCount(0);
+  });
+
+  await test.step("a dive into the exam's topic writes harder questions and the student answers them", async () => {
+    // The fake model anchors its questions on slide 2, which Boolean Algebra is taught on.
+    await page.locator(`[data-visual][data-topic="${F.booleanAlgebra}"] [data-part=node]`).click();
+    const modal = page.locator("[data-part=dive-modal]");
+    await expect(modal).toContainText("Dive into Boolean Algebra");
+    await modal.locator('[data-part=dive-minutes][data-minutes="10"]').click();
+    await modal.locator("[data-part=dive-start]").click();
+    await expect(page).toHaveURL(new RegExp(`/session/${SLUG}\\?kind=deep&topic=${F.booleanAlgebra}&minutes=10`));
+    await expect(page.getByText("1 / 3")).toBeVisible({ timeout: 30_000 });
+    let previous: string | null = null;
+    for (;;) {
+      if (previous !== null) await expect(page.locator("h1").first()).not.toHaveText(previous);
+      const prompt = (await page.locator("h1").first().textContent())!.trim();
+      previous = prompt;
+      // The fake API's dive questions ("…: deep case 3?") have the case number as their answer.
+      const answer = /deep case (\d+)\?$/.exec(prompt)?.[1];
+      if (answer === undefined) throw new Error(`Not a dive question: "${prompt}"`);
+      await page.getByPlaceholder("Type your answer").fill(answer);
+      await page.getByRole("button", { name: "Check" }).click();
+      await expect(page.getByText("Correct.")).toBeVisible();
+      const finish = page.getByRole("button", { name: "Finish" });
+      if (await finish.isVisible()) {
+        await finish.click();
+        break;
+      }
+      await page.getByRole("button", { name: "Continue" }).click();
+    }
+    const evidence = (await stored(page, student)).evidence as Array<{ source: string; objectiveId: string; outcome: string }>;
+    expect(evidence).toHaveLength(3);
+    expect(evidence.every((e) => e.source === "deep-review" && e.outcome === "correct" && e.objectiveId === F.simplify)).toBe(true);
+  });
+
+  await test.step("the next chat sees the dive's answers", async () => {
+    const state = (await tool(page, url, "course_state", { courseId: F.course })) as { cramming: string | null; objectives: Array<{ id: string; status: string }> };
+    expect(state.cramming).not.toBeNull();
+    const answered = new Set(((await stored(page, student)).evidence as Array<{ objectiveId: string }>).map((e) => e.objectiveId));
+    for (const o of state.objectives.filter((x) => answered.has(x.id))) expect(o.status).toBe("verified");
+  });
+
+  await test.step("Stop cramming in the app ends the cram for Claude too", async () => {
+    await page.goto(`/course/${SLUG}`);
+    await page.locator("[data-part=cram-banner] [data-part=cram-stop]").click();
+    await expect(page.locator("[data-part=cram-banner]")).toHaveCount(0);
+    await expect(page.locator("[data-part=top-bar]")).not.toHaveAttribute("data-cram", "1");
+    await expect.poll(async () => ((await tool(page, url, "course_state", { courseId: F.course, detail: "summary" })) as { cramming: string | null }).cramming).toBeNull();
+  });
 });
