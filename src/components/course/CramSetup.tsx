@@ -8,7 +8,7 @@ import { HOUR_STEP, budgetFromPerDay, isHalfHours, perDayOf } from "@/lib/master
 import { NOT_WEAK } from "@/lib/mastery/cram-plan";
 import type { CourseMastery } from "@/lib/mastery/course-mastery";
 import { Button } from "@/components/ui/Button";
-import { useOrca } from "@/lib/store";
+import { useDayKey, useOrca } from "@/lib/store";
 
 /** The most a professor's quote holds (the connector's limit for a scope quote). */
 const WORDS_MAX = 500;
@@ -41,6 +41,7 @@ const parseHours = (text: string): number | null => {
  */
 export function CramSetup({ exam, course, candidates, materials, catalogue, mastery, today, onDone, onCancel }: { exam: Exam; course: Course; candidates: readonly string[]; materials: readonly Material[]; catalogue: Readonly<Record<string, Objective>>; mastery: CourseMastery; today: string; onDone: () => void; onCancel: () => void }) {
   const { updateExam, configs } = useOrca();
+  const dayKey = useDayKey();
   const budget = exam.scope?.budget;
   const days = remainingDays(today, exam.date);
   // Starts from the quote already on the scope, so Edit scope shows what was said.
@@ -52,7 +53,7 @@ export function CramSetup({ exam, course, candidates, materials, catalogue, mast
   });
   const [worries, setWorries] = useState(() => exam.scope?.worries ?? "");
   // The budget's hours by day (a budget saved before per-day budgets gets its spread); the past days' hours are kept as they were.
-  const stored = budget ? perDayOf(budget, exam.date) : null;
+  const stored = budget ? perDayOf(budget, exam.date, dayKey) : null;
   // What a day starts from when the budget doesn't name it: the course's exam review duration over the days left, else the budget's own average.
   const sameDefault = perDayHours(hoursFromDuration((configs[course.id] ?? DEFAULT_CONFIG).exam.duration), days.length);
   const [same, setSame] = useState(() => String(sameDefault));
@@ -78,7 +79,7 @@ export function CramSetup({ exam, course, candidates, materials, catalogue, mast
     const scope: ExamScope = worries.trim() ? { ...rest, worries: worries.trim() } : rest;
     // The days before today keep the hours they had (what the plan's "behind" compares with); the rest are the rows.
     const since = exam.cramming && budget && exam.date >= today ? budget.since : new Date().toISOString();
-    const past = Object.fromEntries(Object.entries(stored ?? {}).filter(([d]) => d >= since.slice(0, 10) && d < today && d < exam.date));
+    const past = Object.fromEntries(Object.entries(stored ?? {}).filter(([d]) => d >= dayKey(since) && d < today && d < exam.date));
     const entered = Object.fromEntries(days.map((d, i) => [d, hoursByDay[i] ?? 0]));
     updateExam(exam.id, {
       cramming: true,
