@@ -161,7 +161,7 @@ async function openAiRequest(config: LlmConfig, body: object, fetchImpl: typeof 
     });
   } catch (error) {
     const timedOut = error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
-    throw new OpenAiError(error instanceof Error ? error.message : String(error), { timedOut });
+    throw Object.assign(new OpenAiError(error instanceof Error ? error.message : String(error), { timedOut }), { cause: error });
   }
   if (!res.ok) {
     const raw = await res.text().catch(() => "");
@@ -178,6 +178,17 @@ async function openAiRequest(config: LlmConfig, body: object, fetchImpl: typeof 
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+const GATEWAY_OR_TIMEOUT = new Set([408, 502, 504, 524]);
+const UNSENT_CODES = new Set(["ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN"]);
+/** Whether a failed request certainly never reached the provider (refused connection, unknown host). */
+function neverSent(error: unknown): boolean {
+  for (let e: unknown = error, depth = 0; e && typeof e === "object" && depth < 5; e = (e as { cause?: unknown }).cause, depth++) {
+    const code = (e as { code?: unknown }).code;
+    if (typeof code === "string" && UNSENT_CODES.has(code)) return true;
+  }
+  return false;
+}
 
 /** Run `attempt` up to 1 + `LIMITS.modelRetries` times, backing off, honouring `retry-after`, for transient failures only. */
 async function withRetries<T>(attempt: () => Promise<T>, opts: { retries?: number; backoffMs?: number } = {}): Promise<T> {
@@ -218,11 +229,44 @@ export async function completeJson<T>(
     /** Tests only: the SDK's fetch and the retry pacing. */
     fetch?: typeof globalThis.fetch;
     retryBackoffMs?: number;
+    /** Injected reservation lifecycle for deterministic tests; production uses the shared database. */
+    reserveAttempt?: () => Promise<{ settle: (known: boolean) => Promise<unknown> }>;
   } = {},
 ): Promise<T> {
   if (PROVIDERS[config.provider].browserOnly) {
     throw new LlmError(`${PROVIDERS[config.provider].label} runs in your browser, not on the server.`, 400);
   }
+  const attempt = async <R>(work: (report: NonNullable<typeof opts.onUsage>) => Promise<R>): Promise<R> => {
+    const started = Date.now();
+    if (opts.ctx && process.env.ORCA_UPLOAD_PIPELINE === "staged") opts.ctx.usageAt = new Date(started).toISOString();
+    // Byte-level text bound includes schema and role framing. Images are rendered at <=1600px;
+    // reserve a deliberately conservative 64k tokens/image rather than estimating chars/4.
+    const inputBound = Buffer.byteLength(system + prompt + (opts.context ?? "") + JSON.stringify(openAiJsonSchema(schema)), "utf8") + 8192 + (opts.images?.length ?? 0) * 64_000;
+    const reservation = opts.reserveAttempt ? await opts.reserveAttempt() : process.env.ORCA_UPLOAD_PIPELINE === "staged" && opts.ctx
+      ? await (await import("./server/staged/call-admission.ts")).reserveAttempt(opts.ctx, config.model, inputBound, opts.maxTokens ?? 16000)
+      : null;
+    let known = false;
+    const report: NonNullable<typeof opts.onUsage> = async (usage, model) => {
+      if (opts.ctx) opts.ctx.durationMs = Date.now() - started;
+      await opts.onUsage?.(usage, model);
+      known = true;
+    };
+    try { return await work(report); }
+    catch (error) {
+      // A request the provider answered with an error status never generated anything (4xx refusals
+      // and 5xx/overloaded alike), and neither did one that never connected. A timeout, a connection
+      // lost mid-reply, or a gateway's 502/504/524 (the provider behind it may have finished and
+      // billed) stays held as unknown usage.
+      const status = error && typeof error === "object" && "status" in error ? Number(error.status) : 0;
+      if ((status >= 400 && !GATEWAY_OR_TIMEOUT.has(status)) || neverSent(error)) known = true;
+      throw error;
+    } finally {
+      // A failed settle must not replace a paid reply: the hold expires to unknown and is released
+      // once its usage is metered (pipeline_reserve_call).
+      try { await reservation?.settle(known); }
+      catch (settleError) { console.error(`A model reservation couldn't be settled: ${settleError instanceof Error ? settleError.message : String(settleError)}`); }
+    }
+  };
   if (config.provider === "anthropic") {
     // The SDK's own retries are off: they would retry a spend-limit 429 too. withRetries decides.
     const client = new Anthropic({ apiKey: config.apiKey, maxRetries: 0, timeout: LIMITS.modelTimeoutMs, ...(config.baseUrl ? { baseURL: config.baseUrl } : {}), ...(opts.fetch ? { fetch: opts.fetch } : {}) });
@@ -231,7 +275,7 @@ export async function completeJson<T>(
       // Streamed: a long reply (generate may write 24k tokens) would outlast a plain request, which the
       // SDK refuses to send; finalMessage() gathers it and parses it against the schema the same way.
       const response = await withRetries(
-        async () => {
+        () => attempt(async (report) => {
           const stream = client.beta.messages.stream({
               model: config.model,
               max_tokens: opts.maxTokens ?? 16000,
@@ -268,13 +312,14 @@ export async function completeJson<T>(
               };
             }
           });
+          let response: Awaited<ReturnType<typeof stream.finalMessage>>;
           try {
-            return await stream.finalMessage();
+            response = await stream.finalMessage();
           } catch (error) {
             const { partial } = seen;
-            if (partial && opts.onUsage) {
+            if (partial) {
               try {
-                await opts.onUsage(partial.usage, partial.model);
+                await report(partial.usage, partial.model);
               } catch (meterError) {
                 console.error(`A cut-off model reply couldn't be metered: ${meterError instanceof Error ? meterError.message : String(meterError)}`);
               }
@@ -283,16 +328,20 @@ export async function completeJson<T>(
             if (error instanceof Anthropic.APIError) throw error;
             throw new Anthropic.APIConnectionError({ message: `The reply stream failed: ${error instanceof Error ? error.message : String(error)}`, cause: error instanceof Error ? error : undefined });
           }
-        },
+          // Metered outside the stream's catch: a failed usage write is not a connection failure, so it
+          // is neither metered twice nor retried (a retry would be another paid call).
+          await report(usageOf(response), response.model || config.model);
+          return response;
+        }),
         { backoffMs: opts.retryBackoffMs },
       );
-      if (opts.onUsage) await opts.onUsage(usageOf(response), response.model || config.model);
       if (response.stop_reason === "refusal") throw new LlmError("The model declined to process this material.", 422);
       if (response.stop_reason === "max_tokens") throw new LlmError("The material is too long for one pass. Try a smaller file.", 413);
       if (response.parsed_output) return response.parsed_output;
       const text = response.content.filter((b) => b.type === "text").map((b) => b.text).join("");
       return parseLoose(text);
     } catch (error) {
+      if (error instanceof Error && error.name === "PipelineDeferred") throw error;
       if (error instanceof LlmError) throw error;
       mapAnthropicError(error, config.model);
     }
@@ -321,8 +370,11 @@ export async function completeJson<T>(
     };
     try {
       // Not streamed: a reply cut off by the timeout reports no token counts, so it can't be metered.
-      const response = await withRetries(() => openAiRequest(config, body, opts.fetch ?? globalThis.fetch), { backoffMs: opts.retryBackoffMs });
-      if (response.usage && opts.onUsage) await opts.onUsage(openAiUsageOf(response.usage), response.model || config.model);
+      const response = await withRetries(() => attempt(async (report) => {
+        const response = await openAiRequest(config, body, opts.fetch ?? globalThis.fetch);
+        if (response.usage) await report(openAiUsageOf(response.usage), response.model || config.model);
+        return response;
+      }), { backoffMs: opts.retryBackoffMs });
       if (response.status === "incomplete") {
         if (response.incomplete_details?.reason === "max_output_tokens") throw new LlmError("The material is too long for one pass. Try a smaller file.", 413);
         throw new LlmError("The model declined to process this material.", 422);
@@ -337,6 +389,7 @@ export async function completeJson<T>(
         throw new LlmError(`The model's reply didn't match the expected shape: ${error instanceof Error ? error.message.slice(0, 160) : "parse error"}`, 502);
       }
     } catch (error) {
+      if (error instanceof Error && error.name === "PipelineDeferred") throw error;
       if (error instanceof LlmError) throw error;
       mapOpenAiError(error, config.model);
     }

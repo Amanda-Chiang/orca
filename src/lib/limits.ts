@@ -66,6 +66,8 @@ export const LIMITS = {
     heartbeat: { max: 6, windowSeconds: 300 },
     /** Starting or stopping the study timer (POST /api/study-timer, 2026-11-22). */
     timer: { max: 30, windowSeconds: 3600 },
+    /** Asking the server to check runs (POST /api/runs/check): pages following a staged run ask once a minute per browser; a few tabs fit, a loop doesn't. */
+    runsCheck: { max: 20, windowSeconds: 300 },
   },
 
   /** One model call: the longest it may take, and how often a transient failure is retried. */

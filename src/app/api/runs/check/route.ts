@@ -1,4 +1,5 @@
 import { checkRuns } from "@/lib/server/jobs/start";
+import { rateLimit, tooManyRequests } from "@/lib/server/rate-limit";
 import { forStudent, reply } from "@/lib/server/student";
 
 /**
@@ -13,6 +14,9 @@ export const maxDuration = 300;
 
 export async function POST(request: Request) {
   return forStudent(request, async (student, db) => {
+    // Each check can claim and hand off queued phases, so it is bounded per student.
+    const rate = await rateLimit(db, student.id, "runsCheck");
+    if (!rate.ok) return tooManyRequests(rate);
     const next = await checkRuns(db, student.id);
     return reply(200, { started: next?.job.runId ?? null });
   });

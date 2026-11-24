@@ -76,7 +76,7 @@ export function defaultsToRow(config: ReviewConfig) {
 
 /* ── Courses ── */
 
-export function courseToRow(c: Course, config: ReviewConfig | null, schedule: CourseSchedule | null): Omit<Row<"courses">, "owner_id" | "created_at" | "orca_notes" | "deleted_at"> {
+export function courseToRow(c: Course, config: ReviewConfig | null, schedule: CourseSchedule | null): Omit<Row<"courses">, "owner_id" | "created_at" | "orca_notes" | "deleted_at" | "structure_revision" | "upload_sequence"> {
   return {
     id: c.id,
     slug: c.slug,
@@ -227,7 +227,7 @@ export function questionFromRow(r: Row<"questions">): QuizQuestion {
 }
 
 /** A finished (or failed) run as the job saves it; its Trigger.dev job id, a top-up's request (objective_ids) and when it was claimed (started_at) are left as they are. */
-export function runToRow(r: PipelineRun): Omit<StructureRow<"pipeline_runs">, "job_id" | "objective_ids" | "started_at" | "deep_minutes"> {
+export function runToRow(r: PipelineRun): Omit<StructureRow<"pipeline_runs">, "job_id" | "objective_ids" | "started_at" | "deep_minutes" | "phase" | "execution_token" | "protocol_version" | "structure_committed_at"> {
   return {
     id: r.id,
     material_id: r.materialId,
@@ -250,6 +250,9 @@ export function runToRow(r: PipelineRun): Omit<StructureRow<"pipeline_runs">, "j
 
 export function runFromRow(r: Row<"pipeline_runs">): PipelineRun {
   return {
+    ...(r.protocol_version ? { protocolVersion: r.protocol_version } : {}),
+    ...(r.structure_committed_at ? { structureCommittedAt: r.structure_committed_at } : {}),
+    ...(r.phase ? { phase: r.phase } : {}),
     id: r.id,
     kind: r.kind as NonNullable<PipelineRun["kind"]>,
     courseId: r.course_id,
@@ -286,7 +289,7 @@ type SavedRow<K extends keyof Tables> = StructureRow<K> | (Partial<StructureRow<
 
 export interface StructureRows {
   /** Only the server's jobs save runs (students can't write them). */
-  runs?: Omit<StructureRow<"pipeline_runs">, "job_id" | "objective_ids" | "started_at" | "deep_minutes">[];
+  runs?: Omit<StructureRow<"pipeline_runs">, "job_id" | "objective_ids" | "started_at" | "deep_minutes" | "phase" | "execution_token" | "protocol_version" | "structure_committed_at">[];
   topics?: SavedRow<"topics">[];
   objectives?: SavedRow<"objectives">[];
   relations?: SavedRow<"relations">[];
