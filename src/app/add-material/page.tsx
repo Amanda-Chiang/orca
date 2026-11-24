@@ -473,7 +473,7 @@ export default function AddMaterialPage({ searchParams }: PageProps<"/add-materi
                   <span key={i} className="block h-[8px] rounded-pill bg-alice-deep" style={{ width: `${w}%`, opacity: w ? 1 : 0 }} />
                 ))}
                 <span className="my-[6px] flex h-[120px] flex-col items-center justify-center gap-[6px] rounded-[12px] bg-alice px-[16px] text-center text-[14px] font-semibold text-wisteria-deep">
-                  Drop PDFs, .pptx decks or a whole folder, choose files, paste a course URL, or add an AI chat
+                  Drop PDFs, .pptx decks or a whole folder here
                   <button
                     type="button"
                     onClick={(e) => {
