@@ -17,7 +17,7 @@ become aliases and release the ordering barrier.
 The phase path is `uploads.ts` / `server/canvas.ts` → `server/materials.ts` →
 `server/jobs/start.ts` → `server/staged/schedule.ts` → `server/staged/run.ts`:
 
-1. **Prepare:** two files per owner may read scans/figures concurrently. Successful batches and
+1. **Prepare:** five files per owner may read scans/figures concurrently (ten tasks per owner in all). Successful batches and
    schema-checked model responses are checkpointed.
 2. **Structure:** one writer per course holds the lane through extraction/reconciliation and an
    atomic save. The earliest unresolved admission is the barrier. A coherent snapshot and course

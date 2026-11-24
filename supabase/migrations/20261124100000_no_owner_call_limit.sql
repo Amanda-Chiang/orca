@@ -28,3 +28,33 @@ begin
  insert into public.pipeline_call_reservations(id,owner_id,run_id,task_id,task_token,day_start,utc_start,tokens,usd,kind,lease_until) values(rid,o,(payload->>'runId')::uuid,(payload->>'taskId')::uuid,(payload->>'token')::uuid,day,utc,amount,price,payload->>'kind',now()+interval '12 minutes') on conflict do nothing;
  return jsonb_build_object('ok',true);
 end; $$;
+
+-- Reading pages (owner, 2026-11-24): five files per student at once instead of two, now that a
+-- student's calls aren't capped at four; up to ten tasks per student at once instead of six.
+create or replace function public.pipeline_claim(payload jsonb) returns jsonb language plpgsql security definer set search_path='' as $$
+declare t public.pipeline_tasks; i public.pipeline_items; claim_token uuid=gen_random_uuid(); o uuid=(payload->>'ownerId')::uuid;
+begin
+ -- Serialize scheduler decisions per owner; a distinct course lease is backed by a unique index.
+ perform pg_advisory_xact_lock(hashtextextended(o::text,31));
+ if (select count(*) from public.pipeline_tasks where owner_id=o and state in ('dispatched','running') and lease_until>now())>=10 then return null; end if;
+ update public.pipeline_items set state='failed',error='Upload interrupted. Send this file again.' where owner_id=o and state='ingesting' and expires_at<now();
+ update public.pipeline_tasks set state='queued',epoch=epoch+1,token=null,available_at=now(),error='Worker interrupted; resuming checkpoint' where owner_id=o and state in ('dispatched','running') and lease_until<now();
+ for t in select s.* from public.pipeline_tasks s join public.pipeline_items x on x.run_id=s.run_id and x.state='active' join public.pipeline_runs r on r.id=s.run_id join public.courses c on c.id=s.course_id
+  where s.owner_id=o and s.state in ('queued','waiting') and s.available_at<=now() and not x.paused and r.status not in ('done','failed') and c.deleted_at is null
+  order by case s.phase when 'questions' then 0 when 'structure' then 1 else 2 end,x.sequence loop
+  perform 1 from public.courses where id=t.course_id and deleted_at is null for update;
+  if not found then continue; end if;
+  perform 1 from public.pipeline_runs where id=t.run_id and status not in ('done','failed') for update;
+  if not found or exists(select 1 from public.pipeline_items where run_id=t.run_id and paused) then continue; end if;
+  if t.phase='prepare' and (select count(*) from public.pipeline_tasks where owner_id=o and phase='prepare' and state in ('dispatched','running'))>=5 then continue; end if;
+  if t.phase='structure' then
+   if exists(select 1 from public.pipeline_tasks where course_id=t.course_id and phase='structure' and state in ('dispatched','running')) then continue; end if;
+   select * into i from public.pipeline_items where run_id=t.run_id and state='active' order by sequence limit 1;
+   if exists(select 1 from public.pipeline_items a left join public.pipeline_runs ar on ar.id=a.run_id where a.course_id=t.course_id and a.sequence<i.sequence and not a.paused and a.state in ('ingesting','active') and (ar.id is null or (ar.structure_committed_at is null and ar.status<>'failed'))) then continue; end if;
+  end if;
+  update public.pipeline_tasks set state='dispatched',epoch=epoch+1,token=claim_token,lease_until=now()+interval '12 minutes',attempts=attempts+1 where id=t.id;
+  update public.pipeline_runs set status='running',phase=t.phase,started_at=now(),error=null,progress=jsonb_build_object('stage',t.phase) where id=t.run_id;
+  return jsonb_build_object('ownerId',o,'taskId',t.id,'token',claim_token);
+ end loop;
+ return null;
+end; $$;
