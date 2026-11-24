@@ -131,7 +131,7 @@ export default function AddMaterialPage({ searchParams }: PageProps<"/add-materi
   if (resumeId && phase.kind === "idle" && !file) {
     return <ResumeUpload materialId={resumeId} course={course} onAnother={() => router.replace(`/add-material?course=${course.slug}`)} />;
   }
-  const filename = aiChatUrl || (pastedText.trim() ? `${type} (pasted)` : websiteUrl || chosenName || "Choose a PDF or .pptx…");
+  const filename = aiChatUrl || (pastedText.trim() ? `${type} (pasted)` : websiteUrl || chosenName || "Choose a PDF, .pptx or .docx…");
   const busy = phase.kind === "sending" || phase.kind === "working";
   const sendable = batch?.filter((it) => it.problem === null) ?? [];
   const batchFailed = sendable.filter((it) => it.status.kind === "failed");
@@ -362,14 +362,14 @@ export default function AddMaterialPage({ searchParams }: PageProps<"/add-materi
             type="file"
             multiple
             data-part="file-input"
-            accept=".pdf,application/pdf,.pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation"
+            accept=".pdf,application/pdf,.pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             className="hidden"
             onChange={(e) => {
               onFiles(Array.from(e.target.files ?? []));
               e.target.value = "";
             }}
           />
-          {/* A whole folder (every PDF and .pptx in it, subfolders included). */}
+          {/* A whole folder (every PDF, .pptx and .docx in it, subfolders included). */}
           <input
             ref={folderRef}
             type="file"
@@ -464,7 +464,7 @@ export default function AddMaterialPage({ searchParams }: PageProps<"/add-materi
                   <span key={i} className="block h-[8px] rounded-pill bg-alice-deep" style={{ width: `${w}%`, opacity: w ? 1 : 0 }} />
                 ))}
                 <span className="my-[6px] flex h-[120px] flex-col items-center justify-center gap-[6px] rounded-[12px] bg-alice px-[16px] text-center text-[14px] font-semibold text-wisteria-deep">
-                  Drop PDFs, .pptx decks or a whole folder, choose files, paste a course URL, or add an AI chat
+                  Drop PDFs, .pptx decks, .docx files or a whole folder, choose files, paste a course URL, or add an AI chat
                   <button
                     type="button"
                     onClick={(e) => {
