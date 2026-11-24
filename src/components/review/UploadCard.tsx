@@ -82,6 +82,10 @@ export function UploadCard({ run: stored, material, focused = false, openSlides 
   const run = follow && live ? live : isFinished(stored) ? stored : (live ?? stored);
   // Try again clicked: shows "Retrying…" until the run leaves the failure it was retried from.
   const [retryingFrom, setRetryingFrom] = useState<string | null>(null);
+  // Once the run is seen past the failure (queued, running…), the retry is over: a later failure, even
+  // with the same message, shows Try again, not a stuck "Retrying…" (set during render, React's
+  // pattern for state that follows a prop).
+  if (retryingFrom !== null && run.status !== "failed") setRetryingFrom(null);
   const retrying = retryingFrom !== null && run.status === "failed" && (run.error ?? "") === retryingFrom;
   const { courses, refresh } = useOrca();
   const [pickingSlides, setPickingSlides] = useState(openSlides);

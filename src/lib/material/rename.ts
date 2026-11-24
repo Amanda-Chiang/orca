@@ -25,6 +25,8 @@ export function renamed(current: string, stem: string): RenameCheck {
   // The extension typed again ("Notes.pdf" for a PDF) isn't doubled.
   if (ext && text.toLowerCase().endsWith(ext.toLowerCase())) text = text.slice(0, -ext.length).trim();
   if (!text) return { ok: false, error: "Give the file a name.", hits: [] };
+  // Pasted text, a website or a chat has no file behind it: a name ending like one would pass it off as a file.
+  if (!ext && /\.(pdf|pptx|docx)$/i.test(text)) return { ok: false, error: "Only an uploaded file can end in .pdf, .pptx or .docx.", hits: [] };
   const screened = screen(text);
   if (screened.strong) {
     const quote = screened.hits.find((h) => h.severity === "strong")!.quote;

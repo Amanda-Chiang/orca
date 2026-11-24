@@ -18,4 +18,7 @@ test("a name that tries to instruct the AI, or an empty one, is refused", () => 
   assert.equal(bad.ok, false);
   assert.match(!bad.ok ? bad.error : "", /gives its AI instructions/);
   assert.equal(renamed("Lecture.pdf", "   ").ok, false);
+  // Pasted text has no file behind it: it can't be named like one.
+  assert.equal(renamed("Syllabus (pasted), Nov 7", "Syllabus.pdf").ok, false);
+  assert.equal((renamed("Syllabus (pasted), Nov 7", "Syllabus") as { filename: string }).filename, "Syllabus");
 });

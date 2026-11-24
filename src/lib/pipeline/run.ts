@@ -215,6 +215,9 @@ export function screenMaterial(pages: ReadonlyArray<{ n: number; text: string }>
   return hits;
 }
 
+/** The fewest letters and digits a reported quote needs before it can be matched to the notes. */
+const FROM_NOTES_MIN = 20;
+
 /** Letters and digits only, lowercased: a quote matches the notes whatever its quote marks, spacing or punctuation. */
 const bare = (text: string) => text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
 
@@ -224,7 +227,9 @@ const bare = (text: string) => text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ""
  */
 export function fromNotes(quote: string, notes: OrcaNotes | null | undefined): boolean {
   const q = bare(quote);
-  if (!q || !notes) return false;
+  // A short phrase could match the notes by chance and hide a real finding in the file: only a
+  // quote of some length is taken as the notes themselves.
+  if (q.length < FROM_NOTES_MIN || !notes) return false;
   return [notes.forThisClass, notes.forAllClasses].some((n) => n != null && bare(n).includes(q));
 }
 

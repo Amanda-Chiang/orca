@@ -616,10 +616,11 @@ All 11 Figma screens are built. Where things live:
 - `src/lib/jobs/` + `src/lib/server/jobs/` + `src/trigger/` — upload and top-up jobs (`ORCA_JOBS=inline|trigger`). A queued
   upload can be **paused** from the Uploads tab (`POST /api/runs/pause`, one run or a whole course's; run status `paused`,
   uploads only, migration `20261031100000`): it leaves the queue (nothing waits behind it, never taken for dead) and
-  Resume puts it back in line by upload time; re-uploading a paused file resumes its run instead of starting a second.
+  Resume puts it back in line by upload time. Since 2026-11-24 a file uploaded again from the add-material page is a
+  new copy with its own run (no duplicate check), even if an earlier copy is paused or failed.
   A running upload can be **stopped** (`POST /api/runs/stop`, `stopRun`: failed with `STOPPED_ERROR`, the queue moves
-  on; a job still alive can't revive it, its final save checks the run is still running). A retried upload (Try again,
-  or the file uploaded again after a failure) keeps the failed run's `at`, so it goes back to its place in line.
+  on; a job still alive can't revive it, its final save checks the run is still running). A retried upload (Try again)
+  keeps the failed run's `at`, so it goes back to its place in line.
   Settings' Disconnect buttons (Canvas, Claude connector) ask first (2026-11-07). Material can be **removed**
   from a course (`DELETE /api/materials/:id`, `removeMaterial`): file, pages and calendar entry go, the row stays with
   status `removed` (not loaded; hash cleared so the file can be uploaded again), the objectives only it taught and a

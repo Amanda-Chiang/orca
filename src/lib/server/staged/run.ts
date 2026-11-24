@@ -47,7 +47,9 @@ export async function runPipelineStage(job: StageJob): Promise<void> {
     if (leaseLost) throw new Error("Pipeline lease was revoked");
     try { return await pipelineRpc(db, "checkpoint", { ...job, ...data }); } catch (error) { throw lost(error); }
   };
-  const heartbeat: ReturnType<typeof setInterval> = setInterval(() => { void checkpoint({}).catch(() => { leaseLost = true; clearInterval(heartbeat); }); }, 30_000);
+  // A failed check-in counts as a lost lease only when the database says so (`checkpoint` runs `lost`);
+  // a dropped request just waits for the next one, so a network blip doesn't silently end the attempt.
+  const heartbeat: ReturnType<typeof setInterval> = setInterval(() => { void checkpoint({}).catch(() => {}); }, 30_000);
   const base = stepCaller({ ownerId: job.ownerId, runId: task.runId, kind: "upload", task: job, phase: task.phase }, { guard: "none" });
   if (!base) { clearInterval(heartbeat); await pipelineRpc(db, "fail", { ...job, error: "No AI connected." }); return; }
   // Successful replies survive transaction conflicts and process restarts. Changed prompt inputs never reuse stale answers.
@@ -90,7 +92,7 @@ export async function runPipelineStage(job: StageJob): Promise<void> {
         const snapshot = await pipelineSnapshot(db, job.ownerId, task.courseId);
         const prep = task.checkpoint as { warnings?: Array<{ n: number; reason: string }>; markers?: string | null } | null;
         const input: RunInput = { course: snapshot.course, ...snapshot.structure, material, materials, pages, notes: loaded.notes, markers: prep?.markers ?? loaded.markers, flagged: await store.flagged(task.courseId), runId: task.runId, model: (await store.run(task.runId))!.model, now: new Date().toISOString() };
-        const plan = await runUpload(input, { call, newId: () => crypto.randomUUID(), structureOnly: true, onProgress: (progress) => { void checkpoint({ progress }).catch(() => { leaseLost = true; }); } });
+        const plan = await runUpload(input, { call, newId: () => crypto.randomUUID(), structureOnly: true, onProgress: (progress) => { void checkpoint({ progress }).catch(() => {}); } });
         for (const w of prep?.warnings ?? []) plan.run.dropped.push({ prompt: `Page ${w.n}`, reason: `kept the file's text: ${w.reason}` });
         const { byTopic } = uploadWritingTargets(input, plan);
         const flagged = new Set(plan.flags.map((f) => f.objectiveId));
