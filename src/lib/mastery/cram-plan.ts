@@ -6,7 +6,7 @@
  * so Claude's progress line and the page agree.
  */
 import type { CramBudget } from "../data.ts";
-import { perDayOf } from "./cram-budget.ts";
+import { perDayOf, utcDay, type DayOf } from "./cram-budget.ts";
 import type { ObjectiveStatus } from "./types.ts";
 
 export { DEFAULT_HOURS_PER_DAY, defaultBudget } from "./cram-budget.ts";
@@ -22,6 +22,8 @@ export interface SpentMinutes {
 export interface CramPlanInput {
   /** YYYY-MM-DD, student's timezone */
   today: string;
+  /** The student's day of an instant (their timezone), for the day the cram started (`budget.since`); UTC when left out. */
+  dayOf?: DayOf;
   /** YYYY-MM-DD */
   examDate: string;
   budget: CramBudget;
@@ -267,9 +269,10 @@ function placeMocks(mocks: NonNullable<CramPlanInput["mocks"]>, studyDays: reado
 
 export function cramPlan(input: CramPlanInput): CramPlan {
   const { today, examDate, budget, spentMinutes } = input;
-  const startDay = budget.since.slice(0, 10);
+  const dayOf = input.dayOf ?? utcDay;
+  const startDay = dayOf(budget.since);
   // The cram's days: from the day it started to the day before the exam (days left over from an earlier date aren't part of it).
-  const perDayAll = perDayOf(budget, examDate);
+  const perDayAll = perDayOf(budget, examDate, dayOf);
   const days = Object.keys(perDayAll).filter((d) => d >= startDay && d < examDate).sort();
   const perDay = Object.fromEntries(days.map((d) => [d, perDayAll[d]]));
   const daysLeft = Math.max(0, daysBetween(today, examDate));

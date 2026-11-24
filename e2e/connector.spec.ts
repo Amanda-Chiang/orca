@@ -3,6 +3,9 @@ import type { QuizQuestion } from "../src/lib/data";
 import { fakeCalls, fakeModel } from "./fake-model";
 import { expect, test, F, FIXTURE_STATE, fixtureMaterial, ids, seedPages, seedState, stored } from "./fixture";
 
+/** YYYY-MM-DD `days` from today in the student's timezone (the fixture gives the student this machine's zone), as Orca counts days. */
+const localDay = (days: number) => new Date(Date.now() + days * 86_400_000).toLocaleDateString("en-CA");
+
 /**
  * The Claude connector, end to end: the link minted in Settings, then the MCP route as Claude
  * calls it (one JSON-RPC message per POST) against the fixture course, and the evidence it leaves.
@@ -72,7 +75,9 @@ test("Settings mints the connector link once; Claude can read the course, ask a 
   expect(writing.pending?.retryAfterSeconds).toBeGreaterThan(0);
 
   // An exam with its scope; then a question for one objective, without its key.
-  const exam = toolText(await call(page, url, "set_exam", { courseId: F.course, title: "Midterm", date: "2026-12-01", topicIds: [F.booleanAlgebra] })) as { id: string; title: string; topicIds: string[] };
+  // Well outside the exam week, whatever the day the suite runs: inside it the course is in a cram and prose isn't graded by Orca.
+  const midterm = new Date(Date.now() + 60 * 86_400_000).toISOString().slice(0, 10);
+  const exam = toolText(await call(page, url, "set_exam", { courseId: F.course, title: "Midterm", date: midterm, topicIds: [F.booleanAlgebra] })) as { id: string; title: string; topicIds: string[] };
   expect(exam.title).toBe("Midterm");
   expect(exam.topicIds).toEqual([F.booleanAlgebra]);
   const questions = toolText(await call(page, url, "questions_for", { courseId: F.course, objectiveIds: [F.simplify], limit: 1 })) as { questions: Array<Record<string, unknown>> };
@@ -203,7 +208,7 @@ test("in a cram Orca makes no model calls: prose is handed back for Claude to gr
   await fakeModel({});
 
   // An exam 12 days out the student is cramming for: the course is in exam-week whatever the date.
-  const far = new Date(Date.now() + 12 * 86_400_000).toISOString().slice(0, 10);
+  const far = localDay(12);
   const exam = toolText(await call(page, url, "set_exam", { courseId: F.course, title: "Final", date: far, topicIds: [], cramming: true })) as { id: string; mode: string };
   expect(exam.mode).toBe("exam-week");
   // No budget yet: the plan assumes 2 hours a study day (12 days: 24 hours) and says so.
@@ -229,7 +234,7 @@ test("in a cram Orca makes no model calls: prose is handed back for Claude to gr
   expect(planned.coverage.total).toBe(4);
   expect(planned.topErrors).toEqual([]);
   // A total is spread over the days: half an hour each over the 12 days, today included.
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDay(0);
   expect(Object.keys(planned.plan.perDay)).toHaveLength(12);
   expect(planned.plan.perDay[today]).toBe(0.5);
   expect(planned.plan.minutesToday).toBe(30);
@@ -323,7 +328,7 @@ test("the exam map: Claude reads a held-back exam (never the reserved one), stor
   await card.locator('[data-part="connector-create"]').click();
   const url = (await card.locator('[data-part="connector-url"]').textContent())!.trim();
 
-  const soon = new Date(Date.now() + 5 * 86_400_000).toISOString().slice(0, 10);
+  const soon = localDay(5);
   const exam = toolText(await call(page, url, "set_exam", { courseId: F.course, title: "Quiz 2", date: soon, topicIds: [], cramming: true, scope: { reservedMaterialId: id.fall23, rules: { notes: "none", calculator: "simple", minutes: 75 } } })) as { id: string };
 
   // The vault is hidden from the student, not from the tutor; the reserved exam stays unread until it's sat.

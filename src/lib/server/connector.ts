@@ -20,7 +20,7 @@ import { logSession, recentSessions } from "@/lib/server/connector/study-session
 import { logProblem, readinessFor } from "@/lib/server/connector/problem-attempts";
 import { AGENDA_RULES, addDays } from "@/lib/mastery/agenda";
 import { NOT_WEAK } from "@/lib/mastery/cram-plan";
-import { mergeBudget, withPerDay } from "@/lib/mastery/cram-budget";
+import { mergeBudget, withPerDay, type DayOf } from "@/lib/mastery/cram-budget";
 import { dayStartIn } from "@/lib/jobs/budget";
 import { startFlagTopUpJob } from "@/lib/server/jobs/start";
 import { rateLimit } from "@/lib/server/rate-limit";
@@ -134,7 +134,7 @@ export function orcaOutcome(q: QuizQuestion, response: string): AnswerEvent["out
  * materialIds replace the exam's when objectives are given, else the exam's are kept (a budget-only
  * call); the budget is merged over the exam's (`mergeBudget`: per day, today, or a total spread).
  */
-export function mergeScope(kept: ExamScope | null, input: ScopeInput, context: { today: string; examDate: string; now: string }): ExamScope {
+export function mergeScope(kept: ExamScope | null, input: ScopeInput, context: { today: string; examDate: string; now: string; dayOf?: DayOf }): ExamScope {
   const { budget, reservedMaterialId, patchObjectives, objectives, sources, ...others } = input;
   let base: ExamScope;
   if (patchObjectives && objectives) {
@@ -253,7 +253,7 @@ export function connectorTools(db: OrcaSupabase, ownerId: string, now: () => Dat
     // The exams table holds scope to an object (or null); its shape is the app's ExamScope. A budget saved before per-day budgets is shown with its hours by day.
     const withDays = (raw: ExamScope | null, examDate: string): ExamScope | null => {
       const scope = raw ? protectScope(raw, scopeObjectives).scope : raw;
-      return scope?.budget ? { ...scope, budget: withPerDay(scope.budget, examDate) } : scope;
+      return scope?.budget ? { ...scope, budget: withPerDay(scope.budget, examDate, dayKeyIn(timezone)) } : scope;
     };
     const examLines: ExamLine[] = (exams.data ?? []).map((e) => ({ id: e.id, title: e.title, date: e.date, topicIds: e.topic_ids, cramming: e.cramming && e.date >= today, scope: withDays(e.scope as unknown as ExamScope | null, e.date), mode: examMode({ date: e.date, cramming: e.cramming && e.date >= today }, today, weekOut) }));
     // The topics of the exams in the window (the next week's, and one being crammed for whatever its date:
@@ -693,13 +693,14 @@ export function connectorTools(db: OrcaSupabase, ownerId: string, now: () => Dat
         kept = { cramming: existing.cramming, scope: existing.scope as unknown as ExamScope | null, title: existing.title, date: existing.date, topicIds: existing.topic_ids };
       }
       const at = now();
-      const today = dayKeyIn((await db.from("profiles").select("timezone").eq("owner_id", ownerId).maybeSingle()).data?.timezone ?? "UTC")(at.toISOString());
+      const dayOf = dayKeyIn((await db.from("profiles").select("timezone").eq("owner_id", ownerId).maybeSingle()).data?.timezone ?? "UTC");
+      const today = dayOf(at.toISOString());
       const title = exam.title ?? kept.title;
       const date = exam.date ?? kept.date;
       const topicIds = exam.topicIds ?? kept.topicIds;
       if (title === undefined || date === undefined || topicIds === undefined) return { error: "A new exam needs title, date and topicIds." };
       const cramming = exam.cramming ?? kept.cramming;
-      const merged = exam.scope ? mergeScope(kept.scope, exam.scope, { today, examDate: date, now: at.toISOString() }) : kept.scope;
+      const merged = exam.scope ? mergeScope(kept.scope, exam.scope, { today, examDate: date, now: at.toISOString(), dayOf }) : kept.scope;
       // A file pick never zeroes a weak spot or an unanchored objective of a topic the exam covers (protectScope).
       let scope = merged;
       let note: string | undefined;
