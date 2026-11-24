@@ -155,11 +155,11 @@ export async function cramFields(db: OrcaSupabase, ownerId: string, input: CramF
   if (cramming && budget) {
     const logged = await loggedMinutesByDay(db, ownerId, input.courseId, budget.since);
     const spentByDay = spentMinutesByDay(sessions.data ?? [], events.data ?? [], input.timezone, logged);
-    plan = cramPlan({ today: input.today, examDate: cramming.date, budget, ...unitsOf(cramming, budget.since), spentMinutes: spentMinutesSplit(sessions.data ?? [], events.data ?? [], input.timezone, input.today, logged), spentByDay, mocks: mocksOf(cramming, input) });
+    plan = cramPlan({ today: input.today, dayOf: dayKeyIn(input.timezone), examDate: cramming.date, budget, ...unitsOf(cramming, budget.since), spentMinutes: spentMinutesSplit(sessions.data ?? [], events.data ?? [], input.timezone, input.today, logged), spentByDay, mocks: mocksOf(cramming, input) });
   } else if (cramming) {
     // No budget set yet: the plan assumes one (2 hours a study day from now, nothing spent, nothing touched) and says so, so Claude can ask.
     const assumed = defaultBudget(input.today, cramming.date, input.at.toISOString());
-    plan = cramPlan({ today: input.today, examDate: cramming.date, budget: assumed, ...unitsOf(cramming, assumed.since), touchedObjectiveIds: [], spentMinutes: { beforeToday: 0, today: 0 }, spentByDay: {}, defaulted: true, mocks: mocksOf(cramming, input) });
+    plan = cramPlan({ today: input.today, dayOf: dayKeyIn(input.timezone), examDate: cramming.date, budget: assumed, ...unitsOf(cramming, assumed.since), touchedObjectiveIds: [], spentMinutes: { beforeToday: 0, today: 0 }, spentByDay: {}, defaulted: true, mocks: mocksOf(cramming, input) });
   }
   return { plan, coverage, topErrors: topErrorsOf(events.data ?? []) };
 }

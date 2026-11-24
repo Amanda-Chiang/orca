@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { DEFAULT_HOURS_PER_DAY, cramPlan, defaultBudget, type CramPlanInput } from "../../src/lib/mastery/cram-plan.ts";
 import type { ObjectiveStatus } from "../../src/lib/mastery/types.ts";
+import { mergeBudget } from "../../src/lib/mastery/cram-budget.ts";
+import { dayKeyIn } from "../../src/lib/mastery/objective-state.ts";
 
 const obj = (id: string, status: ObjectiveStatus, weight = 1) => ({ id, name: `Objective ${id}`, weight, status });
 
@@ -227,4 +229,18 @@ test("a short cram with nothing verified spreads its days over every topic, at m
   for (const d of plan.days) for (const t of d.topics) total.set(t.topicId, (total.get(t.topicId) ?? 0) + t.minutes);
   assert.deepEqual([...total.keys()].sort(), ["AC", "C", "Ph", "R", "RLC"], "every topic gets time");
   assert.ok(plan.today.length >= 3, "an 8-hour day works through several topics");
+});
+
+test("a cram started in the evening west of UTC starts on the student's day, not the UTC date of `since`", () => {
+  // 8 pm on Nov 23 in New York is 01:00 UTC on Nov 24: the budget's days are New York days.
+  const dayOf = dayKeyIn("America/New_York");
+  const since = "2026-11-24T01:00:00.000Z";
+  const evening = { hours: 3, daysOut: [], since, perDay: { "2026-11-23": 1, "2026-11-24": 1, "2026-11-25": 1 } };
+  const input: CramPlanInput = { ...base, today: "2026-11-23", examDate: "2026-11-26", budget: evening };
+  const plan = cramPlan({ ...input, dayOf });
+  assert.equal(plan.minutesToday, 60, "today's hour is there");
+  assert.deepEqual(Object.keys(plan.perDay), ["2026-11-23", "2026-11-24", "2026-11-25"]);
+  assert.equal(cramPlan(input).minutesToday, 0, "read as the UTC date, today was dropped (the bug)");
+  // A budget merged the same evening keeps today too.
+  assert.deepEqual(Object.keys(mergeBudget(null, { today: 1 }, { today: "2026-11-23", examDate: "2026-11-26", now: since, dayOf }).perDay ?? {}), ["2026-11-23", "2026-11-24", "2026-11-25"]);
 });
