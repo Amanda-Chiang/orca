@@ -72,7 +72,9 @@ test("Settings mints the connector link once; Claude can read the course, ask a 
   expect(writing.pending?.retryAfterSeconds).toBeGreaterThan(0);
 
   // An exam with its scope; then a question for one objective, without its key.
-  const exam = toolText(await call(page, url, "set_exam", { courseId: F.course, title: "Midterm", date: "2026-12-01", topicIds: [F.booleanAlgebra] })) as { id: string; title: string; topicIds: string[] };
+  // Well outside the exam week, whatever the day the suite runs: inside it the course is in a cram and prose isn't graded by Orca.
+  const midterm = new Date(Date.now() + 60 * 86_400_000).toISOString().slice(0, 10);
+  const exam = toolText(await call(page, url, "set_exam", { courseId: F.course, title: "Midterm", date: midterm, topicIds: [F.booleanAlgebra] })) as { id: string; title: string; topicIds: string[] };
   expect(exam.title).toBe("Midterm");
   expect(exam.topicIds).toEqual([F.booleanAlgebra]);
   const questions = toolText(await call(page, url, "questions_for", { courseId: F.course, objectiveIds: [F.simplify], limit: 1 })) as { questions: Array<Record<string, unknown>> };
