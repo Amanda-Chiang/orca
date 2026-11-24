@@ -45,8 +45,10 @@ export async function addTextMaterial(db: OrcaSupabase, ownerId: string, input: 
   const rate = await rateLimit(db, ownerId, "text");
   if (!rate.ok) return { status: 429, body: { error: rate.message, retryAfterSeconds: rate.retryAfterSeconds }, verdict: rate };
 
+  // Named before admission, so the upload list shows the material's own name from the start.
+  const filename = input.filename ? sanitize(input.filename, 255).text.trim() || pastedFilename(input.url ? "AI chat" : input.type) : input.url ? aiChatFilename(input.url) : pastedFilename(input.type);
   const admissionId = stagedPipeline() ? crypto.randomUUID() : undefined;
-  if (admissionId) await singleton(db, ownerId, input.courseId, admissionId, input.filename ?? "Pasted material", "text");
+  if (admissionId) await singleton(db, ownerId, input.courseId, admissionId, filename, "text");
   let attached = false;
   try {
   let text: string;
@@ -70,7 +72,6 @@ export async function addTextMaterial(db: OrcaSupabase, ownerId: string, input: 
   const pages = (chat ? chatPages(text) : textPages(text)).map((pageText, i) => ({ n: i + 1, text: pageText }));
   // Jobs read at most this many pages of any material, so longer text is refused, never cut.
   if (pages.length > LIMITS.pagesPerFile) return { status: 413, body: { error: `This text is too long to read in one go (${pages.length} pages; Orca reads at most ${LIMITS.pagesPerFile}). Paste it in parts.` } };
-  const filename = input.filename ? sanitize(input.filename, 255).text.trim() || pastedFilename(type) : sourceUrl ? aiChatFilename(sourceUrl) : pastedFilename(type);
   const hash = createHash("sha256").update(text).digest("hex");
   const { data: same, error: sameError } = await db.from("materials").select("id, filename").eq("owner_id", ownerId).eq("course_id", input.courseId).eq("content_hash", hash).order("created_at").limit(1).maybeSingle();
   if (sameError) return { status: 500, body: { error: "Orca couldn't check that text." } };
