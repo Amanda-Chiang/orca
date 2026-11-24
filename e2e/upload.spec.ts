@@ -4,6 +4,7 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { type Student, admin, expect, test, stored } from "./fixture";
 import { DECK_NAME, lines, makeDeck, makePdf } from "../tests/fixtures/pdf";
+import { makeDocx, pageBreak, para } from "../tests/fixtures/zip";
 import { fakeCalls, fakeModel } from "./fake-model";
 
 /**
@@ -273,7 +274,7 @@ test("a folder of files: one row each with its own type, prefilled from the shar
   await expect(rows).toHaveCount(3);
   await expect(page.getByText("2 files to add · 1 skipped")).toBeVisible();
   await expect(rows.nth(2)).toHaveAttribute("data-status", "skipped");
-  await expect(rows.nth(2)).toContainText("Orca can read PDFs and PowerPoint (.pptx) decks.");
+  await expect(rows.nth(2)).toContainText("Orca can read PDFs, PowerPoint (.pptx) decks and Word (.docx) documents.");
 
   // The shared default reaches every row; a row changed by hand keeps its own choice after that.
   await page.getByLabel("What kind of material is this?").selectOption("Syllabus");
@@ -295,6 +296,28 @@ test("a folder of files: one row each with its own type, prefilled from the shar
     ["hw1.pdf", "Homework", "2026-11-03"],
   ]);
   expect(state.runs).toHaveLength(2);
+});
+
+test("a Word document (.docx) uploads like a PDF: it's read into pages and builds the course", async ({ page, student }) => {
+  await fakeModel({ extract: ONE_TOPIC, perObjective: 2 });
+  await createCourse(page, "Logic");
+  await page.goto("/add-material");
+  const docx = makeDocx([para("Boolean Algebra", "Heading1"), para("Absorption: x + xy = x."), pageBreak, para("Simplify x + xy using absorption.")].join(""));
+  await page.locator("[data-part=file-input]").setInputFiles({ name: "notes.docx", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", buffer: Buffer.from(docx) });
+  await page.getByLabel("What kind of material is this?").selectOption("Typed notes");
+  await page.getByRole("button", { name: "Add to course" }).click();
+  await expect(page).toHaveURL(/\/course\/logic\/review\?run=/, { timeout: 30_000 });
+  await expect(page.locator("[data-part=run-summary]")).toContainText("1 new topic, 1 new objective", { timeout: 60_000 });
+
+  const state = await stored(page, student);
+  expect(state.materials.map((m) => m.filename)).toEqual(["notes.docx"]);
+  const { data: pages } = await student.db.from("material_pages").select("n, text").order("n");
+  expect(pages).toEqual([
+    { n: 1, text: "Boolean Algebra\nAbsorption: x + xy = x." },
+    { n: 2, text: "Simplify x + xy using absorption." },
+  ]);
+  const { data: row } = await student.db.from("materials").select("mime").eq("id", state.materials[0].id).single();
+  expect(row?.mime).toBe("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 });
 
 test("a bulk upload (3+ files) hides dates behind Add dates, and every file is simply added", async ({ page, student }) => {
