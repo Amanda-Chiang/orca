@@ -566,7 +566,6 @@ const TEXT_CHARS = 1200;
 /** A problem as the student saw it (evidence_events.problem). */
 const PROBLEM_CHARS = 4000;
 /** Pasted material, as the text route takes it. */
-const TEXT_MATERIAL_CHARS = 200_000;
 /** A scope quote: the words a weight rests on. */
 const QUOTE_CHARS = 500;
 const BUDGET_HOURS_MAX = 1000;
@@ -921,7 +920,7 @@ export const TOOLS = [
     name: "add_material",
     description:
       "Add material to the course: text the student pasted (the professor's words, a study guide, a problem " +
-      "set; at least 80 characters), or, with file true, a link the student opens to upload a file (a PDF or " +
+      "set; any length), or, with file true, a link the student opens to upload a file (a PDF or " +
       "slides). A past or practice exam is held back by default: Orca maps it to objectives but never writes " +
       "questions from it or shows it, so it can be a practice test.",
     inputSchema: {
@@ -929,7 +928,7 @@ export const TOOLS = [
       properties: {
         courseId: UUID,
         type: { type: "string", enum: MATERIAL_TYPES },
-        text: { type: "string", minLength: 80, maxLength: TEXT_MATERIAL_CHARS, description: "The material's text, 80 to 200,000 characters." },
+        text: { type: "string", minLength: 1, description: "The material's text, any length." },
         filename: { type: "string", maxLength: 200, description: "What to call it, e.g. 'Professor's review notes'." },
         holdBack: { type: "boolean", description: "Keep it hidden for a practice test (default true for Past exam and Practice exam, else false)." },
         file: { type: "boolean", description: "true, with no text: return an upload link instead." },
@@ -1425,7 +1424,7 @@ async function callTool(params: Record<string, unknown>, tools: ConnectorTools, 
       case "add_material": {
         if (!isUuid(args.courseId)) return toolText({ error: "courseId must be a course id from course_state." }, true);
         if (!isOneOf(MATERIAL_TYPES, args.type)) return toolText({ error: `type is one of ${MATERIAL_TYPES.join(", ")}.` }, true);
-        if (args.text !== undefined && (typeof args.text !== "string" || args.text.trim().length < 80 || args.text.length > TEXT_MATERIAL_CHARS)) return toolText({ error: "text is 80 to 200,000 characters." }, true);
+        if (args.text !== undefined && (typeof args.text !== "string" || args.text.trim().length === 0)) return toolText({ error: "text is the material's text (not empty)." }, true);
         if (args.filename !== undefined && (typeof args.filename !== "string" || args.filename.trim().length === 0 || args.filename.length > 200)) return toolText({ error: "filename is 1 to 200 characters." }, true);
         if (args.holdBack !== undefined && typeof args.holdBack !== "boolean") return toolText({ error: "holdBack is true or false." }, true);
         if (args.file !== undefined && args.file !== true && args.file !== false) return toolText({ error: "file is true or false." }, true);
