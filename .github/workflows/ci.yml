@@ -84,6 +84,12 @@ jobs:
 
       - name: pgTAP (npm run test:db)
         run: npm run test:db
+      # The staged upload pipeline: each suite works in its own scratch database inside the stack's
+      # Postgres container (never the stack's own database) against the fake model on port 55331.
+      - name: Staged uploads, database (npm run test:uploads:db)
+        run: npm run test:uploads:db
+      - name: Staged uploads, real workers (npm run test:uploads:integration)
+        run: npm run test:uploads:integration
       - name: Isolation over HTTP (npm run check:isolation)
         run: npm run check:isolation
       - name: Evidence over HTTP (npm run check:evidence)
