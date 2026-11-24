@@ -193,6 +193,8 @@ export async function startApp(opts: { modelUrl?: string } = {}): Promise<string
     ORCA_JOBS: "inline",
     ORCA_UPLOAD_PIPELINE: "",
     ORCA_DAILY_BUDGET_USD: "",
+    // Where emailed and connector links point (required in production).
+    SITE_URL: `http://localhost:${port}`,
   });
   const url = `http://localhost:${port}`;
   // The first request compiles the route; a 401 means it's up and asking for a session.

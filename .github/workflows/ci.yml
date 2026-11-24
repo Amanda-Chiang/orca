@@ -97,6 +97,9 @@ jobs:
       # Every API route nothing else calls directly: signed out, the other student, bad input, the main path.
       - name: Routes over HTTP (npm run check:routes)
         run: npm run check:routes
+      # The Claude/ChatGPT connector as a chat uses it: a course built from the chat, another student's link, a ChatGPT-style client.
+      - name: Connector flows over HTTP (npm run check:connector)
+        run: npm run check:connector
       - name: Browser tests (npm run test:e2e)
         run: npm run test:e2e
 
