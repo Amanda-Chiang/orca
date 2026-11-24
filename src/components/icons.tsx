@@ -93,6 +93,16 @@ export function IconCalendar({ size = 26, ...props }: IconProps) {
   );
 }
 
+/** A stopwatch: study time (the progress page, 2026-11-22). */
+export function IconTimer({ size = 26, ...props }: IconProps) {
+  return (
+    <svg viewBox="0 0 26 26" {...base(size, props)} strokeWidth={2.71}>
+      <circle cx="13" cy="14.5" r="8.5" />
+      <path d="M13 14.5V10M10.5 3.25h5M20 7.5l1.5-1.5" />
+    </svg>
+  );
+}
+
 export function IconUpload({ size = 26, ...props }: IconProps) {
   return (
     <svg viewBox="0 0 26 26" {...base(size, props)} strokeWidth={2.71}>
@@ -137,6 +147,24 @@ export function IconLogOut({ size = 24, ...props }: IconProps) {
       <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
       <path d="M16 17l5-5-5-5" />
       <path d="M21 12H9" />
+    </svg>
+  );
+}
+
+export function IconSound({ size = 20, ...props }: IconProps) {
+  return (
+    <svg viewBox="0 0 20 20" {...base(size, props)} strokeWidth={2}>
+      <path d="M3.5 7.5h3l4-3.5v12l-4-3.5h-3z" />
+      <path d="M13.5 7a4 4 0 0 1 0 6M15.5 4.5a7.5 7.5 0 0 1 0 11" />
+    </svg>
+  );
+}
+
+export function IconSoundOff({ size = 20, ...props }: IconProps) {
+  return (
+    <svg viewBox="0 0 20 20" {...base(size, props)} strokeWidth={2}>
+      <path d="M3.5 7.5h3l4-3.5v12l-4-3.5h-3z" />
+      <path d="m13.5 7.5 5 5M18.5 7.5l-5 5" />
     </svg>
   );
 }

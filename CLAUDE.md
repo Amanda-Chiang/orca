@@ -43,8 +43,10 @@ own courses (Data Structures, Fundamentals of Computer Systems) on the hosted pr
   gate below; merging into `main` is the deploy (Deploy, below). Never commit straight to `main`.
   `phase-4` was the shared working branch until then (PRs #1–#7 came from it); others may still push
   there, so never force-move it, and don't base new work on it (it carries unrelated commits).
-  `backend-implementation` is the **production branch** Vercel (project `orca`,
-  https://orca-lake-omega.vercel.app) builds; only the Deploy workflow pushes it. **Commit as whoever is running you**
+  `backend-implementation` is the **production branch**: the Deploy workflow pushes it (nobody else
+  does) and deploys it to Vercel (project `orca`, https://orca-lake-omega.vercel.app) with the
+  Vercel CLI. Since 2026-11-22 the repository is `Amanda-Chiang/orca` and the Vercel project has no
+  Git connection, so Vercel builds nothing by itself and there are no branch previews. **Commit as whoever is running you**
   (the machine's git config; never pass `-c user.name/user.email`). Vercel refuses to build a
   commit whose author email isn't on the owner's GitHub account, but it only checks the commit at
   the top of `backend-implementation`, and the Deploy workflow authors that merge commit as the
@@ -122,9 +124,57 @@ own courses (Data Structures, Fundamentals of Computer Systems) on the hosted pr
   `src/components/ui/MathText.tsx`); question validation refuses math that doesn't render, and exact
   answers stay plain text.
 - **Since 2026-11-10: cram mode** (contract `docs/superpowers/specs/2026-11-10-cram-mode-contracts.md`; branch
-  `cram-mode`): an exam is *cramming* (a flag, from the exam card or `set_exam`) or within the 7-day window; Claude
+  `cram-mode`): an exam is *cramming* (a flag, from Enter cram mode or `set_exam`) or within the 7-day window; Claude
   writes and grades during a cram, Orca stores, counts and schedules (connector v0.4, rules v4, migration
   `20261110130000`); past and practice exams are held back for a practice test. Details under "What exists".
+- **Since 2026-11-22: Orca as the tutor's memory and exam map** (plan
+  `docs/superpowers/plans/2026-11-22-tutor-memory-and-exam-map.md`; owner: Claude teaches, Orca makes sure it knows
+  what's on the exam, where the student is and what happened last time; connector-first, the app is setup and a
+  dashboard). Phase 1 is built (connector v0.5, twelve tools, no migration): `vault_material` gives the student's
+  Claude a held-back exam's pages for planning, marked do-not-reveal (hidden from the student isn't hidden from the
+  tutor; `src/lib/server/connector/vault-material.ts`); `scope.reservedMaterialId` keeps one exam unread even by
+  Claude until it's sat timed (`forMock`); `scope.problemTypes` is the exam map Claude writes (the kinds of problem
+  the past exams ask, each with its objectives and the exams it's on; `src/lib/course/exam-map.ts` orders them by
+  recurrence and marks fewer than three exams uncertain); `scope.rules` holds the exam's rules. The cram page shows
+  them ("What the exam asks", `cram-exam-map`) and a Reserve toggle per vault file. Phase 2 is built too: the
+  session record (`study_sessions`, migration `20261122090000`, server-write only; tool `log_session`, thirteen tools;
+  `course_state.lastSession`; `GET /api/study-log`; the cram page's "Where you left off", `cram-last-session`): a
+  sitting's minutes count as study (the larger of what Claude logged and the estimate from its evidence, per day)
+  and its bookmark and ordered next steps open the next chat. Phase 3 is built: readiness by kind of problem
+  (`problem_attempts`, migration `20261122100000`; tool `log_problem`, fourteen tools; `course_state.readiness`,
+  `src/lib/course/readiness.ts`: ready only after a cold solve, `measured` from the reserved exam's sitting); once
+  an exam has a map the cram plan's units are its kinds of problem (`plan.unit`, `typePlanTopics`). Phase 4 is
+  built: the tutor playbook (`PLAYBOOK`, the last part of the connector's `INSTRUCTIONS`; the owner's corrections
+  as standing rules for the student's Claude). Small fixes built alongside: exact answers with units graded by
+  value and unit (`quantityOf`), "I don't know" as a miss on choice and exact questions (`isDontKnow`),
+  `course_state` `detail: "weak"`, and `scope.history` (who changed the scope or budget, and what;
+  `src/lib/course/scope-history.ts`). The plan lists what wasn't built and why.
+- **Since 2026-11-22: cram mode you enter** (plan `docs/superpowers/plans/2026-11-22-cram-mode-immersive.md`; owner):
+  while a course crams for an exam (`crammingExam` in `src/lib/course/exam-card.ts`: `cramming` and the date not past,
+  so it ends by itself the day after; `useCramming(courseId)` in the store gives the exam and `examTopicIds`), its
+  pages (Path, List, Atlas, the cram page, uploads & review, objectives, settings) are dark below the light top bar (`AppShell cram`, or `data-cram` on the cram page's Screen; `[data-cram]` in
+  `globals.css` redefines the light tokens), the due sidebar goes (`AppShell sidebar={false}`), the course's to-do
+  cards drop out everywhere (`useTodos`; the home count and the calendar's reviews too), the warm-up and the
+  course-wide Dive in pill hide (topic dives stay, exam topics only), Path has a Weak spots / Exam / All switch (`path-cram-view`, Exam by default), Path and List show the exam's topics ("Show N
+  other topics": faint, `data-off-exam`, not playable), the Atlas draws the others faint until a neighbour is
+  hovered (`TopicGraph muted`), the red (`cram` token) CRAM MODE banner (`CramBanner`, `data-part="cram-banner"`) sits on top, the nav (calendar, add material, the course's settings) floats at the bottom right, the top bar over those pages is the blue of cram mode's path rims (`alice-deep` under its tokens), the logo's orca keeps its colours (`orca-body`, `orca-belly`), the dive covers the whole window, the home island (the rim of a not-started topic on cram mode's path, a purple ring inside it and a dark centre, `Island cram`) and its name take the dark look with the path's pulsing halo behind (`island-halo`, the spot `data-cramming`), the sidebar opens with a red cram card per cramming course (`CramCards`, `data-part="cram-card"`: the course, the exam, days left, % of its objectives verified, to the cram page), and the calendar marks the crammed exam red and the course's other entries with a red ring, with a Cramming key and "· cramming" in the course filter. One exam per course crams at a time
+  (the store's `updateExam` and the connector's `set_exam`). Assumptions in `docs/TO-DISCUSS.md`; e2e
+  `e2e/cram-immersive.spec.ts`.
+- **After a wrong answer** (2026-11-22, owner; `src/lib/quiz/after-miss.ts`, `src/components/quiz/AfterMiss.tsx`): the
+  miss is recorded at once, then the solution waits: a second try (practice only, nothing recorded; `retry-prompt`,
+  `show-solution`), then "What went wrong?" chips beside the key (shown against the grader's `errorType`, not saved;
+  `spot-mistake`, `spot-skip`), then the Feedback card. A miss also slots another question on the same objective 3
+  questions later, which counts. e2e specs pass a miss with `pastMiss(page)`. Assumptions in `docs/TO-DISCUSS.md`.
+- **Your progress and the study timer** (2026-11-22, branch `study-time`): `/progress` (nav item "Your progress", a link in
+  the home stats popover) adds up every minute studied: finished sessions in Orca, Claude's connector stretches and
+  logged sittings, and the study timer, counted once where they overlap in a course (`src/lib/course/study-time.ts`);
+  tiles, the last two weeks stacked by course color (`study-*` tokens in `globals.css`), sources, and each exam's time
+  since the exam before it. The timer (`study_timers`, migration `20261123090000`, server-write only through
+  `POST /api/study-timer`; `GET /api/study-time`) runs one at a time, counts at most 4 hours, and floats as a pill
+  (`src/components/study/StudyTime.tsx`); a course page has Start study session. The cram plan counts the same minutes
+  (`useStudyDays` scoped to the course from the cram's start, a running timer included), and the cram page's Your
+  Progress uses the same tiles, source colors and timer (`src/components/study/StudyParts.tsx`); the connector's
+  `course_state` still counts only Orca and Claude time.
 - **Upload toasts** (2026-11-08, `src/components/layout/UploadToasts.tsx`, mounted in `providers.tsx`): an upload
   that finishes (done or failed) while the app is open, from any tab or device, pops a toast unless the student is on
   that course's uploads; uploads of one course finishing while its toast is up share it. One upload's toast opens
@@ -467,7 +517,10 @@ All 11 Figma screens are built. Where things live:
   a held-back or removed material, `heldBack` counts the skipped ones; `src/lib/server/connector/material-for.ts`),
   `add_questions` (questions Claude wrote, checked like generated ones in `src/lib/connector/question-check.ts`: the
   pipeline's structural rules, `isExpressionAnswer`, the math check, the sanitiser, anchor pages that exist; refused per
-  item with a reason; stored `source: "claude"`, `tier: null`), `add_material` (pasted text through
+  item with a reason; stored `source: "claude"`, `tier: null`; since 2026-11-10 an objective no live, non-held-back
+  material teaches takes a question without an anchor, stored `unanchored` (`questions.unanchored`, migration
+  `20261110170000`, the one way past the database's anchor check) and shown as not course-specific like an inferred
+  objective's, the result's `note` saying so), `add_material` (pasted text through
   `src/lib/server/text-material.ts`, shared with `POST /api/materials/text`, `holdBack` defaulting by type; or
   `file: true` for an upload link to `/add-material?course=…&type=…&holdBack=1`, which the page reads) and
   `log_evidence` (a `work` event: a problem Claude set and judged, with `basis`, `outcome`, `help`; or a `signal`:
@@ -480,12 +533,30 @@ All 11 Figma screens are built. Where things live:
   pipeline maps a held-back material's objectives but writes no questions and no warm-up from it; top-ups and dives
   skip it (`sourceFor`); "Keep hidden for a practice test" (`data-part="hold-back"`) on Add material and per batch
   row, a "Held back" badge (`data-part="held-back"`) on the upload card. **Cramming** (`exams.cramming`,
-  `exams.scope`): the exam card (`src/components/course/ExamCard.tsx`, `data-part="exam-card"`) on the course page
-  shows the soonest exam, days left, scope size and verified share; Cram for this exam (`cram-start`) opens the setup
-  (the professor's words as `professor` evidence, Add material held back, worries as manual struggled flags, Confirm
-  sets `cramming`); while cramming: the plan line, Study with Claude (`/settings#connector` until a token exists),
-  Edit scope, Stop cramming (`cram-stop`); the Exams modal has a Cramming switch per exam. Inside the window the agenda
-  weighs objectives by course × scope weight (`useAgenda`). The rubric grader names an `errorType` from the fixed list
+  `exams.scope`): Enter cram mode (`data-part="enter-cram"`, top right of the course page, in place of the old Dive in
+  pill; since 2026-11-22 there is no exam card and no Cramming switch in the Exams modal) opens the cram page's setup
+  for the next exam (the professor's words as `professor` evidence, the files, worries, hours a day; Confirm sets
+  `cramming`); while cramming the CRAM MODE banner has Open plan, Study with Claude (`/settings#connector` until a
+  token exists) and Stop cramming (`cram-stop`); Edit scope is on the cram page. Inside the window the agenda
+  weighs objectives by course × scope weight (`useAgenda`). **Since 2026-11-10 (branch `cram-scope`, after the step 8
+  deploy):** the setup picks the files the exam covers (`cram-materials`, one `cram-material[data-id]` per non-removed
+  material, lectures and notes ticked, held-back files tickable) and asks hours a day (`cram-hours-pick[data-hours]`,
+  `cram-hours`, the total line `cram-hours-total`; `scope.budget.hours` still stores the total), so `scopeFromSetup`
+  weighs objectives taught only in unpicked files 0 with a `professor` "not in the files the exam covers" note and
+  stores `scope.materialIds`; `course_state` detail full lists `materials` and each objective's `materialIds`, detail
+  summary replaces each exam's `scope` with `scopeSummary` (`inScope`, `excluded`, `sources`, `budget`), and a cramming
+  exam without a budget gets a `plan` from 2 hours a study day with `plan.defaulted: true`. **Since 2026-11-10 (branch
+  `cram-per-day`):** the time budget is entered per day (`CramBudget.perDay`, half-hour steps, 0 = a day off; `hours` and
+  `daysOut` derived; `src/lib/mastery/cram-budget.ts`; the setup shows a row per remaining day, `cram-day[data-day]` +
+  `cram-day-hours`, and "Same for every day", `cram-hours`), the plan uses each day's own hours with spent minutes split
+  at today, and `set_exam`'s `scope.budget` merges over the exam's (`perDay`, `today`, or the older `hours`; objectives
+  and sources left out keep the scope), per the contract's per-day addendum. **Since 2026-11-10 (branch `cram-schedule`):**
+  the plan carries `days`, a schedule from the start of the cram to the day before the exam (today = today's split; later
+  days walk through the remaining need, 60 nominal minutes per unverified objective at its weight scaled to the hours
+  ahead, weak spots first then the heaviest, one topic after another; past days recomputed and marked met or short from
+  `spentByDay`), and each topic a `covered` state (untouched / in-progress from `touchedObjectiveIds`, evidence since
+  `budget.since` / done); the page shows them as a column per day (`cram-schedule` > `cram-day-col[data-day]`) and a chip
+  on each topic row (`cram-topic[data-covered]`), per the contract's schedule addendum. The rubric grader names an `errorType` from the fixed list
   (`src/lib/grading.ts`). The token is minted in Settings → Claude connector (`/api/connector`; only its sha256 is
   stored, `connector_tokens`, migration `20261104090000`) and pasted into Claude as a custom connector with no sign-in:
   the URL is the secret, so the proper OAuth route is still to do (`docs/SETUP-HOSTED.md` §8). The protocol module is
@@ -578,15 +649,15 @@ All 11 Figma screens are built. Where things live:
 - `docs/samples/ald/` — the real ALD decks for the extraction scorer, **not committed** (gitignored; removed from the
   history 2026-10-27 before the repo went public: course material isn't ours to publish; `docs/samples/README.md`).
   Tests use the generated stand-in deck `makeDeck()` in `tests/fixtures/pdf.ts`. `docs/OBJECTIVES-ALD.md` is the benchmark.
-- Deploy: Vercel (https://orca-lake-omega.vercel.app) builds `backend-implementation` (Production);
-  pushes to other branches get Preview deploys at most. **Nobody pushes there by hand any more:**
+- Deploy: Vercel (https://orca-lake-omega.vercel.app) serves `backend-implementation` (Production),
+  deployed by the Deploy workflow with the Vercel CLI (no Git connection, so no Preview deploys). **Nobody pushes there by hand any more:**
   `.github/workflows/deploy.yml` merges `main` into it (after pushing new migrations) whenever CI
   on `main` is green, so merging a PR into `main` is the deploy (`docs/SETUP-HOSTED.md` §5 lists
   the two secrets it needs for migrations). Production env vars (Vercel → Settings →
   Environments → Production): the Supabase three, `SITE_URL`, `ORCA_JOBS=trigger` with
   `TRIGGER_SECRET_KEY`, and the model key (`OPENAI_API_KEY`, or `ANTHROPIC_API_KEY`) with
-  `ORCA_MODEL` if not the default; without a key the upload page says "No AI connected". Changing an env var needs a new deploy (an empty
-  commit by the owner pushed to `backend-implementation`, or Redeploy on the deployment's page).
+  `ORCA_MODEL` if not the default; without a key the upload page says "No AI connected". Changing an env var needs a new deploy (Actions →
+  Deploy → Run workflow, or Redeploy on the deployment's page).
   Jobs run on Trigger.dev in production (since 2026-11-05; `TRIGGER_SECRET_KEY` is a Prod key of
   Amanda's project `proj_cafvbqanvngbcfvnpmqv`, also the default ref in `trigger.config.ts`). The
   Deploy workflow deploys `src/trigger/` there on every merge to `main` (the `TRIGGER_ACCESS_TOKEN`
@@ -619,10 +690,14 @@ now, so that part needs rethinking before it's planned.
   and island level are computed from events and the clock. Never store or write mastery directly.
 - Exposure is not mastery. Uploads, reading and connector signals may raise priority; only scored
   answers count toward mastery, and self-marked answers count half. A grading failure records nothing.
+  The one exception (owner, 2026-11-22): the student marking a weak spot mastered in the List view
+  (a `mark` event, rules v5) masters it at once, shown as marked by them, with a spaced check later.
 - Check exactly when the domain allows (bit strings, numbers, Boolean expressions by truth table).
   Use a model grader only with a structured rubric.
 - Course-specific questions carry a source anchor into the course material. Questions for inferred
-  objectives have no anchor and must not present themselves as course-specific.
+  objectives have no anchor and must not present themselves as course-specific. The one exception
+  (2026-11-10): an objective no live, non-held-back material teaches may take a connector question
+  without an anchor, stored `unanchored` and shown exactly like an inferred objective's.
 - No silent placeholders: a fallback or unknown value must never look like a computed one. Throw, or
   show an explicit empty or unknown state. This applies to existing code you touch.
 - When live credentials exist (Supabase, Anthropic), run the live check. A typecheck around a live

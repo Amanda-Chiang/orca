@@ -18,6 +18,14 @@
 
   /* The sea behind full screens (owner's pick, 2026-10-06); cards and chips stay alice. */
   --color-ocean: #9cc3e7;
+  /* The deep sea: cram mode's ocean (owner, 2026-11-22), and the bottom of the dive into it. */
+  --color-abyss: #081d33;
+  /* Cram mode's red (owner, 2026-11-22: a stronger red than the state hue's bad): its banner, sidebar card and calendar marks. */
+  --color-cram: #d42a3c;
+  --color-cram-deep: #a01c2b;
+  /* The logo's orca in every look (owner, 2026-11-22): cram mode's tokens don't invert it. */
+  --color-orca-body: #151d3a;
+  --color-orca-belly: #fcf7f4;
 
   /* Concept Atlas edges (Figma: E1 · Concept graph v4): has a kind, alternative to, related. "Used in" is wisteria-deep. */
   --color-link-kind: #c2418f;
@@ -51,6 +59,14 @@
   --color-bad-deep: #b8443a;
   --color-bad-text: #a63a30;
 
+  /* Study time (the progress page, 2026-11-22): a course's color in the charts, by its order. */
+  --color-study-sky: #4fb3e8;
+  --color-study-gold: #f2b84b;
+  --color-study-rose: #e56fa3;
+  --color-study-mint: #4fc59c;
+  --color-study-coral: #f0805f;
+  --color-study-violet: #8f7cf0;
+
   --font-sans: var(--font-gabarito), ui-sans-serif, system-ui, sans-serif;
 
   --radius-card: 20px;
@@ -79,6 +95,7 @@
 @utility lip-parchment { --lip: var(--color-parchment-deep); }
 @utility lip-good { --lip: var(--color-good-deep); }
 @utility lip-bad { --lip: var(--color-bad-deep); }
+@utility lip-cram { --lip: var(--color-cram-deep); }
 
 /* ── Press: every lipped control sinks into its shadow on click. */
 @utility pressable {
@@ -122,6 +139,28 @@
 /* Orca Ocean Dark (Figma variables). Opt-in by attribute; there is no toggle yet. */
 :root[data-theme="dark"] {
   color-scheme: dark;
+  --color-page: #081d33;
+  --color-card: #0e2a46;
+  --color-line: #234967;
+  --color-ink: #f3f7fb;
+  --color-muted: #9fb3c8;
+}
+
+/* Cram mode (owner, 2026-11-22): a cramming course's pages in Orca Ocean Dark. The light tokens are
+   redefined, so every utility (bg-parchment, text-prussian…) turns dark without per-component variants.
+   Set on the page below the top bar (AppShell's `cram`, or `data-cram` on the cram page's Screen), so the
+   top bar stays light. */
+[data-cram] {
+  color-scheme: dark;
+  --color-ocean: var(--color-abyss);
+  --color-parchment: #0e2a46;
+  --color-parchment-deep: #234967;
+  --color-alice: #163a5c;
+  --color-alice-deep: #234967;
+  --color-prussian: #f3f7fb;
+  --color-ink-deep: #050f1c;
+  --color-wisteria-deep: #9fb3c8;
+  --color-orca-shadow: #234967;
   --color-page: #081d33;
   --color-card: #0e2a46;
   --color-line: #234967;

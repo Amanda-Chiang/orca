@@ -41,6 +41,7 @@ const ADD_MATERIAL = /^\/add-material$/;
 const REVIEW = /^\/course\/[^/]+\/review$/;
 const ATLAS = /^\/course\/[^/]+\/atlas$/;
 const COURSE_OR_ATLAS = /^\/course\/[^/]+(\/atlas)?$/;
+const COURSE_TABS = /^\/course\/[^/]+(\/list|\/atlas)?$/;
 const SESSION = /^\/session\/[^/]+$/;
 const SETTINGS = /^\/settings$/;
 /** The pages with the sidebar: the map and a course's trail. */
@@ -62,14 +63,15 @@ export const TIPS: readonly Tip[] = [
 
   /* ── After the first upload ── */
   { id: "upload-toast", route: ANY, target: '[data-part="upload-toast"]', title: "Your upload is ready", body: "Click this to open it and tell me which slides were hard." },
-  { id: "hard-slides", route: REVIEW, target: '[data-part="hard-slides"]', title: "Which slides were hard?", body: "Tap the slides that lost you. Those become your weak spots, and weak spots are what I bring back for review." },
+  { id: "hard-slides", route: REVIEW, target: '[data-part="hard-slides"]', title: "Identify weak spots", body: "Tap the slides that lost you. Those become your weak spots, and weak spots are what I bring back for review." },
   { id: "reject", route: REVIEW, target: '[data-part="new-topic"]', title: "Not relevant? Reject it", body: "These are the topics I found. Reject a topic, or a single objective, if it isn't really part of the class, and I'll stop asking about it." },
 
   /* ── The course page ── */
-  { id: "weak-count", route: COURSE, target: '[data-part="weak-count"]', title: "Your path", body: "The path shows your weak spots: topics where you flagged or missed something. Master them and this count goes up. \"Show all topics\" brings back the rest." },
+  { id: "weak-count", route: COURSE, target: '[data-part="weak-count"]', title: "Your path", body: "The path shows your weak spots: topics where you flagged or missed something. Master them and this bar fills up. \"Show all topics\" brings back the rest." },
   { id: "atlas-switch", route: COURSE, target: '[data-part="atlas-switch"]', after: "weak-count", title: "The Atlas", body: "The Atlas shows how the concepts in this class connect to each other." },
   { id: "edit-exams", route: COURSE, target: '[data-part="edit-exams"]', after: "weak-count", title: "Add your exams", body: "Tell me when your exams are and what they cover. I'll plan review for the week before and put them on your calendar." },
   { id: "flag-topic", route: COURSE_OR_ATLAS, target: '[data-part="dive-start"]', title: "Dive, or flag it", body: "Start a dive for harder questions on this topic. If the whole topic is shaky, flag it below and it joins your weak spots." },
+  { id: "cram-banner", route: COURSE_TABS, target: '[data-part="cram-banner"]', title: "Cram mode", body: "This class is all about the exam now: reviews pause and you only see its topics. Stop cramming any time, and it ends by itself after the exam." },
   { id: "atlas-edges", route: ATLAS, target: '[data-part="topic"]', title: "How topics connect", body: "Each circle is a topic, bigger when more topics build on it. Hover a line between two to see how they're related." },
 
   /* ── In a session ── */
@@ -78,7 +80,7 @@ export const TIPS: readonly Tip[] = [
 
   /* ── Reviews ── */
   { id: "quick-review", route: WITH_SIDEBAR, target: 'aside [data-todo="quick"]', title: "Your quick review", body: "A few minutes on the weak spots that are due. I space them out so they stick, on the days you set for the class." },
-  { id: "dive", route: COURSE, target: '[data-part="start-deep"]', after: "quick-review", title: "Dive in", body: "For when you have more time: a longer session of harder questions, written fresh when you start." },
+  { id: "enter-cram", route: COURSE, target: '[data-part="enter-cram"]', after: "edit-exams", title: "Exam coming up?", body: "Enter cram mode when you start studying for it. Tell me what it covers and how much time you have, and this class becomes all about that exam." },
 
   /* ── Later: Settings ── */
   { id: "more-settings", route: WITH_SIDEBAR, target: '[data-part="avatar-settings"]', when: settledIn, title: "There's more in Settings", body: "Connect Canvas or Claude, tell me how you mark your notes, and set question preferences for every class." },

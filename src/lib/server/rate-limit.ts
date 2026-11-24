@@ -23,6 +23,7 @@ const WHAT: Record<RateAction, string> = {
   web: "websites added",
   canvasConnect: "Canvas connections",
   heartbeat: "heartbeats",
+  timer: "timer starts and stops",
 };
 
 function spell(seconds: number): string {

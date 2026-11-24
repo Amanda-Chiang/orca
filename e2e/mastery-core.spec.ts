@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test";
 import type { AnswerEvent } from "../src/lib/mastery/types";
-import { type Student, expect, test, F, seedFixtureCourse, stored } from "./fixture";
+import { type Student, expect, test, F, pastMiss, seedFixtureCourse, stored } from "./fixture";
 
 /** The evidence the app saved (through POST /api/evidence), read back from the database. */
 async function storedEvidence(page: Page, student: Student) {
@@ -19,8 +19,8 @@ test.describe("a fresh browser", () => {
     await expect(page.locator("[data-level]")).toHaveCount(0);
     await expect(page.getByText("0 day streak")).toBeVisible();
     await expect(page.getByText("Nothing. All caught up", { exact: true })).toHaveCount(2);
-    // Calendar and Add material: Settings is in the top bar, and hidden from this nav on home (8970e4e).
-    await expect(page.getByRole("navigation", { name: "Primary" }).getByRole("link")).toHaveCount(2);
+    // Your progress, Calendar and Add material: Settings is in the top bar, and hidden from this nav on home (8970e4e).
+    await expect(page.getByRole("navigation", { name: "Primary" }).getByRole("link")).toHaveCount(3);
   });
 
   test("asks for a course before taking material", async ({ page }) => {
@@ -93,14 +93,17 @@ test.describe("a course with uploaded questions", () => {
     await page.locator("[data-part=warmup-start]").click();
     await expect(page).toHaveURL(/\/session\/logic-e2e\?kind=quick&warmup=1$/);
     await expect(page.getByText("1 / 3")).toBeVisible();
-    for (let i = 0; i < 3; i++) {
+    // Each miss brings back another question on its objective where there is one (Simplify and
+    // Convert have more; Sign-extend has one), so the run grows to five.
+    for (let i = 0; i < 5; i++) {
       await answerShort(page, "nope");
       await expect(page.getByText("Not quite.", { exact: true })).toBeVisible();
-      await page.getByRole("button", { name: i === 2 ? "Finish" : "Continue" }).click();
+      await pastMiss(page);
+      await page.getByRole("button", { name: i === 4 ? "Finish" : "Continue" }).click();
     }
     await expect(page.locator("[data-part=quiz-end-summary]")).toBeVisible();
     const evidence = await storedEvidence(page, student);
-    expect(evidence.map((e) => [e.outcome, e.source])).toEqual([["incorrect", "quick-review"], ["incorrect", "quick-review"], ["incorrect", "quick-review"]]);
+    expect(evidence.map((e) => [e.outcome, e.source])).toEqual(Array.from({ length: 5 }, () => ["incorrect", "quick-review"]));
     expect(new Set(evidence.map((e) => e.objectiveId)).size).toBe(3);
     // Every objective is a weak point now: the trail shows both topics, and the warm-up isn't offered again.
     await page.goto("/course/logic-e2e");
@@ -113,6 +116,7 @@ test.describe("a course with uploaded questions", () => {
     await page.goto(`/quiz/logic-e2e/${F.booleanAlgebra}`);
     await answerShort(page, "nope");
     await expect(page.getByText("Not quite.", { exact: true })).toBeVisible();
+    await pastMiss(page);
     await page.getByRole("button", { name: "Continue" }).click();
     await answerShort(page, "a + c");
     await expect(page.getByText("Correct.")).toBeVisible();

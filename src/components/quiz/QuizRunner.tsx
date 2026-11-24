@@ -24,7 +24,7 @@ import { ProgressBar } from "@/components/ui/ProgressBar";
 import { RoundButton } from "@/components/ui/RoundButton";
 import { TruthTable } from "@/components/quiz/TruthTable";
 import { ShortAnswer } from "@/components/quiz/ShortAnswer";
-import { type GradeResult, gradeExact } from "@/lib/grading";
+import { type GradeResult, gradeExact, isDontKnow } from "@/lib/grading";
 import { useServerStatus } from "@/hooks/useServerModel";
 import { type TopUpStatus, useTopUp } from "@/hooks/useTopUp";
 import { goBack } from "@/lib/nav-history";
@@ -33,6 +33,11 @@ import { shuffleChoices } from "@/lib/shuffle-choices";
 import { QuizEnd } from "@/components/quiz/QuizEnd";
 import { Pill } from "@/components/review/parts";
 import { fadeUp, stagger } from "@/lib/motion";
+import { askableQuestions } from "@/lib/askable";
+import { lastSeenOf } from "@/lib/mastery/session";
+import { type AfterMissStage, canRetry, pickSibling, siblingSlot } from "@/lib/quiz/after-miss";
+import { RetryPrompt, SpotMistake } from "@/components/quiz/AfterMiss";
+import type { ErrorType } from "@/lib/mastery/types";
 
 const LETTERS = "ABCDEFGH";
 
@@ -70,7 +75,7 @@ export interface QuizRunnerProps {
 export function QuizRunner({ course, items: firstItems, mode, title, backHref, again, replacementFor, progressKind, resume }: QuizRunnerProps) {
   const router = useRouter();
   const streak = useStreak();
-  const { recordQuiz, recordEvidence, objectives, feedback, rateQuestion, saveProgress, editStructure } = useOrca();
+  const { recordQuiz, recordEvidence, objectives, feedback, rateQuestion, saveProgress, editStructure, questionBank } = useOrca();
   const masteryByCourse = useMasteryByCourse();
   const todos = useTodos();
   const dayKey = useDayKey();
@@ -93,6 +98,17 @@ export function QuizRunner({ course, items: firstItems, mode, title, backHref, a
   /** Kept here for Deep Review, whose Check button lives in the footer. */
   const [deepResponse, setDeepResponse] = useState("");
   const [grade, setGrade] = useState<GradeResult | null>(null);
+  /**
+   * After a checked answer (src/lib/quiz/after-miss.ts): a miss first gets a second try ("retry",
+   * practice only), then the student names what went wrong ("spot"), then the solution shows.
+   */
+  const [stage, setStage] = useState<AfterMissStage>("solution");
+  /** The second try: the option picked, and the grade of a typed one (null until checked, or when it couldn't be graded). */
+  const [retryPick, setRetryPick] = useState<number | null>(null);
+  const [retryGrade, setRetryGrade] = useState<GradeResult | null>(null);
+  const [spotPick, setSpotPick] = useState<ErrorType | "unknown" | null>(null);
+  /** Objectives that already got a sibling question this session (one each). */
+  const siblinged = useRef(new Set<string>());
   /** The objective's display percent before the answer was recorded (Figma: Your mastery, 60% → 52%). */
   const [before, setBefore] = useState(0);
   /** The result banner's outcome; the nonce restarts its timer for each answer. */
@@ -187,6 +203,30 @@ export function QuizRunner({ course, items: firstItems, mode, title, backHref, a
     },
     [objectiveState],
   );
+  /** The banner alone, for the second try: the mastery numbers stay those of the recorded answer. */
+  const flashBanner = useCallback((outcome: Outcome, line: string | null) => setBanner((b) => ({ outcome, line, nonce: b.nonce + 1 })), []);
+
+  // A miss brings back a different question on the same objective a few questions later (it counts
+  // like any other answer); not in "review missed", and once per objective per session.
+  const askable = useMemo(() => askableQuestions(course, questionBank[course.id], catalogue ?? {}, feedback), [course, questionBank, catalogue, feedback]);
+  const events = masteryByCourse[course.id]?.events;
+  const queueSibling = useCallback(
+    (at: RunnerItem) => {
+      if (subset) return;
+      const o = liveObjectiveOf(at.question, catalogue ?? {});
+      if (!o || siblinged.current.has(o.id)) return;
+      const pick = pickSibling(askable.byObjective.get(o.id) ?? [], new Set(allItems.map((i) => i.question.id)), lastSeenOf(events ?? []));
+      const place = pick ? askable.placeOf.get(pick.id) : undefined;
+      if (!pick || !place) return;
+      siblinged.current.add(o.id);
+      const sibling: RunnerItem = { question: shuffleChoices(pick), topicId: place.topicId, notes: ["Another one on this, after the one you missed"] };
+      setAllItems((xs) => {
+        const at = siblingSlot(index, xs.length);
+        return [...xs.slice(0, at), sibling, ...xs.slice(at)];
+      });
+    },
+    [subset, catalogue, askable, allItems, events, index],
+  );
 
   /** One graded answer → one evidence event. Called only after grading has finished. */
   const logAnswer = useCallback(
@@ -214,11 +254,23 @@ export function QuizRunner({ course, items: firstItems, mode, title, backHref, a
     if (!item || selected === null || checked) return;
     setChecked(true);
     const ok = selected === item.question.answer;
+    const retry = !ok && canRetry(item.question);
     if (ok) setCorrect((c) => c + 1);
     else setMissed((m) => [...m, item]);
-    showResult(ok ? "correct" : "incorrect", ok ? null : `The answer is ${item.question.options[item.question.answer]}.`);
+    setStage(ok ? "solution" : retry ? "retry" : "spot");
+    showResult(ok ? "correct" : "incorrect", ok ? null : retry ? "Try once more before the answer shows." : `The answer is ${item.question.options[item.question.answer]}.`);
     logAnswer(item, ok ? "correct" : "incorrect", "choice");
-  }, [selected, checked, item, logAnswer, showResult]);
+    if (!ok) queueSibling(item);
+  }, [selected, checked, item, logAnswer, showResult, queueSibling]);
+
+  /** The second try at a multiple-choice question: practice only, nothing recorded. */
+  const checkRetry = useCallback(() => {
+    if (!item || stage !== "retry" || retryPick === null) return;
+    const ok = retryPick === item.question.answer;
+    setRetryGrade({ outcome: ok ? "correct" : "incorrect", feedback: "" });
+    flashBanner(ok ? "correct" : "incorrect", ok ? "Right this time. Practice only: your first answer is what counts." : `The answer is ${item.question.options[item.question.answer]}.`);
+    setStage(ok ? "solution" : "spot");
+  }, [item, stage, retryPick, flashBanner]);
 
   // Prose answers are graded by Orca's server (Task 8); with no model there, or model grading turned
   // off for this student (decision 13), the student self-marks. The server can also say so on a grade
@@ -228,23 +280,29 @@ export function QuizRunner({ course, items: firstItems, mode, title, backHref, a
     gradingOff ?? (serverStatus === undefined ? null : serverStatus.serverModel === null ? "no AI connected" : serverStatus.grading === "self" ? "model grading is off for your account" : null);
 
   const settle = useCallback(
-    (result: GradeResult, grader: Grader | null) => {
+    (result: GradeResult, grader: Grader | null, gaveUp = false) => {
       if (!item || checked) return;
       setGrade(result);
       setChecked(true);
-      if (result.outcome === "correct") setCorrect((c) => c + 1);
+      const miss = result.outcome !== "correct";
+      if (!miss) setCorrect((c) => c + 1);
       else setMissed((m) => [...m, item]);
-      showResult(result.outcome, grader === null ? "Not counted." : grader === "self" ? result.feedback : null);
+      // Ungraded or self-marked answers go straight to the solution; a graded miss gets a second try first.
+      // A typed "I don't know" skips the second try (as the Don't know button does).
+      const next: AfterMissStage = !miss || grader === null || grader === "self" ? "solution" : !gaveUp && canRetry(item.question) ? "retry" : "spot";
+      setStage(next);
+      showResult(result.outcome, grader === null ? "Not counted." : grader === "self" ? result.feedback : next === "retry" ? "Try once more before the solution shows." : null);
       if (grader) logAnswer(item, result.outcome, grader);
+      if (grader && miss) queueSibling(item);
     },
-    [item, checked, logAnswer, showResult],
+    [item, checked, logAnswer, showResult, queueSibling],
   );
 
   const submitShort = useCallback(
     async (response: string) => {
       if (!q || checked || grading) return;
       if (q.exact?.length) {
-        settle(gradeExact(response, q.exact), "exact");
+        settle(gradeExact(response, q.exact), "exact", isDontKnow(response));
         return;
       }
       if (!q.rubric) return;
@@ -263,7 +321,7 @@ export function QuizRunner({ course, items: firstItems, mode, title, backHref, a
           return;
         }
         if (!res.ok || data.error) throw new Error(data.error ?? "Grading failed.");
-        settle(data, "rubric");
+        settle(data, "rubric", isDontKnow(response));
       } catch (error) {
         setUngraded((n) => n + 1);
         settle(
@@ -279,6 +337,46 @@ export function QuizRunner({ course, items: firstItems, mode, title, backHref, a
     },
     [q, checked, grading, settle],
   );
+
+  /**
+   * The second try at a typed answer: graded like the first (exact on-device, prose by the server),
+   * but practice only, so nothing is recorded. When it can't be graded, the solution shows.
+   */
+  const submitRetry = useCallback(
+    async (response: string) => {
+      if (!q || stage !== "retry" || grading) return;
+      let result: GradeResult | null = null;
+      if (q.exact?.length) result = gradeExact(response, q.exact);
+      else if (q.rubric) {
+        setGrading(true);
+        try {
+          const res = await fetch("/api/grade", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ questionId: q.id, response }) });
+          const data = (await res.json()) as GradeResult & { error?: string; graded?: "self" };
+          if (res.ok && !data.error && !data.graded) result = data;
+        } catch {
+          result = null;
+        } finally {
+          setGrading(false);
+        }
+      }
+      if (!result) {
+        flashBanner("incorrect", "Couldn't check the second try. Here's the solution.");
+        setStage("solution");
+        return;
+      }
+      setRetryGrade(result);
+      const ok = result.outcome === "correct";
+      flashBanner(result.outcome, ok ? "Right this time. Practice only: your first answer is what counts." : null);
+      setStage(ok ? "solution" : "spot");
+    },
+    [q, stage, grading, flashBanner],
+  );
+
+  /** Typed answers go to the first check or, after a miss, the second try. */
+  const submitAnswer = useCallback((response: string) => void (stage === "retry" && checked ? submitRetry(response) : submitShort(response)), [stage, checked, submitRetry, submitShort]);
+
+  /** "Show solution" on the second try: on to naming the mistake. */
+  const giveUpRetry = useCallback(() => setStage("spot"), []);
 
   /**
    * "Don't know": a wrong answer, recorded as the student's own (grader "self"), so it counts fully as
@@ -308,6 +406,18 @@ export function QuizRunner({ course, items: firstItems, mode, title, backHref, a
     [catalogue, editStructure, course.id, items, index, subset],
   );
 
+  /** Back to an unanswered question (the next one, or a restart). */
+  const clearAnswer = useCallback(() => {
+    setSelected(null);
+    setChecked(false);
+    setGrade(null);
+    setDeepResponse("");
+    setStage("solution");
+    setRetryPick(null);
+    setRetryGrade(null);
+    setSpotPick(null);
+  }, []);
+
   /**
    * A thumbs down before answering: the rating is saved, the question is skipped without being
    * offered again in "review missed" (nothing is recorded), and another question for the same
@@ -334,13 +444,10 @@ export function QuizRunner({ course, items: firstItems, mode, title, backHref, a
         return;
       }
       setIndex((i) => i + 1);
-      setSelected(null);
-      setChecked(false);
-      setGrade(null);
-      setDeepResponse("");
+      clearAnswer();
       bodyRef.current?.scrollTo({ top: 0 });
     },
-    [item, subset, replacementFor, allItems, index, total, rateQuestion, course.id, objective, dropObjective],
+    [item, subset, replacementFor, allItems, index, total, rateQuestion, course.id, objective, dropObjective, clearAnswer],
   );
 
   const advance = useCallback(() => {
@@ -356,12 +463,9 @@ export function QuizRunner({ course, items: firstItems, mode, title, backHref, a
       return;
     }
     setIndex((i) => i + 1);
-    setSelected(null);
-    setChecked(false);
-    setGrade(null);
-    setDeepResponse("");
+    clearAnswer();
     bodyRef.current?.scrollTo({ top: 0 });
-  }, [checked, index, total, item]);
+  }, [checked, index, total, item, clearAnswer]);
 
   // Keyboard: 1–4 / A–D pick an answer, Enter checks then continues.
   useEffect(() => {
@@ -370,29 +474,33 @@ export function QuizRunner({ course, items: firstItems, mode, title, backHref, a
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       const target = e.target as HTMLElement | null;
       if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return;
+      const retrying = checked && stage === "retry";
       if (e.key === "Enter") {
-        if (q.kind === "Short answer" && !checked) return; // the input owns Enter until graded
+        if (q.kind === "Short answer" && (!checked || retrying)) return; // the input owns Enter until graded
+        if (checked && stage === "spot") return; // pick what went wrong, or Skip
         e.preventDefault();
-        if (checked) advance();
+        if (retrying) checkRetry();
+        else if (checked) advance();
         else if (selected !== null) check();
         return;
       }
       if (q.kind === "Short answer") return;
-      if (checked) return;
+      if (checked && !retrying) return;
       const k = e.key.toLowerCase();
       const idx = /^[1-9]$/.test(k) ? Number(k) - 1 : /^[a-h]$/.test(k) ? k.charCodeAt(0) - 97 : -1;
-      if (idx >= 0 && idx < q.options.length) setSelected(idx);
+      if (idx < 0 || idx >= q.options.length) return;
+      if (retrying) {
+        if (idx !== selected) setRetryPick(idx);
+      } else setSelected(idx);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [finished, checked, selected, q, check, advance]);
+  }, [finished, checked, selected, stage, q, check, checkRetry, advance]);
 
   const restart = (set: RunnerItem[]) => {
     setSubset(set);
     setIndex(0);
-    setSelected(null);
-    setChecked(false);
-    setGrade(null);
+    clearAnswer();
     setCorrect(0);
     setUngraded(0);
     setSkipped(0);
@@ -421,19 +529,24 @@ export function QuizRunner({ course, items: firstItems, mode, title, backHref, a
     );
   }
 
+  const retrying = checked && stage === "retry";
   const stateFor = (i: number): AnswerState => {
     if (!checked) return selected === i ? "selected" : "idle";
+    if (retrying) return i === selected ? "wrong" : retryPick === i ? "selected" : "idle";
     if (i === q.answer) return "correct";
-    if (i === selected) return "wrong";
+    if (i === selected || i === retryPick) return "wrong";
     return "dimmed";
   };
   // Figma: Option tag. The right answer is tagged "Correct answer" unless it was the student's.
   const tagFor = (i: number): string | undefined => {
     if (!checked) return undefined;
     if (i === selected) return "Your answer";
+    if (retrying) return undefined;
+    if (i === retryPick) return "Second try";
     if (i === q.answer) return "Correct answer";
     return undefined;
   };
+  const keyText = q.kind === "Short answer" ? (q.exact?.[0] ?? q.rubric?.requiredIdeas.join(" · ") ?? "") : (q.options[q.answer] ?? "");
   const outcomeShown: Outcome = q.kind === "Short answer" ? (grade?.outcome ?? "incorrect") : selected === q.answer ? "correct" : "incorrect";
   const suggestedCard = todos.find((t) => t.courseId === course.id && t.when === "today");
   const suggested = suggestedCard ? { course: course.name, title: suggestedCard.title, detail: suggestedCard.detail, href: todoHref(suggestedCard, course), kind: suggestedCard.kind } : null;
@@ -489,12 +602,12 @@ export function QuizRunner({ course, items: firstItems, mode, title, backHref, a
                 <ShortAnswer
                   question={q}
                   grading={grading}
-                  result={grade}
+                  result={retrying ? null : (retryGrade ?? grade)}
                   noModel={noModel}
                   selfMarkNow={gradingOff !== null}
                   {...(q.deep ? { value: deepResponse, onValueChange: setDeepResponse, hideCheck: true } : {})}
-                  onSubmit={(r) => void submitShort(r)}
-                  onDontKnow={dontKnow}
+                  onSubmit={submitAnswer}
+                  onDontKnow={retrying ? giveUpRetry : dontKnow}
                   onSelfReport={(ok) =>
                     settle({ outcome: ok ? "correct" : "incorrect", feedback: ok ? "Marked as known." : "Marked as missed; it'll come back." }, "self")
                   }
@@ -503,15 +616,35 @@ export function QuizRunner({ course, items: firstItems, mode, title, backHref, a
             ) : (
               <div className="mt-[24px] flex flex-col gap-[12px]">
                 {q.options.map((opt, i) => (
-                  <AnswerOption key={opt} letter={LETTERS[i]} state={stateFor(i)} tag={tagFor(i)} disabled={checked} onClick={() => setSelected(i)}>
+                  <AnswerOption
+                    key={opt}
+                    letter={LETTERS[i]}
+                    state={stateFor(i)}
+                    tag={tagFor(i)}
+                    disabled={checked && (!retrying || i === selected)}
+                    onClick={() => (retrying ? setRetryPick(i) : setSelected(i))}
+                  >
                     <MathText text={opt} />
                   </AnswerOption>
                 ))}
               </div>
             )}
 
+            {checked && stage === "retry" && <RetryPrompt grade={grade} />}
+            {checked && (stage === "spot" || spotPick !== null) && (
+              <SpotMistake
+                keyText={keyText}
+                graderError={grade?.errorType ?? null}
+                picked={spotPick}
+                onPick={(p) => {
+                  setSpotPick(p);
+                  setStage("solution");
+                }}
+              />
+            )}
+
             <AnimatePresence>
-              {checked && (
+              {checked && stage === "solution" && (
                 <Feedback
                   key="feedback"
                   question={q}
@@ -539,7 +672,13 @@ export function QuizRunner({ course, items: firstItems, mode, title, backHref, a
       </div>
 
       <footer className="flex shrink-0 items-center justify-between border-t-2 border-alice bg-parchment px-[100px] py-[16px]">
-        {checked ? (
+        {retrying ? (
+          <Button variant="ghost" size="sm" onClick={giveUpRetry} data-part="show-solution">
+            Show solution
+          </Button>
+        ) : checked && stage === "spot" ? (
+          <span className="text-[15px] font-medium text-wisteria-deep">Name what went wrong, then the solution opens.</span>
+        ) : checked ? (
           <span className="text-[15px] font-medium text-wisteria-deep">
             {correct} correct so far · <span className="text-periwinkle-deep">Enter to continue</span>
           </span>
@@ -551,7 +690,23 @@ export function QuizRunner({ course, items: firstItems, mode, title, backHref, a
             <RateUnanswered key={q.id} objectiveName={objective?.name} onDown={skipBad} />
           </div>
         )}
-        {checked ? (
+        {retrying ? (
+          q.kind !== "Short answer" ? (
+            <Button size="sm" onClick={checkRetry} disabled={retryPick === null} data-part="retry-check">
+              Try again
+            </Button>
+          ) : q.deep ? (
+            <Button size="sm" data-part="deep-check" onClick={() => deepResponse.trim() && submitAnswer(deepResponse)} disabled={!deepResponse.trim() || grading}>
+              {grading ? "Checking…" : "Try again"}
+            </Button>
+          ) : (
+            <span className="text-[15px] font-medium text-periwinkle-deep">Enter to try again</span>
+          )
+        ) : checked && stage === "spot" ? (
+          <Button variant="ghost" size="sm" onClick={() => setStage("solution")} data-part="spot-skip">
+            Skip
+          </Button>
+        ) : checked ? (
           <Button size="sm" onClick={advance}>
             {index + 1 >= total ? "Finish" : "Continue"}
           </Button>
@@ -569,7 +724,7 @@ export function QuizRunner({ course, items: firstItems, mode, title, backHref, a
               onClick={() => {
                 if (!deepResponse.trim()) return;
                 if (!q.exact?.length && noModel !== null) setGradingOff("no AI connected");
-                else void submitShort(deepResponse);
+                else submitAnswer(deepResponse);
               }}
               disabled={!deepResponse.trim() || grading}
             >

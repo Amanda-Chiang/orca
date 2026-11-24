@@ -103,11 +103,18 @@ export interface IslandProps extends Omit<HTMLMotionProps<"div">, "children"> {
   float?: boolean;
   /** Seed to desynchronize floating neighbours. */
   seed?: number;
+  /**
+   * A course in cram mode (owner, 2026-11-22): the muted blue rim of a not-started topic on cram mode's path,
+   * a purple ring (the face) inside it and a dark centre; the usual trees. Pair with `data-cram`, which turns
+   * the tokens dark (periwinkle isn't remapped, so the ring stays light).
+   */
+  cram?: boolean;
 }
 
-export function Island({ variant, level, scale = 1, float = false, seed = 0, className, style, ...rest }: IslandProps) {
+export function Island({ variant, level, scale = 1, float = false, seed = 0, cram = false, className, style, ...rest }: IslandProps) {
   const b = BLOBS[variant];
-  const look = LOOK[level];
+  const look = cram ? { ...LOOK[level], stroke: "var(--color-alice-deep)", inner: "var(--color-alice)" } : LOOK[level];
+  const face = cram ? "var(--color-periwinkle)" : "var(--color-parchment)";
   const t = b.treeOffset;
 
   return (
@@ -128,7 +135,7 @@ export function Island({ variant, level, scale = 1, float = false, seed = 0, cla
         aria-hidden
       >
         <motion.path data-part="base" d={b.base} fill="var(--color-alice-deep)" />
-        <motion.path data-part="top" d={b.top} fill="var(--color-parchment)" stroke={look.stroke} strokeWidth={5} strokeLinejoin="round" />
+        <motion.path data-part="top" d={b.top} fill={face} stroke={look.stroke} strokeWidth={5} strokeLinejoin="round" />
         <motion.path data-part="inner" d={b.inner} fill={look.inner} />
         {look.trees.length > 0 && (
           <g data-part="trees" transform={`translate(${t.x} ${t.y})`}>

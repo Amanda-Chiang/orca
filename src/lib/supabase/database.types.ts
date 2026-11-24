@@ -327,6 +327,25 @@ isOneToOne: false
       referencedColumns: ["id","owner_id"]
     }
                   ]
+                },"problem_attempts": {
+                  Row: {
+                    "at": string,"cold": boolean,"course_id": string,"error_note": string | null,"exam_id": string,"id": string,"minutes": number | null,"mock_material_id": string | null,"out_of": number | null,"outcome": string,"owner_id": string,"points": number | null,"type_id": string
+                  }
+                  Insert: {
+                    "at"?: string,"cold"?: boolean,"course_id": string,"error_note"?: string | null,"exam_id": string,"id"?: string,"minutes"?: number | null,"mock_material_id"?: string | null,"out_of"?: number | null,"outcome": string,"owner_id": string,"points"?: number | null,"type_id": string
+                  }
+                  Update: {
+                    "at"?: string,"cold"?: boolean,"course_id"?: string,"error_note"?: string | null,"exam_id"?: string,"id"?: string,"minutes"?: number | null,"mock_material_id"?: string | null,"out_of"?: number | null,"outcome"?: string,"owner_id"?: string,"points"?: number | null,"type_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "problem_attempts_course_id_owner_id_fkey"
+      columns: ["course_id","owner_id"]
+isOneToOne: false
+      referencedRelation: "courses"
+      referencedColumns: ["id","owner_id"]
+    }
+                  ]
                 },"profiles": {
                   Row: {
                     "avatar": string,"created_at": string,"default_review_config": Json | null,"is_admin": boolean,"last_active_at": string | null,"marker_notes": string | null,"name": string | null,"onboarded": boolean,"onboarding": NonNullable<Json>,"orca_notes": string | null,"owner_id": string,"timezone": string
@@ -367,13 +386,13 @@ isOneToOne: false
                   ]
                 },"questions": {
                   Row: {
-                    "anchor": Json | null,"answer": number,"course_id": string,"created_at": string,"deep": boolean,"exact": (string)[] | null,"explanation": string,"figure": Json | null,"id": string,"kind": string,"material_id": string | null,"objective_id": string,"options": (string)[],"owner_id": string,"prompt": string,"rubric": Json | null,"sort_order": number,"source": string,"table": Json | null,"tier": string | null,"topic_id": string,"topic_name": string
+                    "anchor": Json | null,"answer": number,"course_id": string,"created_at": string,"deep": boolean,"exact": (string)[] | null,"explanation": string,"figure": Json | null,"id": string,"kind": string,"material_id": string | null,"objective_id": string,"options": (string)[],"owner_id": string,"prompt": string,"rubric": Json | null,"sort_order": number,"source": string,"table": Json | null,"tier": string | null,"topic_id": string,"topic_name": string,"unanchored": boolean
                   }
                   Insert: {
-                    "anchor"?: Json | null,"answer": number,"course_id": string,"created_at"?: string,"deep"?: boolean,"exact"?: (string)[] | null,"explanation": string,"figure"?: Json | null,"id": string,"kind": string,"material_id"?: string | null,"objective_id": string,"options"?: (string)[],"owner_id"?: string,"prompt": string,"rubric"?: Json | null,"sort_order": number,"source"?: string,"table"?: Json | null,"tier"?: string | null,"topic_id": string,"topic_name": string
+                    "anchor"?: Json | null,"answer": number,"course_id": string,"created_at"?: string,"deep"?: boolean,"exact"?: (string)[] | null,"explanation": string,"figure"?: Json | null,"id": string,"kind": string,"material_id"?: string | null,"objective_id": string,"options"?: (string)[],"owner_id"?: string,"prompt": string,"rubric"?: Json | null,"sort_order": number,"source"?: string,"table"?: Json | null,"tier"?: string | null,"topic_id": string,"topic_name": string,"unanchored"?: boolean
                   }
                   Update: {
-                    "anchor"?: Json | null,"answer"?: number,"course_id"?: string,"created_at"?: string,"deep"?: boolean,"exact"?: (string)[] | null,"explanation"?: string,"figure"?: Json | null,"id"?: string,"kind"?: string,"material_id"?: string | null,"objective_id"?: string,"options"?: (string)[],"owner_id"?: string,"prompt"?: string,"rubric"?: Json | null,"sort_order"?: number,"source"?: string,"table"?: Json | null,"tier"?: string | null,"topic_id"?: string,"topic_name"?: string
+                    "anchor"?: Json | null,"answer"?: number,"course_id"?: string,"created_at"?: string,"deep"?: boolean,"exact"?: (string)[] | null,"explanation"?: string,"figure"?: Json | null,"id"?: string,"kind"?: string,"material_id"?: string | null,"objective_id"?: string,"options"?: (string)[],"owner_id"?: string,"prompt"?: string,"rubric"?: Json | null,"sort_order"?: number,"source"?: string,"table"?: Json | null,"tier"?: string | null,"topic_id"?: string,"topic_name"?: string,"unanchored"?: boolean
                   }
                   Relationships: [
                     {
@@ -507,6 +526,44 @@ isOneToOne: false
 isOneToOne: false
       referencedRelation: "topics"
       referencedColumns: ["id","course_id"]
+    }
+                  ]
+                },"study_sessions": {
+                  Row: {
+                    "at": string,"bookmark": string | null,"course_id": string,"day": string,"exam_id": string | null,"id": string,"minutes": number,"next_steps": NonNullable<Json>,"owner_id": string,"summary": string,"worked": NonNullable<Json>
+                  }
+                  Insert: {
+                    "at"?: string,"bookmark"?: string | null,"course_id": string,"day": string,"exam_id"?: string | null,"id"?: string,"minutes": number,"next_steps"?: NonNullable<Json>,"owner_id": string,"summary": string,"worked"?: NonNullable<Json>
+                  }
+                  Update: {
+                    "at"?: string,"bookmark"?: string | null,"course_id"?: string,"day"?: string,"exam_id"?: string | null,"id"?: string,"minutes"?: number,"next_steps"?: NonNullable<Json>,"owner_id"?: string,"summary"?: string,"worked"?: NonNullable<Json>
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "study_sessions_course_id_owner_id_fkey"
+      columns: ["course_id","owner_id"]
+isOneToOne: false
+      referencedRelation: "courses"
+      referencedColumns: ["id","owner_id"]
+    }
+                  ]
+                },"study_timers": {
+                  Row: {
+                    "course_id": string,"ended_at": string | null,"exam_id": string | null,"id": string,"owner_id": string,"started_at": string
+                  }
+                  Insert: {
+                    "course_id": string,"ended_at"?: string | null,"exam_id"?: string | null,"id"?: string,"owner_id": string,"started_at"?: string
+                  }
+                  Update: {
+                    "course_id"?: string,"ended_at"?: string | null,"exam_id"?: string | null,"id"?: string,"owner_id"?: string,"started_at"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "study_timers_course_id_owner_id_fkey"
+      columns: ["course_id","owner_id"]
+isOneToOne: false
+      referencedRelation: "courses"
+      referencedColumns: ["id","owner_id"]
     }
                   ]
                 },"topics": {

@@ -7,6 +7,7 @@ import { AvatarPreviewProvider } from "@/components/brand/avatar-preview";
 import { FlagTopUpWatcher } from "@/components/layout/FlagTopUpWatcher";
 import { OnboardingTips } from "@/components/onboarding/OnboardingTips";
 import { Heartbeat } from "@/components/layout/Heartbeat";
+import { StudyTimeProvider, TimerPill } from "@/components/study/StudyTime";
 import { UploadToasts } from "@/components/layout/UploadToasts";
 import { LoadingScreen } from "@/components/layout/LoadingScreen";
 import { TopBar } from "@/components/layout/TopBar";
@@ -33,7 +34,7 @@ function Loaded({ children }: { children: React.ReactNode }) {
   if (status === "failed") return <LoadFailed />;
   if (status === "loading" && !isPublicPath(pathname) && !isAdminPath(pathname)) return <LoadingScreen title="Loading your courses…" message="Gathering your islands, topics and what's due." />;
   return (
-    <>
+    <StudyTimeProvider>
       {children}
       <SaveStatus />
       <FlagTopUpWatcher />
@@ -44,9 +45,10 @@ function Loaded({ children }: { children: React.ReactNode }) {
             <UploadToasts />
           </Suspense>
           <OnboardingTips />
+          <TimerPill />
         </>
       )}
-    </>
+    </StudyTimeProvider>
   );
 }
 

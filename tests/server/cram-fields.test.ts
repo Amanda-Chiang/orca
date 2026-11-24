@@ -1,0 +1,172 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { connectorMinutes, cramFields, spentMinutesByDay, spentMinutesSplit, topErrorsOf, touchedSince, type CramFieldsInput } from "../../src/lib/server/connector/cram-plan.ts";
+import type { ExamLine, ObjectiveLine } from "../../src/lib/connector/mcp.ts";
+import { fakeDb } from "../support/fake-db.ts";
+
+const OWNER = "owner-1";
+const COURSE = "c0000000-0000-4000-8000-000000000001";
+const AT = new Date("2026-11-13T15:00:00.000Z");
+const SINCE = "2026-11-10T09:00:00.000Z";
+
+const objective = (id: string, topicId: string, status: string): ObjectiveLine => ({ id, topicId, topic: `Topic ${topicId}`, name: `Objective ${id}`, status, recall: null, questions: 1, materialIds: [] });
+const topics = [
+  { id: "A", name: "Adders" },
+  { id: "B", name: "Buses" },
+  { id: "C", name: "Counters" },
+];
+const objectives = [objective("a1", "A", "learning"), objective("a2", "A", "verified"), objective("b1", "B", "unseen"), objective("c1", "C", "mastered"), objective("x", "C", "unseen")];
+const weights = new Map([
+  ["a1", 1],
+  ["a2", 1],
+  ["b1", 1],
+  ["c1", 1],
+  ["x", 0], // excluded by the scope
+]);
+const exam = (extra: Partial<ExamLine> = {}): ExamLine => ({ id: "e1", title: "Final", date: "2026-11-19", topicIds: [], cramming: true, scope: { objectives: [], sources: [], budget: { hours: 6, daysOut: [], since: SINCE } }, mode: "exam-week", ...extra });
+const event = (at: string, extra: Record<string, unknown> = {}) => ({ owner_id: OWNER, course_id: COURSE, at, kind: "answer", source: "connector", error_type: null, objective_id: "a1", ...extra });
+const input = (exams: ExamLine[]): CramFieldsInput => ({ courseId: COURSE, at: AT, timezone: "UTC", today: "2026-11-13", exams, topics, objectives, weights });
+
+test("course_state's plan counts the sessions and the connector's chat since the cram started against the budget, day by day", async () => {
+  const db = fakeDb({
+    session_results: [
+      { owner_id: OWNER, course_id: COURSE, finished_at: "2026-11-11T10:00:00.000Z", seconds: 1800 },
+      { owner_id: OWNER, course_id: COURSE, finished_at: "2026-11-01T10:00:00.000Z", seconds: 9000 }, // before the cram: not counted
+      { owner_id: "someone-else", course_id: COURSE, finished_at: "2026-11-12T10:00:00.000Z", seconds: 9000 },
+    ],
+    evidence_events: [
+      // A 20-minute chat on the 12th, and a 30-minute one today (the 13th).
+      event("2026-11-12T20:00:00.000Z"),
+      event("2026-11-12T20:20:00.000Z", { kind: "work" }),
+      event("2026-11-13T09:00:00.000Z"),
+      event("2026-11-13T09:30:00.000Z"),
+      event("2026-11-13T14:30:00.000Z", { source: "quiz" }), // the app's own session, not the chat
+      event("2026-11-05T10:00:00.000Z"), // before the cram
+    ],
+  });
+  const { plan, coverage, topErrors } = await cramFields(db as never, OWNER, input([exam()]));
+  assert.ok(plan);
+  // The budget was saved the old way: 6 hours over 9 days is 40 minutes a day. Today: a 30-minute chat stretch plus its last question (5 minutes), so today's 40 are nearly used; missed time earlier isn't debt.
+  assert.deepEqual(plan.cut, []);
+  assert.equal(plan.minutesToday, 5);
+  assert.equal(Math.round(plan.hoursLeft * 1000) / 1000, 3.417);
+  assert.equal(plan.daysLeft, 6);
+  assert.equal(plan.line, "6 days to the exam. Done: Counters. Today: Adders. Ready: 50%.");
+  assert.deepEqual(plan.verified, { done: 2, total: 4, share: 0.5 });
+  assert.deepEqual(plan.topics.map((t) => [t.id, t.done, t.weakSpots]), [
+    ["A", false, ["a1"]],
+    ["B", false, []],
+    ["C", true, ["c1"]],
+  ]);
+  assert.deepEqual(coverage, { verified: 2, total: 4, share: 0.5, byTopic: [{ topicId: "A", verified: 1, total: 2 }, { topicId: "B", verified: 0, total: 1 }, { topicId: "C", verified: 1, total: 1 }] });
+  assert.deepEqual(topErrors, []);
+  // The schedule: every day since the cram started, with the minutes studied on it (sessions and the chat, by day) and whether the past ones were met (40 asked a day).
+  assert.deepEqual(plan.days.map((d) => [d.day, d.spentMinutes, d.met]), [
+    ["2026-11-10", 0, false],
+    ["2026-11-11", 30, false],
+    ["2026-11-12", 25, false],
+    ["2026-11-13", 35, null],
+    ["2026-11-14", 0, null],
+    ["2026-11-15", 0, null],
+    ["2026-11-16", 0, null],
+    ["2026-11-17", 0, null],
+    ["2026-11-18", 0, null],
+  ]);
+  // Covered: the evidence since the cram started is on a1 (Adders, in progress); Buses has none; Counters is done.
+  assert.deepEqual(plan.topics.map((t) => [t.id, t.covered]), [
+    ["A", "in-progress"],
+    ["B", "untouched"],
+    ["C", "done"],
+  ]);
+});
+
+test("the minutes by day and the objectives touched since the cram started", () => {
+  const sessions = [
+    { finished_at: "2026-11-12T10:00:00.000Z", seconds: 600 },
+    { finished_at: "2026-11-12T11:00:00.000Z", seconds: 300 },
+  ];
+  const events = [
+    { at: "2026-11-12T23:00:00.000Z", source: "connector", objective_id: "x" },
+    { at: "2026-11-12T23:30:00.000Z", source: "connector", objective_id: "y" },
+    { at: "2026-11-13T15:00:00.000Z", source: "quiz", objective_id: "x" },
+  ];
+  assert.deepEqual(spentMinutesByDay(sessions, events, "UTC"), { "2026-11-12": 50 });
+  assert.deepEqual(spentMinutesByDay(sessions, events, "America/New_York"), { "2026-11-12": 50 }, "the chat's 23:00 is still the 12th in New York");
+  assert.deepEqual(touchedSince(events, "2026-11-12T23:30:00.000Z"), ["y", "x"]);
+  assert.deepEqual(touchedSince(events, "2026-11-14T00:00:00.000Z"), []);
+});
+
+test("the plan covers only the exam's topics when it names some, and is null without a cram or a budget; coverage follows the scoping exam", async () => {
+  const db = fakeDb({ session_results: [], evidence_events: [] });
+  const named = await cramFields(db as never, OWNER, input([exam({ topicIds: ["A"] })]));
+  assert.deepEqual(named.plan?.topics.map((t) => t.id), ["A"]);
+  assert.deepEqual(named.coverage, { verified: 1, total: 2, share: 0.5, byTopic: [{ topicId: "A", verified: 1, total: 2 }] });
+
+  // Cramming without a budget: the plan assumes 2 hours a study day from today (6 days to the 19th), nothing spent, and says so.
+  const noBudget = await cramFields(db as never, OWNER, input([exam({ scope: null })]));
+  assert.equal(noBudget.plan?.defaulted, true);
+  assert.deepEqual([noBudget.plan?.hoursLeft, noBudget.plan?.minutesPerDay, noBudget.plan?.cut], [12, 120, []]);
+  assert.ok(noBudget.coverage, "coverage still follows the cramming exam");
+  const budgeted = await cramFields(db as never, OWNER, input([exam()]));
+  assert.equal(budgeted.plan?.defaulted, false, "a set budget isn't assumed");
+
+  const soon = await cramFields(db as never, OWNER, input([exam({ cramming: false, scope: null, date: "2026-11-15", mode: "exam-week" })]));
+  assert.equal(soon.plan, null, "no exam is cramming");
+  assert.equal(soon.coverage?.total, 4, "the soonest exam within the window scopes coverage");
+
+  const far = await cramFields(db as never, OWNER, input([exam({ cramming: false, scope: null, date: "2026-12-19", mode: "normal" })]));
+  assert.deepEqual([far.plan, far.coverage], [null, null]);
+});
+
+test("topErrors count the kinds of mistake since the cram started, else over the last 30 days, most frequent first and at most six", async () => {
+  const rows = [
+    event("2026-11-12T10:00:00.000Z", { error_type: "sign" }),
+    event("2026-11-12T10:05:00.000Z", { error_type: "sign" }),
+    event("2026-11-12T10:10:00.000Z", { kind: "work", error_type: "units" }),
+    event("2026-11-12T10:15:00.000Z", { kind: "confusion", error_type: "concept" }), // not an answer or work event
+    event("2026-11-08T10:00:00.000Z", { error_type: "misread" }), // before the cram, within 30 days
+    event("2026-10-01T10:00:00.000Z", { error_type: "arithmetic" }), // older than 30 days
+  ];
+  const db = fakeDb({ session_results: [], evidence_events: rows });
+  const cram = await cramFields(db as never, OWNER, input([exam()]));
+  assert.deepEqual(cram.topErrors, [{ errorType: "sign", count: 2 }, { errorType: "units", count: 1 }]);
+  const plain = await cramFields(db as never, OWNER, input([exam({ cramming: false, scope: null, date: "2026-12-19", mode: "normal" })]));
+  assert.deepEqual(plain.topErrors, [{ errorType: "sign", count: 2 }, { errorType: "misread", count: 1 }, { errorType: "units", count: 1 }]);
+  const many = topErrorsOf(["arithmetic", "units", "sign", "misread", "notation", "concept", "sign"].map((error_type) => ({ kind: "answer", error_type })));
+  assert.equal(many.length, 6);
+  assert.deepEqual(many[0], { errorType: "sign", count: 2 });
+  assert.deepEqual(topErrorsOf([{ kind: "answer", error_type: "typo" }]), [], "an unknown kind is ignored");
+});
+
+test("spent minutes split at the start of the student's today: sessions by the day they finished, the chat by stretch (plus 5 minutes each)", () => {
+  const sessions = [
+    { finished_at: "2026-11-12T10:00:00.000Z", seconds: 600 },
+    { finished_at: "2026-11-13T03:00:00.000Z", seconds: 1200 }, // the 12th's evening in New York
+    { finished_at: "2026-11-13T15:00:00.000Z", seconds: 300 },
+  ];
+  const events = [
+    { at: "2026-11-12T23:00:00.000Z", source: "connector" },
+    { at: "2026-11-12T23:30:00.000Z", source: "connector" },
+    { at: "2026-11-13T15:00:00.000Z", source: "connector" },
+    { at: "2026-11-13T15:10:00.000Z", source: "connector" },
+  ];
+  assert.deepEqual(spentMinutesSplit(sessions, events, "America/New_York", "2026-11-13"), { beforeToday: 65, today: 20 });
+  assert.deepEqual(spentMinutesSplit(sessions, events, "UTC", "2026-11-13"), { beforeToday: 45, today: 40 });
+  assert.deepEqual(spentMinutesSplit(sessions, events, "UTC", "2026-11-12"), { beforeToday: 0, today: 45 }, "later days count nowhere");
+});
+
+test("the connector estimate counts stretches of Claude's evidence (gaps under 30 minutes) plus 5 minutes each, on the day each starts", () => {
+  const events = [
+    // 23:50 to 00:10 UTC: one stretch, counted on the day it started (the 12th in both zones).
+    { at: "2026-11-12T23:50:00.000Z", source: "connector" },
+    { at: "2026-11-13T00:10:00.000Z", source: "connector" },
+    { at: "2026-11-13T00:05:00.000Z", source: "quiz" },
+  ];
+  assert.equal(connectorMinutes(events, "America/New_York"), 25);
+  assert.equal(connectorMinutes(events, "UTC"), 25);
+  // Twelve hours apart: two stretches of one event each, not a twelve-hour session.
+  assert.equal(connectorMinutes([{ at: "2026-11-13T08:00:00.000Z", source: "connector" }, { at: "2026-11-13T20:00:00.000Z", source: "connector" }], "UTC"), 10);
+  // A long session with no gap over 30 minutes counts whole (no daily cap), and a flag Claude raised counts.
+  const long = Array.from({ length: 13 }, (_, i) => ({ at: new Date(Date.parse("2026-11-13T08:00:00.000Z") + i * 25 * 60_000).toISOString(), source: i === 6 ? null : "connector", ...(i === 6 ? { flag_source: "connector-struggled" } : {}) }));
+  assert.equal(connectorMinutes(long, "UTC"), 300 + 5);
+});

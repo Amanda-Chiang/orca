@@ -10,30 +10,104 @@
  */
 
 import { SCOPE_STRENGTH } from "../course/scope.ts";
-import { MATERIAL_TYPES, type ExamScope, type MaterialType, type ScopeEvidence, type ScopeSignal } from "../data.ts";
+import { MATERIAL_TYPES, type CramBudget, type ExamRules, type ExamScope, type MaterialType, type ProblemType, type ScopeEdit, type ScopeEvidence, type ScopeSignal } from "../data.ts";
+import type { ExamMap } from "../course/exam-map.ts";
+import { ATTEMPT_OUTCOMES, type ExamReadiness, type ProblemAttempt } from "../course/readiness.ts";
+import { BUDGET_DAYS_MAX, HOURS_PER_DAY_MAX, HOUR_STEP, isDay, isHalfHours, type CramBudgetInput } from "../mastery/cram-budget.ts";
+import type { CramPlan } from "../mastery/cram-plan.ts";
 import type { ErrorType, FlagStrength, Help, SignalEvent, WorkEvent } from "../mastery/types.ts";
 import { checkNotes } from "../pipeline/notes.ts";
 import type { ScreenHit } from "../untrusted/screen.ts";
 
 export const PROTOCOL_VERSION = "2025-06-18";
 const KNOWN_VERSIONS = new Set(["2025-06-18", "2025-03-26", "2024-11-05"]);
-export const SERVER_INFO = { name: "orca", version: "0.4" } as const;
+export const SERVER_INFO = { name: "orca", version: "0.5" } as const;
 
 /** What Claude is told when it connects: the study session as a script; the tool descriptions do the rest. */
+/**
+ * The tutor playbook (plan `2026-11-22-tutor-memory-and-exam-map.md`, Phase 4): how to run a sitting,
+ * from the corrections the owner made about twenty times across the ALD and Circuit Analysis crams.
+ * A student who doesn't know to ask for these gets them anyway. Part of INSTRUCTIONS.
+ */
+export const PLAYBOOK =
+  "HOW TO TUTOR (the student shouldn't have to ask for any of this). " +
+  "Time: ask what hours the student really has today and when they stop, and save them (set_exam, " +
+  "scope.budget); check the clock with a tool before stating a time or a duration, never estimate one; at " +
+  "the stop time, say so and log the sitting. With two days or less to the exam, problems come first and a " +
+  "lesson is something to look up when a problem needs it. " +
+  "Honesty: never state a guess as a fact; say what you inferred and from what. Say when something is new " +
+  "to the student and whether the course expects it, when a step is a teaching scaffold and not how it's " +
+  "done in the exam, and when something is optional. Use the exam's rules (scope.rules): no formula sheet " +
+  "means the formulas are memorised, and a plan must not assume one. " +
+  "Problems: write them at the past exams' difficulty with numbers as clean as the exams'; draw every " +
+  "figure in full (every element, switch and label) and name the parts you refer to; state any reference " +
+  "direction or convention you chose. Before a multi-part problem, say what each part is worth for the " +
+  "exam and which parts are only arithmetic; once the method is clearly right, give the arithmetic's " +
+  "result and move on. Check every worked example's arithmetic, and any review sheet against the worked " +
+  "examples, before posting. Prefer a set the student can work on paper and have graded in one pass. " +
+  "Hints: when the student asks for a hint, give one hint, the smallest that unblocks them, and nothing " +
+  "of the answer or of later parts; wait for their next attempt. When they are copying from a solution, " +
+  "walk through the reasoning instead. " +
+  "Mistakes: read the student's actual line before naming the slip; name the specific slip (which branch, " +
+  "which sign, which formula), not just right or wrong, and record it (errorNote). After giving an answer " +
+  "key, ask which ones they missed and record those: a key handed over with no report teaches Orca nothing.";
+
 export const INSTRUCTIONS =
   "Orca keeps this student's courses: what each exam covers, every learning objective and how well " +
   "the student can do it, a bank of questions from their course material, and a vault of past and " +
   "practice exams kept for a practice test. Orca stores, counts and schedules; you teach. Run a " +
-  "study session like this. 1) Call course_state first (detail summary for a check-in, full when " +
+  "study session like this. 0) Any question about a course is a study session, even with no course named (a " +
+  "pasted problem, 'explain this', a why): call course_state (summary) before answering and pick the " +
+  "course; with no matching course, answer without Orca and don't ask. Teach, then flag_check the " +
+  "objectives touched: asked about means to be checked, not weak; lost, or the same question twice, is a " +
+  "miss (log_evidence). After teaching something new or after a miss, offer one next step, a quick check " +
+  "from the bank (next_questions for that topic) or a practice problem of that kind (log_problem on a " +
+  "mapped exam, else log_evidence), but not mid-problem and not while a cram plan runs, since the plan " +
+  "schedules practice. 1) Call course_state first (detail summary for a check-in, full when " +
   "you need objective ids); it says what's due, the next exam's topics (examFocus), the course's " +
   "mode, which exam is being crammed for (cramming), the vault, whether Orca's daily model budget " +
-  "is spent (budget) and whether questions are being written (writing). Follow mode: normal, a " +
+  "is spent (budget) and whether questions are being written (writing). When plan isn't null (an " +
+  "exam is being crammed for), start the session by saying plan.line as is, then work through it as a " +
+  "queue, one topic at a time, in this order: when plan.diagnostic isn't null, first a sweep (one " +
+  "question per topic in plan.diagnostic.topicIds, from next_questions with that topicId and count 1, " +
+  "no teaching yet; the misses are the weak spots); when plan.mockToday isn't null, the practice test " +
+  "(vault_material with forMock true, given as written and timed at its minutes, then grade it and record each problem with " +
+  "log_evidence); then plan.today's topics in order, each taught and checked until it's verified or " +
+  "its minutes are used, before the next. Never call the student behind or late: missed time only " +
+  "moves topics to plan.cut, which you name as what goes if time runs short. Time with you counts as " +
+  "study when you record answers, work or signals. When plan.defaulted is true the student set no time budget and Orca " +
+  "assumed 2 hours a study day: say so and ask if it's different (set_exam with scope.budget). When " +
+  "the student says how much time they have today or on a named day, save it with " +
+  "set_exam (scope.budget.today for today, or perDay for the days named; leave objectives and " +
+  "sources out to keep the scope) and read back the new plan.line from course_state. plan.days is " +
+  "the schedule (each day's topics and minutes, and each topic's covered state in plan.topics): when " +
+  "the student asks what's on which day, read it rather than inventing one. On " +
+  "the eve (mode day-of, or plan.daysLeft is 1 or less), mention " +
+  "topErrors: the kinds of mistake the student makes most. Follow mode: normal, a " +
   "short review of what's due; exam-week, work through the exam's scope, heaviest first; day-of, a " +
-  "quick pass over what's weak and nothing new. 2) Setup: when an exam is near and has no scope, " +
+  "quick pass over what's weak and nothing new. 2) Exam map first: before planning or teaching for an " +
+  "exam, ask for EVERY past and practice exam the student has (add_material holds them back) and for " +
+  "the exam's rules (closed book? formula sheet? calculator? how long? how it's graded), and store the " +
+  "rules as scope.rules. With two or more exams in the vault, agree which one to reserve " +
+  "(scope.reservedMaterialId) so one timed score survives. Read the others with vault_material, then " +
+  "record what kinds of problem they ask as scope.problemTypes, each with the objectives it uses and " +
+  "the exams it's on. Plan from that map: teach the types that recur across exams first, at the " +
+  "exams' difficulty, and say so when scopeSummary.examMap.uncertain is true (fewer than three exams " +
+  "read: a type on none of them can still appear). An exam with a vault but no problemTypes hasn't " +
+  "been mapped: do that before anything else. Setup: when an exam is near and has no scope, " +
   "ask what the professor said it covers, whether there's a practice exam or study guide " +
   "(add_material: pasted text, or file true for an upload link; past and practice exams are held " +
   "back), and what the student is worried about (flag_check with strength struggled); then record " +
-  "the scope with set_exam (cramming true when they're cramming). Call set_exam too when the " +
+  "the scope with set_exam (cramming true when they're cramming). When an exam's scope has worries " +
+  "(what the student said feels shaky at cram setup, in their words), match them to objectives at the " +
+  "start of the first session, flag those with flag_check (strength struggled) and tell the student " +
+  "which ones you'll start with; with no worries, check first and let the misses find the weak spots. When the student names which " +
+  "lectures or files the exam covers, map them to the course's materials by filename (course_state " +
+  "detail full lists materials, and each objective's materialIds) and record the scope with weight 0 " +
+  "for objectives taught only elsewhere (evidence professor, quote \"not in the files the exam " +
+  "covers\"), passing scope.materialIds; an objective no file teaches, or a weak spot, follows its topic (in " +
+  "scope when the topic is), and Orca keeps it in. To turn a few objectives on or off, send just those with " +
+  "scope.patchObjectives true. To change an exam's scope or budget, leave its date out. Call set_exam too when the " +
   "student says what an exam covers or when it's cancelled. 3) Check first: before explaining, ask " +
   "one question at a time from next_questions (it picks what's due, then exam focus, then the " +
   "heaviest unflagged objectives; pass objectiveIds or topicIds to steer it). Before revealing an " +
@@ -46,15 +120,38 @@ export const INSTRUCTIONS =
   "the student didn't give. 5) Call material_for before teaching an objective or writing questions, " +
   "so you teach what the course teaches, in its notation. When the bank is thin, budget.ok is " +
   "false, or the course is in a cram (mode isn't normal: Orca writes no questions then), write " +
-  "questions yourself with add_questions, anchored to material_for's pieces, then " +
+  "questions yourself with add_questions, anchored to material_for's pieces; when material_for " +
+  "returns no pieces for an objective, write from general knowledge without an anchor and tell the " +
+  "student the question isn't from their material. Then " +
   "grade them against the key you stored and report help. Record a problem you set and judged, or " +
   "what the student did (got-it, lost, asked-answer, asked-harder), with log_evidence. 6) When " +
   "next_questions returns pending, Orca is writing questions: teach from the material meanwhile " +
   "and ask again after retryAfterSeconds, or write them yourself. When budget.ok is false, say so: " +
-  "Orca can't write or grade prose until it resets (resetsAt). 7) Never open, quote or ask from a " +
-  "vault item: it's the student's practice test. Name it and say when to sit it. 8) Call flag_check " +
+  "Orca can't write or grade prose until it resets (resetsAt). 7) The vault is hidden from the " +
+  "student, not from you: read every held-back exam with vault_material to plan, but never show, " +
+  "quote or walk through its problems or solutions; write your own problems of the same kinds. The " +
+  "reserved exam (vault[].reserved) you don't read either until the student sits it timed. 8) Call flag_check " +
   "only for objectives the student asked about or got wrong in this chat. 9) Every few answers, " +
-  "send a one-line progress note unasked: what's verified, what's still weak, what's next.";
+  "send a one-line progress note unasked: what's verified, what's still weak, what's next. 10) The " +
+  "session record: when course_state has a lastSession, open by saying where the student stopped " +
+  "(its bookmark) and offering its next steps in order, before anything else. When a sitting ends or " +
+  "pauses, call log_session with the minutes actually spent (check the clock; never guess), what you " +
+  "worked on and how each went (with the specific slip, not just right or wrong), the bookmark and " +
+  "the ordered next steps. Homework, lessons and drills count: without it Orca shows no time studied " +
+  "and the next chat starts blind. 11) Readiness is measured by problems, not recall: once the exam " +
+  "has a map (problemTypes), the plan's units are its kinds of problem and readiness says which the " +
+  "student is ready for. The diagnostic (plan.diagnostic) is then one cold exam-style problem per kind: " +
+  "your own problem of that kind, at the past exams' difficulty with clean numbers, no hints, timed; log " +
+  "each with log_problem (cold true). Teach the kinds that aren't ready, most recurrent first; after " +
+  "teaching one, re-test it cold with a fresh problem and log that too. Don't say the student is ready " +
+  "from recall questions or from a walk-through. When the reserved exam is sat (plan.mockToday), log each " +
+  "of its problems with mockMaterialId, points and outOf: readiness.measured is their real score. " +
+  PLAYBOOK;
+
+/** An exam scope as set_exam takes it: the budget is an input merged over the exam's (src/lib/mastery/cram-budget.ts `mergeBudget`), and `objectives` and `sources` left out keep the exam's. */
+/** `reservedMaterialId` null clears the reservation. */
+export type ScopeInput = Omit<ExamScope, "budget" | "objectives" | "sources" | "reservedMaterialId"> & { objectives?: ExamScope["objectives"]; sources?: ScopeSignal[]; budget?: CramBudgetInput; patchObjectives?: boolean; reservedMaterialId?: string | null };
+export type { CramBudgetInput };
 
 /* ── Tool results: plain data the implementations return; the protocol wraps them ── */
 
@@ -74,6 +171,8 @@ export interface ObjectiveLine {
   recall: number | null;
   /** How many questions Orca has for it (0: it can't be checked until some are written). */
   questions: number;
+  /** The materials it's taught in (the one that created it and the ones its signals name), among course_state's materials. */
+  materialIds: string[];
 }
 
 /** The course's footing: day-of when an exam is today; exam-week when an exam is cramming or within 7 days; else normal. */
@@ -88,10 +187,41 @@ export interface ExamLine {
   topicIds: string[];
   /** The student is cramming for it (the exam window applies whatever the date). */
   cramming: boolean;
-  /** Per-objective weights inside the window and where they came from; null = no scope beyond topicIds. */
-  scope: ExamScope | null;
+  /** Per-objective weights inside the window and where they came from; null = no scope beyond topicIds. Left out with detail summary (scopeSummary says its size). */
+  scope?: ExamScope | null;
+  /** With detail summary: the scope's size instead of its entries; null without a scope. */
+  scopeSummary?: ScopeSummary | null;
   /** The mode this exam puts the course in: day-of today, exam-week while cramming or within 7 days, else normal. */
   mode: CourseMode;
+  /** From set_exam: what Orca changed in what was sent, and why. */
+  note?: string;
+}
+
+/** An exam's scope by its counts (course_state detail summary): over the live objectives of the exam's topics, as the exam card counts them. */
+export interface ScopeSummary {
+  /** Objectives weighing more than 0 (unlisted ones weigh 1). */
+  inScope: number;
+  /** Objectives the scope excludes (weight 0). */
+  excluded: number;
+  sources: ScopeSignal[];
+  budget?: CramBudget;
+  /** What the student said feels shaky at cram setup, in their words. */
+  worries?: string;
+  rules?: ExamRules;
+  /** The exam map: problem types by how many of the mapped past exams ask them; absent until you write scope.problemTypes. */
+  examMap?: ExamMap;
+  reservedMaterialId?: string;
+  /** The last five edits to the scope or budget, and who made them (the student in the app, or you). */
+  history?: ScopeEdit[];
+}
+
+/** A material of the course (not removed), so Claude can map "lectures 11 to 16" to files. */
+export interface MaterialLine {
+  id: string;
+  filename: string;
+  type: MaterialType;
+  /** Kept for a practice test: never opened, never used to write questions. */
+  heldBack: boolean;
 }
 
 /** A held-back material (a past or practice exam kept for a practice test): listed by name only, never opened. */
@@ -99,6 +229,21 @@ export interface VaultLine {
   materialId: string;
   filename: string;
   type: MaterialType;
+  /** Kept unread, even by you, until the student sits it timed (an exam's scope.reservedMaterialId). */
+  reserved: boolean;
+}
+
+/** A held-back exam's pages, for the tutor's planning only. */
+export interface VaultMaterial {
+  materialId: string;
+  filename: string;
+  type: MaterialType;
+  pages: Array<{ n: number; text: string }>;
+  /** The page to ask for next (`fromPage`) when the file has more; absent at the end. */
+  nextPage?: number;
+  totalPages: number;
+  doNotReveal: true;
+  note: string;
 }
 
 export interface TopicLine {
@@ -128,6 +273,20 @@ export interface WritingLine {
   state: "queued" | "waiting" | "running";
 }
 
+/** How much of the scoping exam's scope is verified: over objectives in scope (weight > 0), and per topic. */
+export interface CoverageLine {
+  verified: number;
+  total: number;
+  share: number;
+  byTopic: Array<{ topicId: string; verified: number; total: number }>;
+}
+
+/** A kind of mistake and how often the student made it (answer and work events' errorType). */
+export interface TopError {
+  errorType: ErrorType;
+  count: number;
+}
+
 export interface CourseState {
   course: CourseSummary;
   /** The student's day, YYYY-MM-DD, in their timezone. */
@@ -136,6 +295,8 @@ export interface CourseState {
   topics: TopicLine[];
   /** Every live objective (detail "full"); left out for "summary". */
   objectives?: ObjectiveLine[];
+  /** The course's materials, not removed (detail "full"); left out for "summary". */
+  materials?: MaterialLine[];
   /** Objective ids Orca would have the student work on now, most urgent first. */
   dueNow: string[];
   /** Topic ids an exam within the next week covers (every topic when it names none). */
@@ -147,7 +308,59 @@ export interface CourseState {
   mode: CourseMode;
   /** The exam being crammed for, or null. */
   cramming: string | null;
+  /** The cram plan over the cramming exam (src/lib/mastery/cram-plan.ts); null when no exam is cramming. Without a budget it's computed from an assumed one (2 hours a study day) and says `defaulted`. */
+  plan: CramPlan | null;
+  /** Coverage of the scoping exam's scope (the cramming exam, else the soonest within the window); null outside every window. */
+  coverage: CoverageLine | null;
+  /** The kinds of mistake since the cram started (else the last 30 days), most frequent first, at most 6. */
+  topErrors: TopError[];
+  /**
+   * Readiness per kind of problem, for the exam being crammed for (else the soonest with a map), from
+   * the exam-style problems attempted (log_problem): null until the exam has problemTypes. Only a cold
+   * solve says ready. `measured` is the reserved exam's score once it's sat.
+   */
+  readiness: ExamReadiness | null;
+  /** The last sitting logged with log_session: where the student stopped and what comes next. Null before any. Start from it. */
+  lastSession: SessionLine | null;
 }
+
+/** One thing worked in a sitting. */
+export interface SessionWork {
+  /** What it was: "HW08 E8 to E12", "Drill 2: RLC damping", "Lesson 7: values that jump". */
+  what: string;
+  outcome?: (typeof SESSION_OUTCOMES)[number];
+  /** The specific slip, in words: "flipped the divider fraction", "used ω₀ where ω_d was asked". */
+  errorNote?: string;
+  objectiveIds?: string[];
+  /** A problem type's id from the exam map (scope.problemTypes). */
+  problemTypeId?: string;
+}
+
+/** A sitting as log_session takes it. */
+export interface SessionEntry {
+  minutes: number;
+  summary: string;
+  worked: SessionWork[];
+  bookmark?: string;
+  next?: string[];
+  examId?: string;
+}
+
+/** A logged sitting. */
+export interface SessionLine {
+  id: string;
+  at: string;
+  /** The student's day it counts on, YYYY-MM-DD. */
+  day: string;
+  minutes: number;
+  summary: string;
+  worked: SessionWork[];
+  bookmark: string | null;
+  next: string[];
+}
+
+/** How a piece of work went: alone, with hints, after being shown, or not finished. */
+export const SESSION_OUTCOMES = ["solved", "with-hints", "shown", "stuck"] as const;
 
 /** What next_questions answers: questions to ask, or why there are none yet. */
 export interface NextQuestions {
@@ -252,7 +465,8 @@ export interface AddQuestion {
 }
 
 export interface AddQuestionsResult {
-  added: Array<{ id: string; objectiveId: string }>;
+  /** `note` only on a question stored without an anchor because no live material teaches its objective. */
+  added: Array<{ id: string; objectiveId: string; note?: string }>;
   /** Questions not stored, by their position in the list, and why. */
   refused: Array<{ index: number; reason: string }>;
 }
@@ -295,7 +509,7 @@ export interface FlagCheckResult {
 export interface ConnectorTools {
   courses(): Promise<CourseSummary[]>;
   /** The course in full, or a summary without the objective lines (or only some topics' objectives). Null: no such course. */
-  courseState(courseId: string, options?: { detail?: "summary" | "full"; topicIds?: string[] }): Promise<CourseState | null>;
+  courseState(courseId: string, options?: { detail?: "summary" | "weak" | "full"; topicIds?: string[]; asOf?: string }): Promise<CourseState | null>;
   /** The next questions to ask (unanswered first, then least recently seen), writing some when none exist. Null: no such course. */
   nextQuestions(courseId: string, options: { objectiveIds?: string[]; topicIds?: string[]; count: number; write: boolean }): Promise<NextQuestions | null>;
   /** Remove an exam. */
@@ -306,17 +520,23 @@ export interface ConnectorTools {
   checkAnswer(courseId: string, questionId: string, response: string, sessionId: string, report?: Partial<AnswerReport>): Promise<CheckedAnswer | SelfGradeNeeded | { error: string }>;
   /** An answer Claude graded against the key: recorded with the help it reports (none = full credit). `response`, when given, is the student's words, cleaned and screened. */
   recordAnswer(courseId: string, questionId: string, outcome: Outcome, sessionId: string, response: string | undefined, report: AnswerReport): Promise<RecordedAnswer | { error: string }>;
-  setExam(courseId: string, exam: { id?: string; title: string; date: string; topicIds: string[]; cramming?: boolean; scope?: ExamScope }): Promise<ExamLine | { error: string }>;
+  setExam(courseId: string, exam: { id?: string; title?: string; date?: string; topicIds?: string[]; cramming?: boolean; scope?: ScopeInput }): Promise<ExamLine | { error: string }>;
   /** One flag per known live objective: check (source connector) or struggled (source connector-struggled). `said` arrives cleaned and screened. */
   flagCheck(courseId: string, objectiveIds: string[], said: string, strength: FlagStrength): Promise<FlagCheckResult | { error: string }>;
   /** The anchored pages of some objectives, never from a held-back or removed material. Null: no such course. */
   materialFor(courseId: string, objectiveIds: string[]): Promise<MaterialFor | null>;
+  /** A held-back exam's pages for planning (never the reserved one unless `forMock`); an error when it isn't in the vault. */
+  vaultMaterial(courseId: string, materialId: string, options: { fromPage?: number; forMock?: boolean }): Promise<VaultMaterial | { error: string }>;
   /** Store questions Claude wrote (validated like generated ones, source claude). */
   addQuestions(courseId: string, questions: AddQuestion[]): Promise<AddQuestionsResult | { error: string }>;
   /** Add pasted text as material, or hand back a link to upload a file. */
   addMaterial(courseId: string, input: AddMaterialInput): Promise<AddMaterialResult | { error: string }>;
   /** Record a piece of work or a signal on one objective. Free text (`problem`, `response`, `note`) arrives cleaned and screened. */
   logEvidence(courseId: string, objectiveId: string, entry: EvidenceEntry, sessionId: string): Promise<LoggedEvidence | { error: string }>;
+  /** Record an exam-style problem the student attempted, for a problem type on an exam's map; returns the type's readiness after it. */
+  logProblem(courseId: string, examId: string, attempt: Omit<ProblemAttempt, "at">): Promise<{ recorded: true; typeId: string; state: string; ready: number; total: number } | { error: string }>;
+  /** Store a sitting: its minutes count as study on the student's day, and its bookmark and next steps open the next chat. */
+  logSession(courseId: string, entry: SessionEntry): Promise<SessionLine | { error: string }>;
   /** Log the screen's hits on what the student said (refused or not). */
   screened(hits: ScreenHit[]): Promise<void>;
 }
@@ -330,6 +550,10 @@ const BASES = ["official-solution", "known-answer", "claude"] as const satisfies
 const SIGNALS = ["got-it", "lost", "asked-answer", "asked-harder"] as const satisfies readonly SignalEvent["signal"][];
 const SCOPE_SIGNALS = ["practice-exam", "professor", "study-guide", "homework", "lecture-emphasis", "guess"] as const satisfies readonly ScopeSignal[];
 const SCOPE_KINDS = ["Multiple choice", "True or false", "Short answer", "Problem"] as const;
+const RULE_NOTES = ["none", "sheet", "open"] as const;
+const RULE_CALCULATORS = ["none", "simple", "any"] as const;
+/** The most problem types an exam map holds. */
+const PROBLEM_TYPES_MAX = 40;
 type ScopeKind = (typeof SCOPE_KINDS)[number];
 const QUESTION_KINDS = ["Multiple choice", "True or false", "Short answer"] as const;
 /** The same bounds as a generated question (src/lib/pipeline/schemas.ts). */
@@ -341,6 +565,9 @@ const PROBLEM_CHARS = 4000;
 const TEXT_MATERIAL_CHARS = 200_000;
 /** A scope quote: the words a weight rests on. */
 const QUOTE_CHARS = 500;
+const BUDGET_HOURS_MAX = 1000;
+const BUDGET_DAYS_OUT_MAX = BUDGET_DAYS_MAX;
+const MATERIALS_MAX = 200;
 
 export const TOOLS = [
   {
@@ -350,16 +577,21 @@ export const TOOLS = [
       "learning objective with Orca's status for it (unseen = not flagged, verified, check-due, learning, " +
       "mixed-up, mastered, fading, retired) and predicted recall, and which objectives are due now. Orca " +
       "only schedules weak points: objectives the student struggled with, missed or asked to be checked " +
-      "on. Call this first. check_answer and record_answer already return each objective's new status, so " +
+      "on. Call this first, also when the student only pastes a problem or asks for an explanation: it says " +
+      "which course it belongs to. check_answer and record_answer already return each objective's new status, so " +
       "there's no need to call it after every answer; detail summary is a cheap check-in (topics with " +
-      "counts, what's due, exam focus, budget, what's being written), full lists every objective. With no " +
-      "course, lists the courses so you can pick one.",
+      "counts, each exam's scope by its size, what's due, exam focus, budget, what's being written), full " +
+      "lists every objective with the materials it's taught in, the course's materials and each exam's full scope. While an " +
+      "exam is being crammed for, plan holds the day's plan (plan.line is the one-line summary to say), " +
+      "coverage how much of the exam's scope is verified, and topErrors the kinds of mistake made most. " +
+      "With no course, lists the courses so you can pick one.",
     inputSchema: {
       type: "object",
       properties: {
         courseId: { ...UUID, description: "The course to describe. Omit to list the courses." },
-        detail: { type: "string", enum: ["summary", "full"], description: "summary: no objective lines; full (default): every objective." },
+        detail: { type: "string", enum: ["summary", "weak", "full"], description: "summary: no objective or material lines, exams' scopes by size; weak: the summary plus only the weak-spot objectives (the cheap view for a session: use it unless you need every objective id); full (default): every objective, the materials, full scopes." },
         topicIds: { type: "array", items: { type: "string" }, description: "With full: only these topics' objectives." },
+        asOf: { type: "string", description: "Testing only: YYYY-MM-DD, within 60 days of today. The exams, mode and cram plan are worked out as if today were that day (statuses and recall stay as of now); nothing is written. Use it to check how a cram plays out on later days instead of editing a real exam's date." },
       },
       additionalProperties: false,
     },
@@ -398,13 +630,13 @@ export const TOOLS = [
       properties: {
         courseId: UUID,
         examId: { ...UUID, description: "An existing exam to change or remove; omit to add one." },
-        title: { type: "string", description: "What the student calls it, e.g. Midterm, Final." },
-        date: { type: "string", description: "YYYY-MM-DD." },
-        topicIds: { type: "array", items: { type: "string" }, description: "Topic ids it covers; empty for every topic." },
+        title: { type: "string", description: "What the student calls it, e.g. Midterm, Final. With examId, omit to keep it." },
+        date: { type: "string", description: "YYYY-MM-DD. With examId, omit to keep the exam's date (don't resend it just to change the scope or budget)." },
+        topicIds: { type: "array", items: { type: "string" }, description: "Topic ids it covers; empty for every topic. With examId, omit to keep them." },
         cramming: { type: "boolean", description: "The student is cramming for it: Orca treats it as this week's exam whatever the date. Omit to leave as is." },
         scope: {
           type: "object",
-          description: "What the exam weighs, from the practice exam, the professor's words, a study guide, homework, lecture emphasis or a guess. Omit to leave as is.",
+          description: "What the exam weighs, from the practice exam, the professor's words, a study guide, homework, lecture emphasis or a guess. Omit to leave as is; omit objectives and sources together (keeping the exam's) to change only the budget.",
           properties: {
             objectives: {
               type: "array",
@@ -444,8 +676,53 @@ export const TOOLS = [
               additionalProperties: false,
             },
             sources: { type: "array", items: { type: "string", enum: SCOPE_SIGNALS }, maxItems: 6, description: "Where the scope came from, for the exam card." },
+            rules: {
+              type: "object",
+              description: "The exam's rules, from the syllabus or the professor. Ask for them at setup: they change how to study (no formula sheet means the formulas are memorised).",
+              properties: {
+                notes: { type: "string", enum: RULE_NOTES, description: "none: closed book; sheet: a formula sheet; open: open book." },
+                calculator: { type: "string", enum: RULE_CALCULATORS },
+                minutes: { type: "integer", minimum: 1, maximum: 600, description: "How long the exam runs." },
+                text: { type: "string", maxLength: QUOTE_CHARS, description: "Anything else, in the syllabus's or professor's words (how it's graded, what's given)." },
+              },
+              additionalProperties: false,
+            },
+            problemTypes: {
+              type: "array",
+              maxItems: PROBLEM_TYPES_MAX,
+              description: "The exam map: the kinds of problem the past exams ask, from the exams you read with vault_material. Replaces the list, so send every type each time. Plan the cram from it: what recurs across exams is what to teach first.",
+              items: {
+                type: "object",
+                properties: {
+                  id: { type: "string", description: "A short slug you choose and keep, e.g. charge-sharing." },
+                  name: { type: "string", description: "What the problem asks, e.g. Charge sharing between two capacitors." },
+                  objectiveIds: { type: "array", items: UUID, maxItems: 40, description: "The objectives a problem of this kind uses (empty when none fits)." },
+                  materialIds: { type: "array", items: UUID, description: "The past or practice exams it appears on (material ids)." },
+                  note: { type: "string", maxLength: QUOTE_CHARS, description: "What it asks for and where points are lost; no problem text from a held-back exam." },
+                },
+                required: ["id", "name", "objectiveIds", "materialIds"],
+                additionalProperties: false,
+              },
+            },
+            reservedMaterialId: { type: ["string", "null"], description: "The one held-back exam to keep unread, even by you, until the student sits it timed (their measured score). With two or more past exams, reserve one before reading the rest; null clears it." },
+            patchObjectives: { type: "boolean", description: "true: objectives lists only the ones to change; each replaces that objective's entry and every other objective keeps its weight (sources optional, added to the exam's). Use it to turn a few objectives on or off without resending the whole list." },
+            budget: {
+              type: "object",
+              description:
+                "The student's time budget for the cram, hours per day; the plan is derived from it. Merged over the budget the exam has " +
+                "(none yet: 2 hours a study day): perDay replaces the days it names, today sets today only, hours without perDay is a total " +
+                "spread evenly over the days not out. Omit to keep what the exam has.",
+              properties: {
+                perDay: { type: "object", additionalProperties: { type: "number", minimum: 0, maximum: HOURS_PER_DAY_MAX }, description: `Hours by day, YYYY-MM-DD, in steps of ${HOUR_STEP}; 0 for a day off. At most ${BUDGET_DAYS_MAX} days.` },
+                today: { type: "number", minimum: 0, maximum: HOURS_PER_DAY_MAX, description: `Hours for today only, in steps of ${HOUR_STEP}: "I have until 7".` },
+                hours: { type: "number", minimum: 0, maximum: BUDGET_HOURS_MAX, description: "A total before the exam, spread evenly over the days not out (the older form; use perDay when days differ)." },
+                daysOut: { type: "array", items: { type: "string" }, maxItems: BUDGET_DAYS_OUT_MAX, description: "Days with no study, YYYY-MM-DD (0 hours each)." },
+                since: { type: "string", description: "When cramming started, ISO: minutes studied since then count against the budget. Omit to keep the exam's (now for a new budget)." },
+              },
+              additionalProperties: false,
+            },
+            materialIds: { type: "array", items: UUID, maxItems: MATERIALS_MAX, description: "The materials the exam covers (ids from course_state's materials), when the student named files or lectures; objectives taught only elsewhere weigh 0." },
           },
-          required: ["objectives", "sources"],
           additionalProperties: false,
         },
         remove: { type: "boolean", description: "With examId: remove the exam instead." },
@@ -556,13 +833,35 @@ export const TOOLS = [
     },
   },
   {
+    name: "vault_material",
+    description:
+      "A held-back past or practice exam, as text, for YOU to plan from: what kinds of problem the exam asks, how hard, " +
+      "in what notation. Read every exam in course_state's vault at the start of a cram, except the reserved one. Never " +
+      "show the student its problems or solutions, quote them, or teach by walking through them: write your own " +
+      "problems of the same kinds. The reserved exam is refused until the student sits it timed (forMock true). Up to 8 " +
+      "pages a call; pass fromPage (the result's nextPage) for the rest.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        courseId: UUID,
+        materialId: { ...UUID, description: "A material id from course_state's vault." },
+        fromPage: { type: "integer", minimum: 1, description: "The page to start from (default 1)." },
+        forMock: { type: "boolean", description: "true only when the student is sitting this exam timed now: the one case the reserved exam is returned." },
+      },
+      required: ["courseId", "materialId"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "add_questions",
     description:
       "Store questions you wrote for the student's objectives, from the material (material_for) and in the " +
       "course's notation. Orca validates each like its own (multiple choice has four options and the right " +
       "index, true or false two; a short answer has exact forms or a rubric; math between \\( \\) must render; " +
       "an exact answer is never an expression; a question for an objective the material teaches has an anchor " +
-      "from material_for) and lists the ones it refused with why. Stored questions come back from " +
+      "from material_for) and lists the ones it refused with why. When material_for returns no pieces for an " +
+      "objective (nothing live teaches it), send no anchor: the question is stored as not course-specific, " +
+      "with a note, and you tell the student it isn't from their material. Stored questions come back from " +
       "next_questions and questions_for and are graded by check_answer like any other.",
     inputSchema: {
       type: "object",
@@ -632,6 +931,73 @@ export const TOOLS = [
         file: { type: "boolean", description: "true, with no text: return an upload link instead." },
       },
       required: ["courseId", "type"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "log_problem",
+    description:
+      "Record an exam-style problem the student attempted, for one kind of problem on the exam's map " +
+      "(scope.problemTypes). This is how readiness is measured: Orca reports ready only for a kind whose latest " +
+      "attempt was cold (no help first, at the exam's difficulty, your own problem of that kind) and solved. Use it " +
+      "for the diagnostic (one cold problem per kind, before teaching), for the re-test after you teach a kind, and " +
+      "for each problem of the reserved exam when the student sits it timed (mockMaterialId, points, outOf: their " +
+      "measured score). Give the specific slip in errorNote. Call it as each problem is finished, not at the end.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        courseId: UUID,
+        examId: { ...UUID, description: "The exam whose map names the kind." },
+        problemTypeId: { type: "string", description: "The kind's id from scope.problemTypes." },
+        outcome: { type: "string", enum: ATTEMPT_OUTCOMES, description: "solved alone, with-hints, shown the answer, or stuck (not finished)." },
+        cold: { type: "boolean", description: "true when the student attempted it with no help first, as in the exam." },
+        minutes: { type: "integer", minimum: 1, maximum: 600, description: "How long it took, from the clock." },
+        errorNote: { type: "string", maxLength: 200, description: "The specific slip: missed a KCL branch; sign flip on v_L; used ω₀ where ω_d was asked." },
+        mockMaterialId: { ...UUID, description: "The reserved exam's material id, when this is one of its problems sat timed." },
+        points: { type: "number", minimum: 0, description: "Points earned on it, with outOf (a mock's problem)." },
+        outOf: { type: "number", exclusiveMinimum: 0, description: "Points the problem is worth." },
+      },
+      required: ["courseId", "examId", "problemTypeId", "outcome", "cold"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "log_session",
+    description:
+      "Log a sitting with the student: how long it ran, what you worked on together, where they stopped and what " +
+      "comes next. Call it whenever a sitting ends or pauses (the student says they're done, takes a break, or " +
+      "switches course), and at least every couple of hours in a long one. This is what makes homework, drills and " +
+      "lessons done in the chat count as time studied, and what lets a new chat pick up where this one stopped " +
+      "(course_state's lastSession). Minutes are the time actually spent since the last log_session, from the clock, " +
+      "not a guess. Objective-level results still go through check_answer, record_answer and log_evidence.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        courseId: UUID,
+        examId: { ...UUID, description: "The exam it was for, when one is being crammed for." },
+        minutes: { type: "integer", minimum: 1, maximum: 720, description: "Minutes actually spent since the last log_session." },
+        summary: { type: "string", maxLength: 500, description: "One or two sentences: what the sitting covered." },
+        worked: {
+          type: "array",
+          maxItems: 30,
+          description: "What was worked, in order.",
+          items: {
+            type: "object",
+            properties: {
+              what: { type: "string", maxLength: 200, description: "e.g. HW08 E8 to E12; Drill 2: RLC damping; Lesson 7." },
+              outcome: { type: "string", enum: SESSION_OUTCOMES, description: "solved alone, with-hints, shown the answer, or stuck (not finished)." },
+              errorNote: { type: "string", maxLength: 200, description: "The specific slip, when there was one: flipped the divider fraction; used ω₀ where ω_d was asked." },
+              objectiveIds: { type: "array", items: UUID, maxItems: 10 },
+              problemTypeId: { type: "string", description: "A problem type's id from the exam map." },
+            },
+            required: ["what"],
+            additionalProperties: false,
+          },
+        },
+        bookmark: { type: "string", maxLength: 500, description: "Where the student stopped, exactly: Lesson 7.5 half done (I_2F found); Practice 8 not tried." },
+        next: { type: "array", items: { type: "string", maxLength: 200 }, maxItems: 10, description: "What to do next, in order: HW07 P4, then a switched RC circuit, then an AC problem." },
+      },
+      required: ["courseId", "minutes", "summary", "worked"],
       additionalProperties: false,
     },
   },
@@ -710,13 +1076,17 @@ async function screenText(tools: ConnectorTools, raw: string, maxChars: number, 
   return { ok: true, text: said.text };
 }
 
-/** An exam scope as set_exam takes it: ids, weights, evidence (quotes screened), format and sources checked field by field. */
-async function parseScope(tools: ConnectorTools, raw: unknown): Promise<{ scope: ExamScope } | { error: string }> {
-  if (!isObject(raw)) return { error: "scope is an object: objectives, sources and optionally format." };
-  if (!Array.isArray(raw.objectives) || raw.objectives.length > 400) return { error: "scope.objectives is a list of up to 400 { objectiveId, weight, evidence }." };
-  if (!Array.isArray(raw.sources) || raw.sources.length > 6 || !raw.sources.every((x) => isOneOf(SCOPE_SIGNALS, x))) return { error: `scope.sources is a list of ${SCOPE_SIGNALS.join(", ")}.` };
+/** An exam scope as set_exam takes it: ids, weights, evidence (quotes screened), format, sources and the budget checked field by field; objectives and sources may be left out together (the exam's are kept). */
+async function parseScope(tools: ConnectorTools, raw: unknown): Promise<{ scope: ScopeInput } | { error: string }> {
+  if (!isObject(raw)) return { error: "scope is an object: objectives, sources and optionally format, budget and materialIds." };
+  if (raw.patchObjectives !== undefined && typeof raw.patchObjectives !== "boolean") return { error: "scope.patchObjectives is true or false." };
+  const patch = raw.patchObjectives === true;
+  if (patch && !Array.isArray(raw.objectives)) return { error: "scope.patchObjectives needs scope.objectives: the ones to change." };
+  const keepScope = raw.objectives === undefined && raw.sources === undefined;
+  if (!keepScope && (!Array.isArray(raw.objectives) || raw.objectives.length > 400)) return { error: "scope.objectives is a list of up to 400 { objectiveId, weight, evidence } (left out with sources, the exam's are kept)." };
+  if (!keepScope && !(patch && raw.sources === undefined) && (!Array.isArray(raw.sources) || raw.sources.length > 6 || !raw.sources.every((x) => isOneOf(SCOPE_SIGNALS, x)))) return { error: `scope.sources is a list of ${SCOPE_SIGNALS.join(", ")}.` };
   const objectives: ExamScope["objectives"] = [];
-  for (const [i, o] of raw.objectives.entries()) {
+  for (const [i, o] of ((raw.objectives as unknown[] | undefined) ?? []).entries()) {
     if (!isObject(o) || !isUuid(o.objectiveId)) return { error: `scope.objectives[${i}].objectiveId must be an objective id from course_state.` };
     if (typeof o.weight !== "number" || !Number.isFinite(o.weight) || o.weight < 0 || o.weight > 10) return { error: `scope.objectives[${i}].weight is a number from 0 (excluded) to 10.` };
     if (!Array.isArray(o.evidence) || o.evidence.length > 8) return { error: `scope.objectives[${i}].evidence is a list of up to 8 { signal, quote?, materialId? }.` };
@@ -745,7 +1115,86 @@ async function parseScope(tools: ConnectorTools, raw: unknown): Promise<{ scope:
     if (f.kinds !== undefined && (!Array.isArray(f.kinds) || f.kinds.length > 4 || !f.kinds.every((k) => isOneOf(SCOPE_KINDS, k)))) return { error: `scope.format.kinds is a list of ${SCOPE_KINDS.join(", ")}.` };
     format = { ...(f.minutes !== undefined ? { minutes: f.minutes as number } : {}), ...(f.problems !== undefined ? { problems: f.problems as number } : {}), ...(f.kinds !== undefined ? { kinds: [...new Set(f.kinds as ScopeKind[])] } : {}) };
   }
-  return { scope: { objectives, ...(format !== undefined ? { format } : {}), sources: [...new Set(raw.sources as ScopeSignal[])] } };
+  let budget: CramBudgetInput | undefined;
+  if (raw.budget !== undefined) {
+    const b = raw.budget;
+    if (!isObject(b)) return { error: "scope.budget is an object: perDay, today, hours, daysOut, since." };
+    budget = {};
+    if (b.perDay !== undefined) {
+      if (!isObject(b.perDay) || Object.keys(b.perDay).length > BUDGET_DAYS_MAX) return { error: `scope.budget.perDay is an object of at most ${BUDGET_DAYS_MAX} days (YYYY-MM-DD) to hours.` };
+      for (const [day, h] of Object.entries(b.perDay)) {
+        if (!isDay(day)) return { error: `scope.budget.perDay: "${day}" isn't a day, YYYY-MM-DD.` };
+        if (!isHalfHours(h)) return { error: `scope.budget.perDay["${day}"] is hours from 0 to ${HOURS_PER_DAY_MAX} in steps of ${HOUR_STEP}.` };
+      }
+      budget.perDay = { ...(b.perDay as Record<string, number>) };
+    }
+    if (b.today !== undefined) {
+      if (!isHalfHours(b.today)) return { error: `scope.budget.today is hours from 0 to ${HOURS_PER_DAY_MAX} in steps of ${HOUR_STEP}.` };
+      budget.today = b.today;
+    }
+    if (b.hours !== undefined) {
+      if (typeof b.hours !== "number" || !Number.isFinite(b.hours) || b.hours < 0 || b.hours > BUDGET_HOURS_MAX) return { error: `scope.budget.hours is a number from 0 to ${BUDGET_HOURS_MAX}.` };
+      budget.hours = b.hours;
+    }
+    if (b.daysOut !== undefined) {
+      if (!Array.isArray(b.daysOut) || b.daysOut.length > BUDGET_DAYS_OUT_MAX || !b.daysOut.every(isDay)) return { error: "scope.budget.daysOut is a list of days, YYYY-MM-DD." };
+      budget.daysOut = [...new Set(b.daysOut as string[])].sort();
+    }
+    if (b.since !== undefined) {
+      if (typeof b.since !== "string" || Number.isNaN(Date.parse(b.since))) return { error: "scope.budget.since is an ISO date-time: when cramming started." };
+      budget.since = new Date(b.since).toISOString();
+    }
+    if (Object.keys(budget).length === 0) return { error: "scope.budget names at least one of perDay, today, hours, daysOut, since." };
+  }
+  let materialIds: string[] | undefined;
+  if (raw.materialIds !== undefined) {
+    if (!Array.isArray(raw.materialIds) || raw.materialIds.length > MATERIALS_MAX || !raw.materialIds.every(isUuid)) return { error: `scope.materialIds is a list of up to ${MATERIALS_MAX} material ids from course_state.` };
+    materialIds = [...new Set(raw.materialIds as string[])];
+  }
+  let rules: ExamRules | undefined;
+  if (raw.rules !== undefined) {
+    const r = raw.rules;
+    if (!isObject(r)) return { error: "scope.rules is an object: notes, calculator, minutes, text." };
+    if (r.notes !== undefined && !isOneOf(RULE_NOTES, r.notes)) return { error: `scope.rules.notes is one of ${RULE_NOTES.join(", ")}.` };
+    if (r.calculator !== undefined && !isOneOf(RULE_CALCULATORS, r.calculator)) return { error: `scope.rules.calculator is one of ${RULE_CALCULATORS.join(", ")}.` };
+    if (r.minutes !== undefined && (typeof r.minutes !== "number" || !Number.isInteger(r.minutes) || r.minutes < 1 || r.minutes > 600)) return { error: "scope.rules.minutes is a whole number from 1 to 600." };
+    let text: string | undefined;
+    if (r.text !== undefined) {
+      if (typeof r.text !== "string" || r.text.length > QUOTE_CHARS) return { error: `scope.rules.text is at most ${QUOTE_CHARS} characters.` };
+      const screened = await screenText(tools, r.text, QUOTE_CHARS, "rules");
+      if (!screened.ok) return { error: screened.error };
+      text = screened.text ?? undefined;
+    }
+    rules = { ...(r.notes !== undefined ? { notes: r.notes } : {}), ...(r.calculator !== undefined ? { calculator: r.calculator } : {}), ...(r.minutes !== undefined ? { minutes: r.minutes as number } : {}), ...(text ? { text } : {}) };
+  }
+  let problemTypes: ProblemType[] | undefined;
+  if (raw.problemTypes !== undefined) {
+    if (!Array.isArray(raw.problemTypes) || raw.problemTypes.length > PROBLEM_TYPES_MAX) return { error: `scope.problemTypes is a list of up to ${PROBLEM_TYPES_MAX} { id, name, objectiveIds, materialIds, note? }.` };
+    problemTypes = [];
+    const seen = new Set<string>();
+    for (const [i, t] of raw.problemTypes.entries()) {
+      if (!isObject(t) || typeof t.id !== "string" || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(t.id)) return { error: `scope.problemTypes[${i}].id is a short slug you choose (lowercase letters, digits and dashes, at most 40), e.g. "charge-sharing".` };
+      if (seen.has(t.id)) return { error: `scope.problemTypes[${i}].id repeats "${t.id}".` };
+      seen.add(t.id);
+      if (typeof t.name !== "string" || t.name.trim().length === 0 || t.name.length > 120) return { error: `scope.problemTypes[${i}].name is 1 to 120 characters.` };
+      if (!Array.isArray(t.objectiveIds) || t.objectiveIds.length > 40 || !t.objectiveIds.every(isUuid)) return { error: `scope.problemTypes[${i}].objectiveIds is a list of up to 40 objective ids from course_state (empty when no objective fits).` };
+      if (!Array.isArray(t.materialIds) || t.materialIds.length > MATERIALS_MAX || !t.materialIds.every(isUuid)) return { error: `scope.problemTypes[${i}].materialIds is the list of exams (material ids from course_state's vault or materials) it appears on.` };
+      const name = await screenText(tools, t.name.trim(), 120, "problem type");
+      if (!name.ok) return { error: name.error };
+      let note: string | undefined;
+      if (t.note !== undefined) {
+        if (typeof t.note !== "string" || t.note.length > QUOTE_CHARS) return { error: `scope.problemTypes[${i}].note is at most ${QUOTE_CHARS} characters.` };
+        const screened = await screenText(tools, t.note, QUOTE_CHARS, "note");
+        if (!screened.ok) return { error: screened.error };
+        note = screened.text ?? undefined;
+      }
+      problemTypes.push({ id: t.id, name: name.text ?? t.name.trim(), objectiveIds: [...new Set(t.objectiveIds as string[])], materialIds: [...new Set(t.materialIds as string[])], ...(note ? { note } : {}) });
+    }
+  }
+  if (raw.reservedMaterialId !== undefined && raw.reservedMaterialId !== null && !isUuid(raw.reservedMaterialId)) return { error: "scope.reservedMaterialId is a material id from course_state's vault, or null to clear it." };
+  const extras = { ...(format !== undefined ? { format } : {}), ...(budget !== undefined ? { budget } : {}), ...(materialIds !== undefined ? { materialIds } : {}), ...(rules !== undefined ? { rules } : {}), ...(problemTypes !== undefined ? { problemTypes } : {}), ...(raw.reservedMaterialId !== undefined ? { reservedMaterialId: raw.reservedMaterialId as string | null } : {}) };
+  if (patch) return { scope: { objectives, patchObjectives: true, ...(raw.sources !== undefined ? { sources: [...new Set(raw.sources as ScopeSignal[])] } : {}), ...extras } };
+  return { scope: { ...(keepScope ? {} : { objectives, sources: [...new Set(raw.sources as ScopeSignal[])] }), ...extras } };
 }
 
 /** One question as add_questions takes it, checked field by field (the deeper checks, like a generated question's, are the implementation's). */
@@ -844,9 +1293,10 @@ async function callTool(params: Record<string, unknown>, tools: ConnectorTools, 
       case "course_state": {
         if (args.courseId === undefined) return toolText({ courses: await tools.courses() });
         if (!isUuid(args.courseId)) return toolText({ error: "courseId must be a course id from course_state." }, true);
-        if (args.detail !== undefined && args.detail !== "summary" && args.detail !== "full") return toolText({ error: "detail is summary or full." }, true);
+        if (args.detail !== undefined && args.detail !== "summary" && args.detail !== "weak" && args.detail !== "full") return toolText({ error: "detail is summary, weak or full." }, true);
         if (args.topicIds !== undefined && (!Array.isArray(args.topicIds) || !args.topicIds.every(isUuid))) return toolText({ error: "topicIds is a list of topic ids from course_state." }, true);
-        const state = await tools.courseState(args.courseId, { detail: (args.detail as "summary" | "full" | undefined) ?? "full", ...(args.topicIds !== undefined ? { topicIds: args.topicIds as string[] } : {}) });
+        if (args.asOf !== undefined && (typeof args.asOf !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(args.asOf) || Number.isNaN(Date.parse(args.asOf)) || Math.abs(Date.parse(args.asOf) - Date.now()) > 61 * 86_400_000)) return toolText({ error: "asOf is a day, YYYY-MM-DD, within 60 days of today." }, true);
+        const state = await tools.courseState(args.courseId, { detail: (args.detail as "summary" | "weak" | "full" | undefined) ?? "full", ...(args.topicIds !== undefined ? { topicIds: args.topicIds as string[] } : {}), ...(typeof args.asOf === "string" ? { asOf: args.asOf } : {}) });
         return state ? toolText(state) : toolText({ error: "No such course." }, true);
       }
       case "next_questions": {
@@ -866,12 +1316,14 @@ async function callTool(params: Record<string, unknown>, tools: ConnectorTools, 
           const gone = await tools.removeExam(args.courseId, args.examId);
           return toolText(gone, "error" in gone);
         }
-        if (typeof args.title !== "string" || args.title.trim().length === 0 || args.title.length > 120) return toolText({ error: "title is 1 to 120 characters." }, true);
-        if (typeof args.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(args.date) || Number.isNaN(Date.parse(args.date))) return toolText({ error: "date is YYYY-MM-DD." }, true);
-        if (!Array.isArray(args.topicIds) || !args.topicIds.every(isUuid)) return toolText({ error: "topicIds is a list of topic ids from course_state (empty for the whole course)." }, true);
         if (args.examId !== undefined && !isUuid(args.examId)) return toolText({ error: "examId must be an exam id from course_state." }, true);
+        // Changing an exam, title, date and topicIds left out keep what it has (so a budget-only update can't move the date); a new exam needs all three.
+        const changing = args.examId !== undefined;
+        if ((!changing || args.title !== undefined) && (typeof args.title !== "string" || args.title.trim().length === 0 || args.title.length > 120)) return toolText({ error: "title is 1 to 120 characters." }, true);
+        if ((!changing || args.date !== undefined) && (typeof args.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(args.date) || Number.isNaN(Date.parse(args.date)))) return toolText({ error: "date is YYYY-MM-DD." }, true);
+        if ((!changing || args.topicIds !== undefined) && (!Array.isArray(args.topicIds) || !args.topicIds.every(isUuid))) return toolText({ error: "topicIds is a list of topic ids from course_state (empty for the whole course)." }, true);
         if (args.cramming !== undefined && typeof args.cramming !== "boolean") return toolText({ error: "cramming is true or false." }, true);
-        let scope: ExamScope | undefined;
+        let scope: ScopeInput | undefined;
         if (args.scope !== undefined) {
           const parsed = await parseScope(tools, args.scope);
           if ("error" in parsed) return toolText(parsed, true);
@@ -879,9 +1331,9 @@ async function callTool(params: Record<string, unknown>, tools: ConnectorTools, 
         }
         const exam = await tools.setExam(args.courseId, {
           ...(args.examId !== undefined ? { id: args.examId } : {}),
-          title: args.title.trim(),
-          date: args.date,
-          topicIds: args.topicIds,
+          ...(typeof args.title === "string" ? { title: args.title.trim() } : {}),
+          ...(typeof args.date === "string" ? { date: args.date } : {}),
+          ...(Array.isArray(args.topicIds) ? { topicIds: args.topicIds as string[] } : {}),
           ...(args.cramming !== undefined ? { cramming: args.cramming } : {}),
           ...(scope !== undefined ? { scope } : {}),
         });
@@ -946,6 +1398,14 @@ async function callTool(params: Record<string, unknown>, tools: ConnectorTools, 
         const material = await tools.materialFor(args.courseId, [...new Set(args.objectiveIds as string[])]);
         return material ? toolText(material) : toolText({ error: "No such course." }, true);
       }
+      case "vault_material": {
+        if (!isUuid(args.courseId)) return toolText({ error: "courseId must be a course id from course_state." }, true);
+        if (!isUuid(args.materialId)) return toolText({ error: "materialId must be a material id from course_state's vault." }, true);
+        if (args.fromPage !== undefined && (typeof args.fromPage !== "number" || !Number.isInteger(args.fromPage) || args.fromPage < 1)) return toolText({ error: "fromPage is a page number from 1." }, true);
+        if (args.forMock !== undefined && typeof args.forMock !== "boolean") return toolText({ error: "forMock is true or false." }, true);
+        const exam = await tools.vaultMaterial(args.courseId, args.materialId, { ...(typeof args.fromPage === "number" ? { fromPage: args.fromPage } : {}), ...(args.forMock === true ? { forMock: true } : {}) });
+        return toolText(exam, "error" in exam);
+      }
       case "add_questions": {
         if (!isUuid(args.courseId)) return toolText({ error: "courseId must be a course id from course_state." }, true);
         if (!Array.isArray(args.questions) || args.questions.length < 1 || args.questions.length > 10) return toolText({ error: "questions is a list of 1 to 10 questions." }, true);
@@ -974,6 +1434,62 @@ async function callTool(params: Record<string, unknown>, tools: ConnectorTools, 
           holdBack,
         });
         return toolText(result, "error" in result);
+      }
+      case "log_problem": {
+        if (!isUuid(args.courseId)) return toolText({ error: "courseId must be a course id from course_state." }, true);
+        if (!isUuid(args.examId)) return toolText({ error: "examId must be an exam id from course_state." }, true);
+        if (typeof args.problemTypeId !== "string" || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(args.problemTypeId)) return toolText({ error: "problemTypeId is a kind's id from the exam's scope.problemTypes." }, true);
+        if (!isOneOf(ATTEMPT_OUTCOMES, args.outcome)) return toolText({ error: `outcome is one of ${ATTEMPT_OUTCOMES.join(", ")}.` }, true);
+        if (typeof args.cold !== "boolean") return toolText({ error: "cold is true (no help first) or false." }, true);
+        if (args.minutes !== undefined && (typeof args.minutes !== "number" || !Number.isInteger(args.minutes) || args.minutes < 1 || args.minutes > 600)) return toolText({ error: "minutes is a whole number from 1 to 600." }, true);
+        if (args.mockMaterialId !== undefined && !isUuid(args.mockMaterialId)) return toolText({ error: "mockMaterialId is the reserved exam's material id." }, true);
+        if ((args.points === undefined) !== (args.outOf === undefined)) return toolText({ error: "points and outOf come together." }, true);
+        if (args.points !== undefined && (typeof args.points !== "number" || typeof args.outOf !== "number" || !Number.isFinite(args.points) || !Number.isFinite(args.outOf) || args.points < 0 || args.outOf <= 0 || args.points > args.outOf)) return toolText({ error: "points is from 0 to outOf, and outOf is above 0." }, true);
+        let errorNote: string | undefined;
+        if (args.errorNote !== undefined) {
+          if (typeof args.errorNote !== "string" || args.errorNote.length > 200) return toolText({ error: "errorNote is at most 200 characters." }, true);
+          const screened = await screenText(tools, args.errorNote, 200, "errorNote");
+          if (!screened.ok) return toolText({ error: screened.error }, true);
+          errorNote = screened.text ?? undefined;
+        }
+        const attempted = await tools.logProblem(args.courseId, args.examId, { typeId: args.problemTypeId, outcome: args.outcome, cold: args.cold, ...(typeof args.minutes === "number" ? { minutes: args.minutes } : {}), ...(errorNote ? { errorNote } : {}), ...(args.mockMaterialId !== undefined ? { mockMaterialId: args.mockMaterialId } : {}), ...(typeof args.points === "number" ? { points: args.points, outOf: args.outOf as number } : {}) });
+        return toolText(attempted, "error" in attempted);
+      }
+      case "log_session": {
+        if (!isUuid(args.courseId)) return toolText({ error: "courseId must be a course id from course_state." }, true);
+        if (args.examId !== undefined && !isUuid(args.examId)) return toolText({ error: "examId must be an exam id from course_state." }, true);
+        if (typeof args.minutes !== "number" || !Number.isInteger(args.minutes) || args.minutes < 1 || args.minutes > 720) return toolText({ error: "minutes is a whole number from 1 to 720: the time actually spent." }, true);
+        if (typeof args.summary !== "string" || args.summary.trim().length === 0 || args.summary.length > 500) return toolText({ error: "summary is 1 to 500 characters." }, true);
+        if (!Array.isArray(args.worked) || args.worked.length > 30) return toolText({ error: "worked is a list of up to 30 { what, outcome?, errorNote?, objectiveIds?, problemTypeId? }." }, true);
+        if (args.bookmark !== undefined && (typeof args.bookmark !== "string" || args.bookmark.length > 500)) return toolText({ error: "bookmark is at most 500 characters." }, true);
+        if (args.next !== undefined && (!Array.isArray(args.next) || args.next.length > 10 || !args.next.every((n) => typeof n === "string" && n.trim().length > 0 && n.length <= 200))) return toolText({ error: "next is a list of up to 10 steps, each 1 to 200 characters." }, true);
+        // Every piece of text is screened like a reflection note: a strong hit is refused, every hit logged.
+        const clean = async (raw: string, max: number, what: string) => screenText(tools, raw, max, what);
+        const summary = await clean(args.summary.trim(), 500, "summary");
+        if (!summary.ok) return toolText({ error: summary.error }, true);
+        const worked: SessionWork[] = [];
+        for (const [i, w] of (args.worked as unknown[]).entries()) {
+          if (!isObject(w) || typeof w.what !== "string" || w.what.trim().length === 0 || w.what.length > 200) return toolText({ error: `worked[${i}].what is 1 to 200 characters.` }, true);
+          if (w.outcome !== undefined && !isOneOf(SESSION_OUTCOMES, w.outcome)) return toolText({ error: `worked[${i}].outcome is one of ${SESSION_OUTCOMES.join(", ")}.` }, true);
+          if (w.errorNote !== undefined && (typeof w.errorNote !== "string" || w.errorNote.length > 200)) return toolText({ error: `worked[${i}].errorNote is at most 200 characters.` }, true);
+          if (w.objectiveIds !== undefined && (!Array.isArray(w.objectiveIds) || w.objectiveIds.length > 10 || !w.objectiveIds.every(isUuid))) return toolText({ error: `worked[${i}].objectiveIds is a list of up to 10 objective ids from course_state.` }, true);
+          if (w.problemTypeId !== undefined && (typeof w.problemTypeId !== "string" || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(w.problemTypeId))) return toolText({ error: `worked[${i}].problemTypeId is a problem type's id from the exam map.` }, true);
+          const what = await clean(w.what.trim(), 200, "worked");
+          if (!what.ok) return toolText({ error: what.error }, true);
+          const note = w.errorNote ? await clean(w.errorNote, 200, "errorNote") : null;
+          if (note && !note.ok) return toolText({ error: note.error }, true);
+          worked.push({ what: what.text ?? w.what.trim(), ...(w.outcome !== undefined ? { outcome: w.outcome } : {}), ...(note?.ok && note.text ? { errorNote: note.text } : {}), ...(w.objectiveIds !== undefined ? { objectiveIds: [...new Set(w.objectiveIds as string[])] } : {}), ...(w.problemTypeId !== undefined ? { problemTypeId: w.problemTypeId } : {}) });
+        }
+        const bookmark = typeof args.bookmark === "string" && args.bookmark.trim() ? await clean(args.bookmark.trim(), 500, "bookmark") : null;
+        if (bookmark && !bookmark.ok) return toolText({ error: bookmark.error }, true);
+        const next: string[] = [];
+        for (const step of (args.next as string[] | undefined) ?? []) {
+          const screened = await clean(step.trim(), 200, "next");
+          if (!screened.ok) return toolText({ error: screened.error }, true);
+          if (screened.text) next.push(screened.text);
+        }
+        const logged = await tools.logSession(args.courseId, { minutes: args.minutes, summary: summary.text ?? args.summary.trim(), worked, ...(bookmark?.ok && bookmark.text ? { bookmark: bookmark.text } : {}), ...(next.length ? { next } : {}), ...(args.examId !== undefined ? { examId: args.examId } : {}) });
+        return toolText(logged, "error" in logged);
       }
       case "log_evidence": {
         if (!isUuid(args.courseId)) return toolText({ error: "courseId must be a course id from course_state." }, true);

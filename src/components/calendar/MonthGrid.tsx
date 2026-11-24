@@ -17,7 +17,11 @@ const SHOWN = 2;
  * 6×7 grid of day cells for the month containing `cursor`. "+n more" expands that whole week's row
  * to fit every entry; "Show less" folds it again.
  */
-export function MonthGrid({ cursor, events, today }: { cursor: Date; events: CalendarEvent[]; today: string }) {
+/**
+ * `cram`: courses in cram mode and the exams they're cramming for (owner, 2026-11-22): the exam is red,
+ * the course's other entries have a red ring.
+ */
+export function MonthGrid({ cursor, events, today, cram }: { cursor: Date; events: CalendarEvent[]; today: string; cram?: { courses: ReadonlySet<string>; exams: ReadonlySet<string> } }) {
   const [expanded, setExpanded] = useState<ReadonlySet<number>>(new Set());
   const toggleWeek = (week: number) => setExpanded((s) => (s.has(week) ? new Set([...s].filter((w) => w !== week)) : new Set([...s, week])));
   const first = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
@@ -71,7 +75,14 @@ export function MonthGrid({ cursor, events, today }: { cursor: Date; events: Cal
               </span>
               <div className={cn("flex min-h-0 flex-col gap-[4px]", !open && "overflow-hidden")}>
                 {(open ? evs : evs.slice(0, SHOWN)).map((e) => (
-                  <Tag key={e.id} kind={e.kind} title={e.title} data-part="event">
+                  <Tag
+                    key={e.id}
+                    kind={e.kind}
+                    title={e.title}
+                    data-part="event"
+                    data-cramming={cram?.exams.has(e.id) ? "exam" : e.courseId && cram?.courses.has(e.courseId) ? "course" : undefined}
+                    className={cram?.exams.has(e.id) ? "bg-cram! text-parchment" : e.courseId && cram?.courses.has(e.courseId) ? "ring-2 ring-inset ring-cram" : undefined}
+                  >
                     {e.title}
                   </Tag>
                 ))}

@@ -41,6 +41,7 @@ export function eventFromRow(r: EvidenceRow): EvidenceEvent {
       ...reported,
     };
   }
+  if (r.kind === "mark") return { ...base, kind: "mark" };
   if (r.kind === "signal") {
     if (r.signal === null || r.session_id === null) throw new Error(`Signal event ${r.id} is missing a field`);
     return { ...base, kind: "signal", signal: r.signal as SignalEvent["signal"], note: r.note, source: "connector", sessionId: r.session_id };
@@ -77,6 +78,8 @@ export function eventToRow(e: EvidenceEvent): Omit<EvidenceRow, "owner_id"> {
       return { ...common, ...empty, problem: e.problem, note: e.response ?? null, basis: e.basis, outcome: e.outcome, source: e.source, session_id: e.sessionId, help: e.help ?? null, confidence: e.confidence ?? null, error_type: e.errorType ?? null };
     case "signal":
       return { ...common, ...empty, signal: e.signal, note: e.note, source: e.source, session_id: e.sessionId };
+    case "mark":
+      return { ...common, ...empty };
   }
 }
 

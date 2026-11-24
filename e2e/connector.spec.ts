@@ -1,7 +1,7 @@
 import { type Page } from "@playwright/test";
 import type { QuizQuestion } from "../src/lib/data";
 import { fakeCalls, fakeModel } from "./fake-model";
-import { expect, test, F, FIXTURE_STATE, ids, seedState, stored } from "./fixture";
+import { expect, test, F, FIXTURE_STATE, fixtureMaterial, ids, seedPages, seedState, stored } from "./fixture";
 
 /**
  * The Claude connector, end to end: the link minted in Settings, then the MCP route as Claude
@@ -39,7 +39,7 @@ test("Settings mints the connector link once; Claude can read the course, ask a 
   const note = await page.request.post(url, { data: { jsonrpc: "2.0", method: "notifications/initialized" } });
   expect(note.status()).toBe(202);
   const tools = await rpc(page, url, "tools/list");
-  expect(tools.body!.result!.tools!.map((t) => t.name)).toEqual(["course_state", "next_questions", "set_exam", "questions_for", "check_answer", "record_answer", "flag_check", "material_for", "add_questions", "add_material", "log_evidence"]);
+  expect(tools.body!.result!.tools!.map((t) => t.name)).toEqual(["course_state", "next_questions", "set_exam", "questions_for", "check_answer", "record_answer", "flag_check", "material_for", "vault_material", "add_questions", "add_material", "log_problem", "log_session", "log_evidence"]);
 
   // The courses, then one course: every objective unseen (not flagged), each with its questions counted; weak points first, so none is due.
   const courses = toolText(await call(page, url, "course_state", {}));
@@ -189,11 +189,13 @@ test("Settings mints the connector link once; Claude can read the course, ask a 
 });
 
 test("in a cram Orca makes no model calls: prose is handed back for Claude to grade and no questions are written; a corrected answer carries no errorType", async ({ page, student }) => {
-  const id = ids("prose", "noq");
+  const id = ids("prose", "noq", "untaught");
   const prose: QuizQuestion = { id: id.prose, kind: "Short answer", tier: "mechanism", topic: "Two's Complement", prompt: "Why does sign extension copy the top bit?", options: [], answer: -1, rubric: { requiredIdeas: ["The top bit is the sign"], acceptableAlternatives: [], knownMisconceptions: [] }, explanation: "The weight of the new bits cancels.", anchor: { locator: "slide 9", excerpt: "fixture" }, objectiveId: F.signExtend };
   const bank = FIXTURE_STATE.questionBank[F.course];
   const noq = { ...FIXTURE_STATE.objectives[F.course][F.simplify], id: id.noq, name: "Factor an expression" };
-  await seedState(student, { ...FIXTURE_STATE, objectives: { [F.course]: { ...FIXTURE_STATE.objectives[F.course], [id.noq]: noq } }, questionBank: { [F.course]: { ...bank, [F.twosComplement]: [...bank[F.twosComplement], prose] } } });
+  // An objective from the material that no live file teaches any more (its lecture was removed): material_for has no pieces for it.
+  const untaught = { ...FIXTURE_STATE.objectives[F.course][F.simplify], id: id.untaught, name: "Apply De Morgan's laws", materialId: null };
+  await seedState(student, { ...FIXTURE_STATE, objectives: { [F.course]: { ...FIXTURE_STATE.objectives[F.course], [id.noq]: noq, [id.untaught]: untaught } }, questionBank: { [F.course]: { ...bank, [F.twosComplement]: [...bank[F.twosComplement], prose] } } });
   await page.goto("/settings?section=connections");
   const card = page.locator('[data-part="claude-connector"]');
   await card.locator('[data-part="connector-create"]').click();
@@ -204,7 +206,61 @@ test("in a cram Orca makes no model calls: prose is handed back for Claude to gr
   const far = new Date(Date.now() + 12 * 86_400_000).toISOString().slice(0, 10);
   const exam = toolText(await call(page, url, "set_exam", { courseId: F.course, title: "Final", date: far, topicIds: [], cramming: true })) as { id: string; mode: string };
   expect(exam.mode).toBe("exam-week");
-  expect(toolText(await call(page, url, "course_state", { courseId: F.course, detail: "summary" }))).toMatchObject({ mode: "exam-week", cramming: exam.id });
+  // No budget yet: the plan assumes 2 hours a study day (12 days: 24 hours) and says so.
+  const assumed = toolText(await call(page, url, "course_state", { courseId: F.course, detail: "summary" })) as { mode: string; cramming: string; plan: { defaulted: boolean; hoursLeft: number; cut: string[] } };
+  expect(assumed).toMatchObject({ mode: "exam-week", cramming: exam.id });
+  expect(assumed.plan).toMatchObject({ defaulted: true, hoursLeft: 24, cut: [] });
+  // Full: the course's materials, and each objective's materialIds, so Claude can map "lectures 11 to 16" to files.
+  const full = toolText(await call(page, url, "course_state", { courseId: F.course })) as { materials: unknown[]; objectives: Array<{ id: string; materialIds: string[] }>; exams: Array<{ scope: unknown }> };
+  expect(full.materials).toEqual([{ id: F.material, filename: fixtureMaterial(F.course).filename, type: "Lecture", heldBack: false }]);
+  expect(full.objectives.find((o) => o.id === F.convert)?.materialIds).toEqual([F.material]);
+  expect(full.exams[0]).toHaveProperty("scope", null);
+  // The time budget (set at cram setup, or here) makes course_state carry the derived plan and the scope's coverage; the scope names the deck and excludes one objective.
+  const scope = { objectives: [{ objectiveId: id.noq, weight: 0, evidence: [{ signal: "professor", quote: "not in the files the exam covers" }] }], sources: ["professor"], materialIds: [F.material], budget: { hours: 6, daysOut: [], since: new Date().toISOString() } };
+  const budgeted = toolText(await call(page, url, "set_exam", { courseId: F.course, examId: exam.id, title: "Final", date: far, topicIds: [], scope })) as { scope: { budget: { hours: number }; materialIds: string[] } };
+  expect(budgeted.scope.budget.hours).toBe(6);
+  expect(budgeted.scope.materialIds).toEqual([F.material]);
+  expect(toolText(await call(page, url, "set_exam", { courseId: F.course, examId: exam.id, title: "Final", date: far, topicIds: [], scope: { ...scope, materialIds: [crypto.randomUUID()] } }))).toMatchObject({ error: expect.stringMatching(/material ids/) });
+  const planned = toolText(await call(page, url, "course_state", { courseId: F.course, detail: "summary" })) as { plan: { line: string; daysLeft: number; hoursLeft: number; minutesToday: number; defaulted: boolean; perDay: Record<string, number>; days: Array<{ day: string; hours: number; today: boolean; topics: unknown[] }>; topics: Array<{ covered: string }> }; coverage: { total: number; verified: number }; topErrors: unknown[]; exams: Array<Record<string, unknown>> };
+  expect(planned.plan.line).toMatch(/days to the exam/);
+  expect(planned.plan.daysLeft).toBeGreaterThan(10);
+  expect(planned.plan.hoursLeft).toBe(6);
+  expect(planned.plan.defaulted).toBe(false);
+  expect(planned.coverage.total).toBe(4);
+  expect(planned.topErrors).toEqual([]);
+  // A total is spread over the days: half an hour each over the 12 days, today included.
+  const today = new Date().toISOString().slice(0, 10);
+  expect(Object.keys(planned.plan.perDay)).toHaveLength(12);
+  expect(planned.plan.perDay[today]).toBe(0.5);
+  expect(planned.plan.minutesToday).toBe(30);
+  expect(planned.plan.line).toMatch(/Today: /);
+  // The schedule: a column per day of the budget, today flagged once; every topic says how far it has got.
+  expect(planned.plan.days).toHaveLength(12);
+  expect(planned.plan.days.filter((d) => d.today).map((d) => d.day)).toEqual([today]);
+  expect(planned.plan.days.every((d) => d.hours === 0.5 && Array.isArray(d.topics))).toBe(true);
+  expect(planned.plan.topics.map((t) => t.covered)).toEqual(["untouched", "untouched"]);
+  // A summary carries each exam's scope by its size, not its entries (four live objectives in scope, the one excluded).
+  expect(planned.exams[0]).not.toHaveProperty("scope");
+  expect(planned.exams[0].scopeSummary).toMatchObject({ inScope: 4, excluded: 1, sources: ["professor"], budget: { hours: 6 } });
+  // "I have no time today": the budget's today, with objectives and sources left out, keeps the scope; the plan follows the day's hours.
+  const none0 = toolText(await call(page, url, "set_exam", { courseId: F.course, examId: exam.id, title: "Final", date: far, topicIds: [], scope: { budget: { today: 0 } } })) as { scope: { objectives: unknown[]; materialIds: string[]; budget: { hours: number; daysOut: string[]; perDay: Record<string, number> } } };
+  expect(none0.scope.objectives).toHaveLength(1);
+  expect(none0.scope.materialIds).toEqual([F.material]);
+  expect(none0.scope.budget).toMatchObject({ hours: 5.5, daysOut: [today] });
+  expect(none0.scope.budget.perDay[today]).toBe(0);
+  const dayOff = toolText(await call(page, url, "course_state", { courseId: F.course, detail: "summary" })) as { plan: { line: string; minutesToday: number; hoursLeft: number } };
+  expect(dayOff.plan.minutesToday).toBe(0);
+  expect(dayOff.plan.hoursLeft).toBe(5.5);
+  expect(dayOff.plan.line).not.toMatch(/Today: /);
+  // "I have an hour": today is an hour, the other days as they were.
+  const hour = toolText(await call(page, url, "set_exam", { courseId: F.course, examId: exam.id, title: "Final", date: far, topicIds: [], scope: { budget: { today: 1 } } })) as { scope: { budget: { hours: number; perDay: Record<string, number> } } };
+  expect(hour.scope.budget.hours).toBe(6.5);
+  expect(hour.scope.budget.perDay[today]).toBe(1);
+  const withHour = toolText(await call(page, url, "course_state", { courseId: F.course, detail: "summary" })) as { plan: { line: string; minutesToday: number; hoursLeft: number } };
+  expect(withHour.plan.minutesToday).toBe(60);
+  expect(withHour.plan.hoursLeft).toBe(6.5);
+  expect(withHour.plan.line).toMatch(/Today: /);
+  expect(toolText(await call(page, url, "set_exam", { courseId: F.course, examId: exam.id, title: "Final", date: far, topicIds: [], scope: { budget: { today: 0.75 } } }))).toMatchObject({ error: expect.stringMatching(/steps of 0.5/) });
   // A prose answer isn't graded by Orca's model: the key comes back for Claude to grade.
   const held = toolText(await call(page, url, "check_answer", { courseId: F.course, questionId: id.prose, response: "Because the top bit is the sign bit." })) as { needsSelfGrade: boolean; reason: string; rubric?: { requiredIdeas: string[] } };
   expect(held.needsSelfGrade).toBe(true);
@@ -220,6 +276,18 @@ test("in a cram Orca makes no model calls: prose is handed back for Claude to gr
   expect(flagged.note).toMatch(/add_questions/);
   expect((toolText(await call(page, url, "course_state", { courseId: F.course, detail: "summary" })) as { writing: unknown[] }).writing).toEqual([]);
   expect(await fakeCalls()).toEqual([]);
+  // Claude writes instead. Nothing live teaches the untaught objective, so its question needs no anchor and is stored as not
+  // course-specific, with a note; the taught objective's anchorless question is refused as before.
+  const tf = { kind: "True or false", prompt: "De Morgan's law turns (a + b)' into a'b'.", options: ["True", "False"], answer: 0, explanation: "The complement of a sum is the product of the complements." };
+  expect(toolText(await call(page, url, "material_for", { courseId: F.course, objectiveIds: [id.untaught] }))).toEqual({ objectives: [{ objectiveId: id.untaught, pieces: [] }], heldBack: 0 });
+  const written = toolText(await call(page, url, "add_questions", { courseId: F.course, questions: [{ ...tf, objectiveId: id.untaught }, { ...tf, objectiveId: F.convert }] })) as { added: Array<{ id: string; objectiveId: string; note?: string }>; refused: Array<{ index: number; reason: string }> };
+  expect(written.added).toEqual([{ id: expect.any(String), objectiveId: id.untaught, note: "no course material teaches this objective; stored as not course-specific" }]);
+  expect(written.refused).toEqual([{ index: 1, reason: "no source anchor" }]);
+  const bankNow = (await stored(page, student)).questionBank[F.course][F.booleanAlgebra];
+  const unanchored = bankNow.find((q) => q.id === written.added[0].id)!;
+  expect(unanchored).toMatchObject({ objectiveId: id.untaught, source: "claude", kind: "True or false", unanchored: true });
+  expect(unanchored.anchor).toBeUndefined();
+  expect(unanchored.materialId).toBeUndefined();
   // Claude marked an exact answer wrong with a kind of mistake; the key says it's right: Orca's result wins and no errorType is stored.
   const corrected = toolText(await call(page, url, "record_answer", { courseId: F.course, questionId: F.ba1, outcome: "incorrect", response: "x", errorType: "sign" }));
   expect(corrected).toEqual({ recorded: true, objectiveId: F.simplify, status: "verified", corrected: true });
@@ -242,4 +310,80 @@ test("a made-up link is refused, and GET isn't served", async ({ page }) => {
   expect(bogus.body!.error!.message).toMatch(/isn't valid/);
   const got = await page.request.get("/api/mcp/" + "x".repeat(43));
   expect(got.status()).toBe(405);
+});
+
+test("the exam map: Claude reads a held-back exam (never the reserved one), stores the rules and the problem types, and the cram page shows them", async ({ page, student }) => {
+  const id = ids("fall25", "fall23");
+  const fall25 = { ...fixtureMaterial(F.course), id: id.fall25, filename: "Fall25 Quiz 2.pdf", type: "Practice exam" as const, heldBack: true };
+  const fall23 = { ...fixtureMaterial(F.course), id: id.fall23, filename: "Fall23 Quiz 2.pdf", type: "Past exam" as const, heldBack: true };
+  await seedState(student, { ...FIXTURE_STATE, materials: [...FIXTURE_STATE.materials, fall25, fall23] });
+  await seedPages(student, { [id.fall25]: [{ n: 1, text: "Problem 1: sign-extend 0b1011 to 8 bits." }], [id.fall23]: [{ n: 1, text: "Problem 1: convert -5 to two's complement." }] });
+  await page.goto("/settings?section=connections");
+  const card = page.locator('[data-part="claude-connector"]');
+  await card.locator('[data-part="connector-create"]').click();
+  const url = (await card.locator('[data-part="connector-url"]').textContent())!.trim();
+
+  const soon = new Date(Date.now() + 5 * 86_400_000).toISOString().slice(0, 10);
+  const exam = toolText(await call(page, url, "set_exam", { courseId: F.course, title: "Quiz 2", date: soon, topicIds: [], cramming: true, scope: { reservedMaterialId: id.fall23, rules: { notes: "none", calculator: "simple", minutes: 75 } } })) as { id: string };
+
+  // The vault is hidden from the student, not from the tutor; the reserved exam stays unread until it's sat.
+  const read = toolText(await call(page, url, "vault_material", { courseId: F.course, materialId: id.fall25 })) as { doNotReveal: boolean; pages: Array<{ text: string }>; totalPages: number };
+  expect(read.doNotReveal).toBe(true);
+  expect(read.pages[0].text).toContain("sign-extend");
+  expect(read.totalPages).toBe(1);
+  const refused = await call(page, url, "vault_material", { courseId: F.course, materialId: id.fall23 });
+  expect(refused.body!.result!.isError).toBe(true);
+  expect((toolText(await call(page, url, "vault_material", { courseId: F.course, materialId: id.fall23, forMock: true })) as { pages: unknown[] }).pages).toHaveLength(1);
+  // A lecture isn't in the vault.
+  expect((await call(page, url, "vault_material", { courseId: F.course, materialId: F.material })).body!.result!.isError).toBe(true);
+
+  // Claude maps what it read; a later budget-only update keeps the map.
+  const mapped = await call(page, url, "set_exam", { courseId: F.course, examId: exam.id, scope: { problemTypes: [{ id: "sign-extension", name: "Sign-extend a number", objectiveIds: [F.signExtend], materialIds: [id.fall25] }] } });
+  expect(mapped.body!.result!.isError).toBeFalsy();
+  await call(page, url, "set_exam", { courseId: F.course, examId: exam.id, scope: { budget: { today: 1 } } });
+  const state = toolText(await call(page, url, "course_state", { courseId: F.course, detail: "summary" })) as { vault: Array<{ materialId: string; reserved: boolean }>; exams: Array<{ scopeSummary: { rules: unknown; reservedMaterialId: string; examMap: { examsMapped: number; uncertain: boolean; types: Array<{ id: string; exams: number }> } } }> };
+  expect(state.vault.map((v) => [v.materialId, v.reserved]).sort()).toEqual([[id.fall25, false], [id.fall23, true]].sort());
+  expect(state.exams[0].scopeSummary.rules).toEqual({ notes: "none", calculator: "simple", minutes: 75 });
+  expect(state.exams[0].scopeSummary.examMap).toMatchObject({ examsMapped: 1, uncertain: true, types: [{ id: "sign-extension", exams: 1 }] });
+
+  // The session record: a sitting Claude logs counts as time studied and leaves a bookmark for the next chat.
+  const sitting = toolText(await call(page, url, "log_session", { courseId: F.course, examId: exam.id, minutes: 45, summary: "Sign extension lesson and two drills.", worked: [{ what: "Drill 1: sign extension", outcome: "with-hints", errorNote: "copied the low bit, not the top one", objectiveIds: [F.signExtend], problemTypeId: "sign-extension" }], bookmark: "Drill 2 half done", next: ["Finish Drill 2", "A timed conversion problem"] })) as { minutes: number; day: string };
+  expect(sitting.minutes).toBe(45);
+  const after = toolText(await call(page, url, "course_state", { courseId: F.course, detail: "summary" })) as { lastSession: { bookmark: string; next: string[] }; plan: { minutesToday: number } };
+  expect(after.lastSession).toMatchObject({ bookmark: "Drill 2 half done", next: ["Finish Drill 2", "A timed conversion problem"] });
+  expect(after.plan.minutesToday).toBe(15);
+
+  // Readiness by kind of problem: untested until a cold exam-style problem is solved; the plan's units are the kinds.
+  const before = toolText(await call(page, url, "course_state", { courseId: F.course, detail: "summary" })) as { readiness: { ready: number; total: number; types: Array<{ id: string; state: string }> }; plan: { unit: string; diagnostic: { topicIds: string[] } | null } };
+  expect(before.readiness).toMatchObject({ ready: 0, total: 1, types: [{ id: "sign-extension", state: "untested" }] });
+  expect(before.plan.unit).toBe("problem-type");
+  expect(before.plan.diagnostic?.topicIds).toEqual(["sign-extension"]);
+  expect((await call(page, url, "log_problem", { courseId: F.course, examId: exam.id, problemTypeId: "no-such-kind", outcome: "solved", cold: true })).body!.result!.isError).toBe(true);
+  const guided = toolText(await call(page, url, "log_problem", { courseId: F.course, examId: exam.id, problemTypeId: "sign-extension", outcome: "with-hints", cold: false, errorNote: "copied the low bit" })) as { state: string };
+  expect(guided.state).toBe("shaky");
+  const cold = toolText(await call(page, url, "log_problem", { courseId: F.course, examId: exam.id, problemTypeId: "sign-extension", outcome: "solved", cold: true, minutes: 9 })) as { state: string; ready: number };
+  expect([cold.state, cold.ready]).toEqual(["ready", 1]);
+  const readyNow = toolText(await call(page, url, "course_state", { courseId: F.course, detail: "summary" })) as { readiness: { ready: number; share: number }; plan: { diagnostic: unknown; verified: { done: number; total: number } } };
+  expect(readyNow.readiness).toMatchObject({ ready: 1, share: 1 });
+  expect(readyNow.plan.diagnostic).toBeNull();
+  expect(readyNow.plan.verified).toMatchObject({ done: 1, total: 1 });
+
+  await page.goto(`/course/${FIXTURE_STATE.courses[0].slug}/cram`);
+  const left = page.locator("[data-part=cram-last-session]");
+  await expect(left.locator("[data-part=cram-bookmark]")).toHaveText("Drill 2 half done");
+  await expect(left.locator("[data-part=cram-next-steps] li")).toHaveText(["Finish Drill 2", "A timed conversion problem"]);
+  await page.locator("[data-part=cram-tab-progress]").click();
+  await expect(page.locator("[data-part=cram-budget-note]")).toContainText("45m studied");
+  const map = page.locator("[data-part=cram-exam-map]");
+  await expect(map).toHaveAttribute("data-mapped", "1");
+  await expect(map.locator("[data-part=cram-rules]")).toHaveText("Closed book · simple calculator · 75 min");
+  await expect(map.locator("[data-part=cram-problem-type]")).toContainText(["Sign-extend a number"]);
+  await expect(map.locator("[data-part=cram-type-state]")).toHaveText(["Ready"]);
+  await expect(page.locator("[data-part=cram-plan-note]")).toHaveText("1 of 1 kinds of problem");
+  await expect(map.locator("[data-part=cram-map-uncertain]")).toBeVisible();
+  // The reserved exam is marked; reserving the other one moves the mark and is saved.
+  await expect(page.locator('[data-part=cram-vault-item][data-reserved="1"]')).toContainText("Fall23 Quiz 2.pdf");
+  await page.locator("[data-part=cram-vault-item]", { hasText: "Fall25 Quiz 2.pdf" }).locator("[data-part=cram-reserve]").click();
+  await expect(page.locator('[data-part=cram-vault-item][data-reserved="1"]')).toContainText("Fall25 Quiz 2.pdf");
+  expect((await stored(page, student)).exams.find((e) => e.id === exam.id)!.scope?.reservedMaterialId).toBe(id.fall25);
 });

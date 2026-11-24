@@ -2,6 +2,7 @@
 import { attribution } from "./attribution.ts";
 import type { QuestionRef } from "./catalogue.ts";
 import { EMPTY_ACCUMULATOR, type ObjectiveAccumulator, computeObjectiveState, stateAt } from "./objective-state.ts";
+import { masteredAt } from "./mastered-at.ts";
 import { type IslandLevel, type TopicProgress, islandLevel, topicProgress } from "./progress.ts";
 import type { EvidenceEvent, ObjectiveInfo, ObjectiveState } from "./types.ts";
 
@@ -13,6 +14,8 @@ export interface CourseMastery {
   island: IslandLevel;
   /** This course's evidence, each event filed under the objective it counts for now (merges and re-sorting followed). */
   events: EvidenceEvent[];
+  /** When each mastered or retired objective last became mastered (ISO), from its evidence; null when the log doesn't show it. */
+  masteredAt: Map<string, string | null>;
 }
 
 export interface CourseMasteryInput {
@@ -48,18 +51,17 @@ export function courseMastery({ courseId, topicIds, bank, catalogue, evidence, n
   const objectives = new Map<string, ObjectiveState>();
   const topicObjectives = new Map<string, string[]>();
   const topics = new Map<string, TopicProgress>();
+  const mastered = new Map<string, string | null>();
   for (const { topicId, list } of perTopic) {
     for (const o of list) {
-      objectives.set(
-        o.id,
-        snapshots
-          ? stateAt(o.id, snapshots.get(o.id) ?? EMPTY_ACCUMULATOR, now)
-          : computeObjectiveState(o.id, events, now, { hasMechanismQuestions: o.hasMechanismQuestions, dayKey }),
-      );
+      const options = { hasMechanismQuestions: o.hasMechanismQuestions, dayKey };
+      const state = snapshots ? stateAt(o.id, snapshots.get(o.id) ?? EMPTY_ACCUMULATOR, now) : computeObjectiveState(o.id, events, now, options);
+      objectives.set(o.id, state);
+      if (state.status === "mastered" || state.status === "retired") mastered.set(o.id, masteredAt(o.id, events, options));
     }
     const ids = list.map((o) => o.id);
     topicObjectives.set(topicId, ids);
     topics.set(topicId, topicProgress(ids, objectives));
   }
-  return { objectives, topicObjectives, topics, island: islandLevel([...objectives.values()]), events };
+  return { objectives, topicObjectives, topics, island: islandLevel([...objectives.values()]), events, masteredAt: mastered };
 }

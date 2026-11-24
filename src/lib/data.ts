@@ -124,6 +124,27 @@ export interface ScopeEvidence {
   materialId?: string;
 }
 
+/**
+ * The student's time budget for a cram (cram mode contract, section 6 and its per-day addendum),
+ * asked at setup day by day; the plan is derived from it, never stored. `perDay` is the source;
+ * `hours` and `daysOut` are derived from it (src/lib/mastery/cram-budget.ts) so earlier readers
+ * keep working.
+ */
+export interface CramBudget {
+  /** Hours the student can put in before the exam: the sum of `perDay`. */
+  hours: number;
+  /** Days with no study, YYYY-MM-DD, in the student's timezone: the days of `perDay` at 0. */
+  daysOut: string[];
+  /** When cramming started, ISO: minutes studied since then count against the budget. */
+  since: string;
+  /**
+   * Hours per day (half-hour steps, 0 = a day out), YYYY-MM-DD in the student's timezone, for every
+   * day from the day cramming started to the day before the exam. Absent on a budget saved before
+   * 2026-11-10: `perDayOf` spreads `hours` evenly over its study days.
+   */
+  perDay?: Record<string, number>;
+}
+
 /** An exam's scope (`exams.scope`): per-objective weights inside the exam window, the format, and the sources it was built from. */
 export interface ExamScope {
   /** Per-objective weight inside the exam window; 0 = excluded. Objectives not listed weigh 1. */
@@ -131,6 +152,61 @@ export interface ExamScope {
   format?: { minutes?: number; problems?: number; kinds?: Array<"Multiple choice" | "True or false" | "Short answer" | "Problem"> };
   /** Where the scope came from, for the card ("from the practice exam and your professor's words"). */
   sources: ScopeSignal[];
+  /** The time budget while cramming (set at cram setup); absent until then. */
+  budget?: CramBudget;
+  /**
+   * The materials the exam covers, as picked at cram setup (or named to Claude): objectives taught
+   * only elsewhere weigh 0. Absent when nothing was picked (everything in scope).
+   */
+  materialIds?: string[];
+  /**
+   * What the student said feels shaky, in their own words, from cram setup (at most 500 characters).
+   * Claude maps it to objectives in the first session and flags them; absent when nothing was said.
+   */
+  worries?: string;
+  /** The exam's rules, from the syllabus or the professor (owner, 2026-11-22: "make a formula sheet if allowed" was planned for a closed-book exam). */
+  rules?: ExamRules;
+  /**
+   * The exam map: the kinds of problem the past exams ask, written by the student's Claude from the
+   * exams it read (plan `2026-11-22-tutor-memory-and-exam-map.md`). The unit a cram plans in.
+   */
+  problemTypes?: ProblemType[];
+  /** The one held-back exam kept unread, even by Claude, until the student sits it timed: the cram's measured score. */
+  reservedMaterialId?: string;
+  /** What changed on the scope and budget, and who changed it: the last 30 edits (`src/lib/course/scope-history.ts`). */
+  history?: ScopeEdit[];
+}
+
+/** One edit to an exam's scope or budget. */
+export interface ScopeEdit {
+  at: string;
+  /** The student in the app, or their Claude through the connector. */
+  by: "student" | "claude";
+  /** What changed, in words: "objectives excluded 63 → 37 (of 151 listed); budget 22 h → 16 h". */
+  what: string;
+}
+
+/** What an exam allows. Every field is optional: only what's known is stored. */
+export interface ExamRules {
+  /** Notes in the room: none (closed book), a formula sheet, or open book. */
+  notes?: "none" | "sheet" | "open";
+  calculator?: "none" | "simple" | "any";
+  /** How long it runs. */
+  minutes?: number;
+  /** Anything else, in the syllabus's or professor's words (at most 500 characters). */
+  text?: string;
+}
+
+/** A kind of problem the exam asks ("Charge sharing between capacitors", "Design an RLC for a damping ratio"). */
+export interface ProblemType {
+  id: string;
+  name: string;
+  /** The objectives a problem of this kind uses. */
+  objectiveIds: string[];
+  /** The past and practice exams (materials) it appears on. */
+  materialIds: string[];
+  /** What a problem of this kind asks for and where students lose points (at most 500 characters). */
+  note?: string;
 }
 
 export interface CalendarEvent {
@@ -421,6 +497,8 @@ export interface QuizQuestion {
   deep?: boolean;
   /** Written by Claude through the connector (`add_questions`); absent = Orca's. */
   source?: "claude";
+  /** Stored without an anchor although its objective came from the material: nothing live taught it when it was written. Shown like an inferred objective's question (not course-specific). */
+  unanchored?: true;
 }
 
 /* ── Defaults ─────────────────────────────────────────────────────────── */

@@ -92,6 +92,21 @@ export interface SignalEvent {
   sessionId: string;
 }
 
+/**
+ * The student marked a weak spot mastered by hand (the course's List view; owner, 2026-11-22:
+ * "trust the student"). Mastered at once, shown as marked by them, with a spaced check
+ * MASTERY_RULES.markedCheckDays later; the next answer or flag takes over as usual. Never credit.
+ */
+export interface MarkEvent {
+  kind: "mark";
+  id: string;
+  /** ISO timestamp. */
+  at: string;
+  courseId: string;
+  topicId: string;
+  objectiveId: string;
+}
+
 /** Where a struggle flag came from (`evidence_events.flag_source`). */
 export type FlagSource = "homework" | "handwritten-marker" | "connector" | "connector-struggled" | "slide" | "manual";
 
@@ -121,7 +136,7 @@ export interface ConfusionEvent {
 }
 
 /** The append-only learner log. Every learner-facing state is computed from it. */
-export type EvidenceEvent = AnswerEvent | ConfusionEvent | WorkEvent | SignalEvent;
+export type EvidenceEvent = AnswerEvent | ConfusionEvent | WorkEvent | SignalEvent | MarkEvent;
 
 /** The part of an objective the mastery code reads. */
 export type ObjectiveInfo = Pick<Objective, "id" | "topicId" | "name" | "review" | "mergedInto">;
@@ -149,4 +164,6 @@ export interface ObjectiveState {
   /** FSRS's predicted chance of recalling it right now (0–1); null before any answer. */
   recall: number | null;
   lastEvidenceAt: string | null;
+  /** Mastered because the student marked it so (a MarkEvent), with no answer or flag since. */
+  markedByStudent: boolean;
 }

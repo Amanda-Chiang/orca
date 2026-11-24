@@ -29,6 +29,7 @@
  * holds a key; Settings no longer shows it). Older localStorage state (`orca:v3`–`orca:v8`
  * and the page text uploads used to keep, `orca:materialPages`) is removed.
  */
+import { withHistory } from "@/lib/course/scope-history";
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import {
@@ -56,7 +57,7 @@ import {
 import type { LlmConfig } from "./llm";
 import { type AvatarId, DEFAULT_AVATAR } from "./avatars";
 import type { QuizQuestion } from "./data";
-import type { AnswerEvent, ConfusionEvent, EvidenceEvent } from "./mastery/types";
+import type { AnswerEvent, ConfusionEvent, EvidenceEvent, MarkEvent } from "./mastery/types";
 import type { CourseStructure } from "./course/ops";
 import { type CourseMastery, courseMastery } from "./mastery/course-mastery";
 import { type TodoCard, todoCards } from "./mastery/todo";
@@ -69,6 +70,7 @@ import { isUsable } from "./mastery/snapshots";
 import { courseObjectiveWeights, examScopeWeights } from "./course/weights";
 import { laidOut } from "./course/layout";
 import { placeIslands } from "./course/islands";
+import { crammingExam, examTopicIds } from "./course/exam-card";
 import { streakDays } from "./mastery/streak";
 import { browserSupabase } from "./supabase/browser";
 import { type MyData, type StructureState, calendarToRow, courseToRow, defaultsToRow, examToRow, isEmpty, progressKey, progressToRow, loadedState, materialInsertRow, sessionFromRow, sessionToRow, structureRows } from "./supabase/app-rows";
@@ -194,6 +196,8 @@ interface OrcaActions {
   recordReflection: (materialId: string, note: string, events: Array<Omit<ConfusionEvent, "id" | "at" | "kind" | "materialId" | "note" | "flagSource" | "page">>) => void;
   /** "This is hard": one struggled flag from `manual` per objective (random ids, so flagging again later is recorded again). */
   flagObjectives: (courseId: string, objectiveIds: readonly string[]) => void;
+  /** The List view's "mark as mastered": one mark per objective (rules v5: mastered at once, checked later). Not counted if it can't be saved. */
+  markMastered: (courseId: string, objectiveIds: readonly string[]) => void;
   /** Ask for questions for flagged objectives that have none (a flag top-up); nothing when they all have some. */
   requestQuestions: (courseId: string, objectiveIds: readonly string[]) => void;
   /** "Which slides were hard?": one struggle flag (source slide) per objective, on the first selected page that names it. */
@@ -582,8 +586,14 @@ export function OrcaProvider({ children }: { children: React.ReactNode }) {
   );
 
   const updateExam = useCallback<OrcaActions["updateExam"]>(
-    (id, change) => {
-      setState((s) => ({ ...s, exams: s.exams.map((e) => (e.id === id ? { ...e, ...change } : e)) }));
+    (id, given) => {
+      // A change to the scope or budget is logged on the scope, as the student's (the connector logs Claude's).
+      const was = stateRef.current.exams.find((e) => e.id === id);
+      const change = given.scope !== undefined && was ? { ...given, scope: withHistory(was.scope, given.scope, "student", new Date().toISOString(), { before: was.date, after: given.date ?? was.date }) } : given;
+      // One cram per course (owner, 2026-11-22): starting one stops the course's others.
+      const others = change.cramming && was ? stateRef.current.exams.filter((e) => e.courseId === was.courseId && e.id !== id && e.cramming).map((e) => e.id) : [];
+      setState((s) => ({ ...s, exams: s.exams.map((e) => (e.id === id ? { ...e, ...change } : others.includes(e.id) ? { ...e, cramming: false } : e)) }));
+      if (others.length) save(async () => mustChange(await browserSupabase().from("exams").update({ cramming: false }).in("id", others).select("id")));
       const row = {
         ...(change.title !== undefined ? { title: change.title } : {}),
         ...(change.date !== undefined ? { date: change.date } : {}),
@@ -792,6 +802,28 @@ export function OrcaProvider({ children }: { children: React.ReactNode }) {
     [saveFlags],
   );
 
+  const markMastered = useCallback<OrcaActions["markMastered"]>(
+    (courseId, objectiveIds) => {
+      const at = new Date().toISOString();
+      const catalogue = stateRef.current.objectives[courseId] ?? {};
+      const marks: MarkEvent[] = objectiveIds.map((objectiveId) => {
+        const o = catalogue[objectiveId];
+        if (!o) throw new Error(`Objective ${objectiveId} is not in course ${courseId}`);
+        return { kind: "mark", id: crypto.randomUUID(), at, courseId, topicId: o.topicId, objectiveId };
+      });
+      if (!marks.length) return;
+      const ids = new Set(marks.map((m) => m.id));
+      setState((s) => ({ ...s, evidence: [...s.evidence, ...marks] }));
+      save(
+        async () => {
+          for (const m of marks) await postEvidence(m, { kind: "mark", id: m.id, courseId, objectiveId: m.objectiveId });
+        },
+        { onFail: () => setState((s) => ({ ...s, evidence: s.evidence.filter((e) => !ids.has(e.id)) })) },
+      );
+    },
+    [save, postEvidence],
+  );
+
   const flagSlides = useCallback<OrcaActions["flagSlides"]>(
     (courseId, materialId, pages) => {
       // One flag per objective: overlapping pages name some objectives twice.
@@ -980,6 +1012,7 @@ export function OrcaProvider({ children }: { children: React.ReactNode }) {
       recordEvidence,
       recordReflection,
       flagObjectives,
+      markMastered,
       flagSlides,
       requestQuestions: requestFlagTopUp,
       setOnboarded,
@@ -995,7 +1028,7 @@ export function OrcaProvider({ children }: { children: React.ReactNode }) {
       dismissSaveError,
       reload,
     }),
-    [state, hydrated, status, loadError, saving, saveError, flagTopUpRun, addCourse, renameCourse, setConfig, clearConfigOverride, addExam, updateExam, removeExam, rateQuestion, saveProgress, setDefaults, addMaterial, recordQuiz, recordEvidence, recordReflection, flagObjectives, flagSlides, requestFlagTopUp, setOnboarded, markTipsSeen, skipTips, setName, setTimezone, setAvatar, setLlm, refresh, afterSaves, editStructure, dismissSaveError, reload],
+    [state, hydrated, status, loadError, saving, saveError, flagTopUpRun, addCourse, renameCourse, setConfig, clearConfigOverride, addExam, updateExam, removeExam, rateQuestion, saveProgress, setDefaults, addMaterial, recordQuiz, recordEvidence, recordReflection, flagObjectives, markMastered, flagSlides, requestFlagTopUp, setOnboarded, markTipsSeen, skipTips, setName, setTimezone, setAvatar, setLlm, refresh, afterSaves, editStructure, dismissSaveError, reload],
   );
 
   return <OrcaContext.Provider value={value}>{children}</OrcaContext.Provider>;
@@ -1046,7 +1079,7 @@ export function useMasteryByCourse(): Record<string, CourseMastery> {
 
 /** The sidebar's to-do cards for every course, today's first. */
 export function useTodos(): TodoCard[] {
-  const { courses, objectives, configs, questionBank, feedback } = useOrca();
+  const { courses, objectives, configs, questionBank, feedback, exams } = useOrca();
   const agenda = useAgenda();
   const mastery = useMasteryByCourse();
   const dayKey = useDayKey();
@@ -1054,6 +1087,8 @@ export function useTodos(): TodoCard[] {
   return useMemo(
     () =>
       courses.flatMap((c) => {
+        // Cram mode pauses the course's quick reviews, dives and warm-up (owner, 2026-11-22): no cards, here or in the map's count.
+        if (crammingExam(exams, c.id, dayKey(new Date(nowMs).toISOString()))) return [];
         const a = agenda[c.id];
         const m = mastery[c.id];
         if (!a || !m) throw new Error(`No agenda computed for course ${c.id}`);
@@ -1083,8 +1118,21 @@ export function useTodos(): TodoCard[] {
           },
         }, covered, coveredTomorrow, warmUp);
       }),
-    [courses, objectives, configs, agenda, mastery, questionBank, feedback, nowMs, dayKey],
+    [courses, objectives, configs, agenda, mastery, questionBank, feedback, exams, nowMs, dayKey],
   );
+}
+
+/** The course's cram mode: the exam it's cramming for and that exam's topics; null when it isn't (or the exam has passed). */
+export function useCramming(courseId: string | undefined): { exam: Exam; topics: Set<string> } | null {
+  const { exams, courses, objectives } = useOrca();
+  const dayKey = useDayKey();
+  const nowMs = useNow();
+  return useMemo(() => {
+    const course = courses.find((c) => c.id === courseId);
+    if (!course) return null;
+    const exam = crammingExam(exams, course.id, dayKey(new Date(nowMs).toISOString()));
+    return exam ? { exam, topics: examTopicIds(exam, course.topics, objectives[course.id] ?? {}) } : null;
+  }, [exams, courses, objectives, courseId, dayKey, nowMs]);
 }
 
 /** Days in a row with at least one unaided graded answer. */

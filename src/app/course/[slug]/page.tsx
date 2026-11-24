@@ -8,7 +8,7 @@ import { askableQuestions } from "@/lib/askable";
 import { canFlagHard } from "@/lib/mastery/flags";
 import { warmUpCandidates } from "@/lib/mastery/warmup";
 import { durationSeconds } from "@/lib/mastery/session";
-import { useAgenda, useCourse, useMasteryByCourse, useOrca } from "@/lib/store";
+import { useAgenda, useCourse, useCramming, useDayKey, useMasteryByCourse, useOrca } from "@/lib/store";
 import { AppShell } from "@/components/layout/AppShell";
 import { BackButton } from "@/components/layout/BackButton";
 import { Button } from "@/components/ui/Button";
@@ -16,13 +16,15 @@ import { ProgressBar } from "@/components/ui/ProgressBar";
 import { KnowledgePath } from "@/components/path/KnowledgePath";
 import { AtlasSwitch } from "@/components/atlas/AtlasSwitch";
 import { ExamsModal } from "@/components/config/ExamsModal";
-import { ExamCard } from "@/components/course/ExamCard";
-import { duration, useUserMetrics } from "@/components/settings/YourMetrics";
+import { CramBanner } from "@/components/course/CramBanner";
+import { cardExam } from "@/lib/course/exam-card";
+import { UploadsLink } from "@/components/course/UploadsLink";
 import { fadeUp, stagger } from "@/lib/motion";
 import { COURSE_NAME_MAX, DEFAULT_CONFIG, trailTopics } from "@/lib/data";
-import { courseUploads, pendingReview, uploadsInProgress } from "@/lib/course/review";
-import { isFinished, useRun } from "@/hooks/useRun";
+import { useNow } from "@/hooks/useNow";
 import Link from "next/link";
+import { IconTimer } from "@/components/icons";
+import { useStudyTime } from "@/components/study/StudyTime";
 
 export default function CoursePage({ params }: PageProps<"/course/[slug]">) {
   const { slug } = use(params);
@@ -30,13 +32,20 @@ export default function CoursePage({ params }: PageProps<"/course/[slug]">) {
   const [diving, setDiving] = useState<{ id: string; name: string } | null>(null);
   const closeDive = useCallback(() => setDiving(null), []);
   const [editingExams, setEditingExams] = useState(false);
+  const timer = useStudyTime();
   const closeExams = useCallback(() => setEditingExams(false), []);
   const router = useRouter();
-  const { hydrated, objectives, renameCourse, configs, runs, flagObjectives, questionBank, feedback } = useOrca();
+  const { hydrated, objectives, renameCourse, configs, flagObjectives, questionBank, feedback } = useOrca();
   const course = useCourse(slug);
   const mastery = useMasteryByCourse();
-  const { metrics } = useUserMetrics();
   const agendas = useAgenda();
+  // Cram mode (owner, 2026-11-22): the exam being crammed for and its topics; null otherwise.
+  const cram = useCramming(course?.id);
+  const { exams } = useOrca();
+  const dayKey = useDayKey();
+  const nowMs = useNow();
+  // The exam "Enter cram mode" opens the setup for: the course's next one (cardExam).
+  const nextExam = course ? cardExam(exams, course.id, dayKey(new Date(nowMs).toISOString())) : null;
 
   if (!course) {
     return (
@@ -49,7 +58,6 @@ export default function CoursePage({ params }: PageProps<"/course/[slug]">) {
     );
   }
 
-  const studied = metrics?.courses.find((c) => c.courseId === course.id);
   const m = mastery[course.id];
   if (!m) throw new Error(`No mastery computed for course ${course.id}`);
   const topics = trailTopics(course);
@@ -63,16 +71,15 @@ export default function CoursePage({ params }: PageProps<"/course/[slug]">) {
   const held = topics.reduce((sum, t) => sum + progressOf(t.id).mastered, 0);
   const pct = weak ? held / weak : 0;
   const flaggable = (topicId: string) => (m.topicObjectives.get(topicId) ?? []).filter((id) => canFlagHard(m.objectives.get(id)!.status));
-  const toReview = pendingReview(course.topics, objectives[course.id] ?? {}).count;
-  const uploading = uploadsInProgress(runs, course.id);
   const agenda = agendas[course.id];
   if (!agenda) throw new Error(`No agenda computed for course ${course.id}`);
   // Nothing flagged yet, but questions to try: the trail's START (src/lib/mastery/warmup.ts).
   const warm = agenda.dueToday.length === 0 ? warmUpCandidates(agenda.ranked, askableQuestions(course, questionBank[course.id], objectives[course.id] ?? {}, feedback).byObjective) : [];
-  const warmUp = warm.length ? { topicName: course.topics.find((t) => t.id === warm[0].topicId)?.name ?? course.name, href: `/session/${course.slug}?kind=quick&warmup=1`, questions: warm.length } : null;
+  const warmUp = !cram && warm.length ? { topicName: course.topics.find((t) => t.id === warm[0].topicId)?.name ?? course.name, href: `/session/${course.slug}?kind=quick&warmup=1`, questions: warm.length } : null;
 
   return (
-    <AppShell bg="ocean">
+    <AppShell bg="ocean" cram={!!cram}>
+      {cram && <CramBanner course={course} exam={cram.exam} />}
       {topics.length === 0 ? (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-[12px] text-center">
           <p className="text-[22px] font-bold text-prussian">This island is uncharted.</p>
@@ -82,10 +89,10 @@ export default function CoursePage({ params }: PageProps<"/course/[slug]">) {
           </Button>
         </div>
       ) : (
-        <KnowledgePath course={course} progress={m.topics} onStart={(t) => setDiving({ id: t.id, name: t.name })} warmUp={warmUp} />
+        <KnowledgePath course={course} progress={m.topics} onStart={(t) => setDiving({ id: t.id, name: t.name })} warmUp={warmUp} examTopics={cram?.topics ?? null} />
       )}
 
-      <motion.header variants={stagger()} initial="hidden" animate="show" className="absolute left-[28px] top-[28px] flex items-start gap-[16px]">
+      <motion.header variants={stagger()} initial="hidden" animate="show" className={`absolute left-[28px] flex items-start gap-[16px] ${cram ? "top-[76px]" : "top-[28px]"}`}>
         <motion.div variants={fadeUp}>
           <BackButton />
         </motion.div>
@@ -118,48 +125,35 @@ export default function CoursePage({ params }: PageProps<"/course/[slug]">) {
           >
             {course.name}
           </motion.h1>
-          <motion.p variants={fadeUp} className="text-[15px] font-medium text-wisteria-deep" data-part={topics.length > 0 ? "weak-count" : undefined}>
-            {weak ? `${held} of ${weak} weak spots mastered` : "No weak spots flagged yet"}
-            {studied && <span data-part="course-studied"> · {duration(studied.seconds)} studied · {studied.solved} solved</span>}
-          </motion.p>
-          <motion.div variants={fadeUp} className="mt-[6px] w-[240px]">
+          {/* No count line under the name (owner, 2026-11-22): the bar says how much of the weak spots is mastered. */}
+          <motion.div variants={fadeUp} className="mt-[6px] w-[240px]" data-part={topics.length > 0 ? "weak-count" : undefined}>
             <ProgressBar value={pct} height={12} label="Course progress" track="parchment" />
           </motion.div>
           <motion.nav variants={fadeUp} aria-label="Course structure" className="mt-[4px] flex items-center gap-[10px]">
             <AtlasSwitch slug={course.slug} current="path" />
-            {/* Building uploads are followed here too, so the count drops when one finishes. */}
-            {courseUploads(runs, course.id)
-              .filter((u) => !isFinished(u))
-              .map((u) => (
-                <FollowRun key={u.id} runId={u.id} />
-              ))}
-            {/* Always there: the course's uploads. The badge counts only uploads still building (the page's Review tab counts what's to review). */}
-            <CountLink href={`/course/${course.slug}/review${uploading > 0 || toReview === 0 ? "?tab=uploads" : "?tab=review"}`} label="Uploads" count={uploading} countLabel={`${uploading} building`} part="uploads-link" />
+            <UploadsLink course={course} />
           </motion.nav>
         </div>
       </motion.header>
 
-      <motion.div variants={fadeUp} initial="hidden" animate="show" role="group" aria-label="Practice" className="absolute right-[28px] top-[32px] flex items-center gap-[10px]">
+      <motion.div variants={fadeUp} initial="hidden" animate="show" role="group" aria-label="Practice" className={`absolute right-[28px] flex items-center gap-[10px] ${cram ? "top-[80px]" : "top-[32px]"}`}>
+        {/* The study timer for this course (owner, 2026-11-22); while one runs, the floating pill has its clock and Stop. */}
+        {!timer.running && (
+          <button type="button" disabled={timer.busy} onClick={() => void timer.start(course.id)} data-part="course-start-timer" className="pressable inline-flex items-center gap-[6px] rounded-pill bg-study-mint px-[14px] py-[7px] text-[13px] font-bold text-prussian lip-2 lip-ink disabled:opacity-60">
+            <IconTimer size={16} />
+            Start study session
+          </button>
+        )}
         <button type="button" onClick={() => setEditingExams(true)} data-part="edit-exams" className="pressable rounded-pill bg-prussian px-[14px] py-[7px] text-[13px] font-bold text-parchment lip-2 lip-ink">
           Edit Exams
         </button>
-        {/* A dive can always be started; the cadence only adds "due" when there are weak points. */}
-        {agenda.ranked.length > 0 && (
-          <div className="group relative">
-            <Link href={`/session/${course.slug}?kind=deep`} data-part="start-deep" aria-describedby="dive-in-info" className="pressable rounded-pill bg-parchment px-[14px] py-[7px] text-[13px] font-bold text-prussian ring-2 ring-inset ring-alice-deep lip-2 lip-alice">
-              Dive in{agenda.deepReview.due ? " · due" : ""}
-            </Link>
-            <div id="dive-in-info" role="tooltip" className="pointer-events-none absolute right-0 top-full z-10 mt-[10px] w-[248px] rounded-[14px] border-2 border-alice-deep bg-parchment px-[14px] py-[11px] text-left text-[13px] font-semibold leading-[1.35] text-prussian opacity-0 shadow-[0_5px_0_var(--color-alice-deep)] transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
-              <span className="block font-bold">A dive.</span>
-              Harder questions on this course, written when you start
-            </div>
-          </div>
+        {/* Cram mode is entered by hand (owner, 2026-11-22): the cram page's setup for the next exam, which Confirm turns on. */}
+        {!cram && nextExam && (
+          <Link href={`/course/${course.slug}/cram`} data-part="enter-cram" className="pressable rounded-pill bg-parchment px-[14px] py-[7px] text-[13px] font-bold text-prussian ring-2 ring-inset ring-alice-deep lip-2 lip-alice">
+            Enter cram mode
+          </Link>
         )}
       </motion.div>
-      {/* The soonest upcoming exam (or the one being crammed for): days left, scope, verified share, Cram for this exam. */}
-      <div className="absolute right-[28px] top-[84px]">
-        <ExamCard course={course} mastery={m} />
-      </div>
       <ExamsModal course={editingExams ? course : null} onClose={closeExams} />
       <DiveModal
         topic={diving}
@@ -177,26 +171,5 @@ export default function CoursePage({ params }: PageProps<"/course/[slug]">) {
         }
       />
     </AppShell>
-  );
-}
-
-/** Follows one building upload (the store reloads when it finishes); draws nothing. */
-function FollowRun({ runId }: { runId: string }) {
-  useRun(runId);
-  return null;
-}
-
-/** A pill to one tab of the course's uploads and review page, with a count badge when something's in it. */
-function CountLink({ href, label, count, countLabel, part }: { href: string; label: string; count: number; countLabel: string; part: string }) {
-  return (
-    <Link
-      href={href}
-      aria-label={count > 0 ? `${label}, ${countLabel}` : label}
-      className="pressable flex items-center gap-[6px] rounded-pill bg-parchment px-[14px] py-[7px] text-[13px] font-bold text-prussian ring-2 ring-inset ring-alice-deep lip-2 lip-alice"
-      data-part={part}
-    >
-      {label}
-      {count > 0 && <span className="flex h-[20px] min-w-[20px] items-center justify-center rounded-pill bg-wisteria px-[6px] text-[11px] font-bold text-parchment">{count}</span>}
-    </Link>
   );
 }

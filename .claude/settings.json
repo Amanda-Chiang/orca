@@ -12,5 +12,12 @@
         ]
       }
     ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(gh api -X PUT repos/Amanda-Chiang/orca/pulls/*/merge *)",
+      "Bash(gh api -X PUT \"repos/Amanda-Chiang/orca/pulls/*/merge\" *)",
+      "Bash(gh pr merge * --repo Amanda-Chiang/orca *)"
+    ]
   }
 }

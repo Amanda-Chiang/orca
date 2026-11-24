@@ -6,6 +6,38 @@ in the doc it affects (usually `docs/BACKEND-ROADMAP.md`) and move it to "Decide
 
 ## Open
 
+### After a wrong answer: assumptions (2026-11-22)
+
+Decided by the owner: the second try is practice only (the first answer is what's recorded), the
+"What went wrong?" pick is shown, not saved, a miss brings back a sibling question that counts, and
+it runs in every web quiz (`src/lib/quiz/after-miss.ts`). Assumed while building:
+- No second try on true/false or two-option questions (it would give the answer), after "Don't
+  know" or a typed "I don't know", for self-marked answers, or when grading failed.
+- The nudge before the second try is the grader's `errorType` in words and, for a partial answer,
+  the rubric ideas it already had; never the grader's feedback, which may name the answer.
+- The sibling comes 3 questions later (`SIBLING_GAP`), once per objective per session, not in
+  "Review missed", unseen questions first; in a dive it may be an ordinary (not deep) question.
+- A prose second try is graded by the model, so it costs one more grade call.
+
+### Cram mode you enter: assumptions (2026-11-22)
+- **Source:** the owner's ask (cram mode as a space the student enters: dark, exam topics only, reviews paused, a
+  banner) and answers (off-exam reviews hidden completely; dives on exam topics only; ends after the exam or on Stop;
+  the home island and the cram page change too; the home sidebar drops the course's cards; Path and List hide the
+  rest behind "Show N other topics"). Plan `docs/superpowers/plans/2026-11-22-cram-mode-immersive.md`.
+- **Assumed, for the owner to confirm:**
+  1. One exam per course crams at a time: turning it on for one turns it off for the others.
+  2. "On the exam" means topics holding an objective the exam counts (`examObjectives`: the scope's weights above 0,
+     else the exam's topics, else every topic).
+  3. The calendar drops the crammed course's scheduled reviews too; exams and homework stay.
+  4. A session opened by its link still runs; only the buttons that start one are hidden.
+  5. Every page of the course is dark, settings, objectives and uploads & review included (owner, 2026-11-22); session pages stay light.
+  6. The banner holds Open plan, Study with Claude (until connected) and Stop cramming; Edit scope is on the cram page.
+     The exam card is gone (owner: redundant), and with it the course page's only "days until the exam" outside a
+     cram; the course-wide Dive in pill gave its place to Enter cram mode (owner), so a course-wide dive starts from
+     the sidebar's "Dive in" card when one is due, and topic dives from the path's play buttons.
+  7. The home island: the path's pulsing halo behind it (owner, 2026-11-22); its due count reads 0.
+  8. List in cram mode still lists only topics with weak spots (its purpose), now only the exam's.
+
 ### Cram mode (2026-11-10)
 - **Source:** the owner's Cram Mode plan (2026-11-09) and decisions (2026-11-10); contract
   `docs/superpowers/specs/2026-11-10-cram-mode-contracts.md`, branch `cram-mode`. What is built:
@@ -236,8 +268,11 @@ in the doc it affects (usually `docs/BACKEND-ROADMAP.md`) and move it to "Decide
 ### Mastery bar and "I know this"
 - Is "3 correct on 2 days" the right bar? (The same bar applies to every objective whatever its
   weight; see Decided.)
-- Should a student be able to mark "I know this"? (Proposal: it schedules one check tomorrow,
-  never mastery directly.)
+- ~~Should a student be able to mark "I know this"?~~ Decided by the owner 2026-11-22: **trust the
+  student.** The List view's status slider marks a topic's weak spots mastered at once (a `mark`
+  evidence event, rules v5), shown as "marked by you", with a spaced check
+  `MASTERY_RULES.markedCheckDays` (7, provisional) later; a miss there or a new flag brings it back.
+  Assumed: In progress can't be picked by hand; Needs review is a struggled flag on every weak spot.
 
 ### Weight formula constants
 - **Decided shape** (roadmap, "Weight signals and formula"): code computes weights from signals

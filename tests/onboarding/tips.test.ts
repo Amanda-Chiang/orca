@@ -41,11 +41,11 @@ test("seen tips are left out", () => {
 
 test("a tip that waits for another shows after it: later in the same run, or once it was seen", () => {
   const ctx = { pathname: "/course/logic", courses: 1, sessions: 0 };
-  const noQuick = (s: string) => s !== 'aside [data-todo="quick"]';
-  assert.ok(!ids(eligibleTips(ctx, none, noQuick)).includes("dive"), "no quick review yet: Dive in waits");
+  const noExams = (s: string) => s !== '[data-part="edit-exams"]';
+  assert.ok(!ids(eligibleTips(ctx, none, noExams)).includes("enter-cram"), "Edit Exams not shown yet: Enter cram mode waits");
   const all = ids(eligibleTips(ctx, none, everything));
-  assert.ok(all.indexOf("dive") > all.indexOf("quick-review"), "in one run, Dive in follows the quick review");
-  assert.ok(ids(eligibleTips(ctx, new Set(["quick-review"]), noQuick)).includes("dive"));
+  assert.ok(all.indexOf("enter-cram") > all.indexOf("edit-exams"), "in one run, Enter cram mode follows Edit Exams");
+  assert.ok(ids(eligibleTips(ctx, new Set(["edit-exams"]), noExams)).includes("enter-cram"));
 });
 
 test("the Settings tips wait until the student has finished a session", () => {

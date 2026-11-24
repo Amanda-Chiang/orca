@@ -6,6 +6,7 @@ import { fadeSwap } from "@/lib/motion";
 import type { EventKind } from "@/lib/data";
 import { useAgenda, useDayKey, useMasteryByCourse, useOrca } from "@/lib/store";
 import { reviewDates } from "@/lib/mastery/calendar";
+import { crammingExam } from "@/lib/course/exam-card";
 import { useToday } from "@/hooks/useToday";
 import { IconBack, IconNext } from "@/components/icons";
 import { Screen } from "@/components/layout/Screen";
@@ -34,7 +35,8 @@ export default function CalendarPage() {
   const shown = useMemo(() => {
     if (!today) return [];
     const reviews = reviewDates(
-      courses.map((c) => {
+      // A course in cram mode has its reviews paused (owner, 2026-11-22).
+      courses.filter((c) => !crammingExam(exams, c.id, today)).map((c) => {
         const agenda = agendas[c.id];
         const m = mastery[c.id];
         if (!agenda || !m) throw new Error(`No agenda computed for course ${c.id}`);
@@ -46,6 +48,11 @@ export default function CalendarPage() {
     const examEntries = exams.map((e) => ({ id: e.id, date: e.date, kind: "exam" as const, title: e.title, courseId: e.courseId }));
     return [...events, ...examEntries, ...reviews];
   }, [events, exams, courses, agendas, mastery, dayKey, today]);
+  // Courses in cram mode and their exams, marked red on the grid (owner, 2026-11-22).
+  const cram = useMemo(() => {
+    const crammed = today ? courses.flatMap((c) => crammingExam(exams, c.id, today) ?? []) : [];
+    return { courses: new Set(crammed.map((e) => e.courseId)), exams: new Set(crammed.map((e) => e.id)) };
+  }, [courses, exams, today]);
   // One course's entries, or every course's.
   const [courseFilter, setCourseFilter] = useState<string>(ALL);
   const visible = courseFilter === ALL ? shown : shown.filter((e) => e.courseId === courseFilter);
@@ -80,13 +87,18 @@ export default function CalendarPage() {
           {KINDS.map((k) => (
             <Tag key={k} kind={k} size="md" />
           ))}
+          {cram.courses.size > 0 && (
+            <span className="inline-flex items-center rounded-pill bg-cram px-[14px] py-[8px] text-[13px] font-bold leading-none text-parchment" data-part="cram-legend">
+              Cramming
+            </span>
+          )}
           {courses.length > 0 && (
             <Select
               label="Filter by course"
               size="sm"
               value={courseFilter}
               options={[ALL, ...courses.map((c) => c.id)]}
-              labels={{ [ALL]: "All courses", ...Object.fromEntries(courses.map((c) => [c.id, c.name])) }}
+              labels={{ [ALL]: "All courses", ...Object.fromEntries(courses.map((c) => [c.id, cram.courses.has(c.id) ? `${c.name} · cramming` : c.name])) }}
               onChange={setCourseFilter}
               className="ml-[8px]"
               data-part="course-filter"
@@ -104,7 +116,7 @@ export default function CalendarPage() {
       </header>
 
       <div className="px-[40px] pb-[40px] pt-[28px]">
-        <MonthGrid cursor={cursor} events={visible} today={today} />
+        <MonthGrid cursor={cursor} events={visible} today={today} cram={cram} />
       </div>
     </Screen>
   );

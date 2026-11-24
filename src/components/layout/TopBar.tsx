@@ -8,7 +8,7 @@ import { useAvatarPreview } from "@/components/brand/avatar-preview";
 import { OrcaLogo } from "@/components/brand/OrcaLogo";
 import { IconLogOut } from "@/components/icons";
 import { isPublicPath } from "@/lib/auth/paths";
-import { useOrca } from "@/lib/store";
+import { useCramming, useOrca } from "@/lib/store";
 
 /**
  * Figma: Header/Top Bar (117:193) on every screen, Header/Top Bar Compact (117:194) under 640 px.
@@ -17,17 +17,28 @@ import { useOrca } from "@/lib/store";
  * (13 · Sign up: the one being picked), not a link. Height
  * is `--topbar-h` (globals.css), which every full-height screen subtracts.
  */
+/** A course's pages, every one of which goes dark in cram mode (owner, 2026-11-22). */
+const CRAM_PAGES = /^\/course\/([^/?#]+)(?:\/|$)/;
+
 const ICON_BUTTON = "pressable inline-flex h-[48px] w-[48px] items-center justify-center rounded-[16px] border-2 border-line bg-card text-ink lip-2 lip-alice";
 
 export function TopBar() {
   const pathname = usePathname();
-  const { status, avatar } = useOrca();
+  const { status, avatar, courses } = useOrca();
+  // Over a course in cram mode: the blue of cram mode's path rims (alice-deep under its tokens), with cram mode's tokens for what's on it (owner, 2026-11-22).
+  const slug = CRAM_PAGES.exec(pathname)?.[1];
+  const cram = useCramming(slug ? courses.find((c) => c.slug === slug)?.id : undefined);
   const { preview } = useAvatarPreview();
   const guest = isPublicPath(pathname) || status === "signed-out";
   const creature = guest ? preview : avatar;
 
   return (
-    <header data-part="top-bar" className="flex h-[var(--topbar-h)] shrink-0 items-center justify-between border-b-2 border-line bg-page px-[20px] sm:px-[28px]">
+    <header
+      data-part="top-bar"
+      data-cram={cram ? "1" : undefined}
+      // Above cram mode's dive (CramCurtain), which covers the whole window when the bar has scrolled away.
+      className={`relative z-50 flex h-[var(--topbar-h)] shrink-0 items-center justify-between border-b-2 border-line px-[20px] sm:px-[28px] ${cram ? "bg-alice-deep" : "bg-page"}`}
+    >
       <Link href="/" aria-label="Orca home" className="flex items-center gap-[12px]">
         <OrcaLogo waves shadow={false} width={60} />
         <span className="hidden text-[34px] font-bold leading-none text-ink sm:inline">Orca</span>
