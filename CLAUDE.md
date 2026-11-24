@@ -261,7 +261,11 @@ them silently; list what you assumed.
   `.env.local`; template in `.env.example`), `npm run db:reset` (re-applies `supabase/migrations/`),
   `npm run test:db` (pgTAP files in `supabase/tests/`), `npm run check:evidence` (starts its own
   `next dev` on a free port against the local stack and drives `/api/evidence` and `/api/state`
-  over HTTP; `ORCA_URL=…` uses a running server instead), `npm run check:isolation` (two throwaway
+  over HTTP; `ORCA_URL=…` uses a running server instead), `npm run check:routes` (`scripts/check-routes.ts`: every API route nothing else calls directly, over HTTP
+  with two throwaway students and the fake model; shared helpers in `scripts/support/http-check.ts`),
+  `npm run check:connector` (`scripts/check-connector.ts`: the MCP connector in flows: a course built from the chat,
+  another student's link, a ChatGPT-style client),
+  `npm run check:isolation` (two throwaway
   accounts over the real HTTP API; pass `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` and
   `SUPABASE_SECRET_KEY` to run it against a hosted project), `npm run db:types`, `npm run db:stop`.
   After changing a migration, `npm run db:reset`, then `npm run db:types` to refresh
@@ -272,7 +276,7 @@ them silently; list what you assumed.
   pulls; if it answers 429, wait and retry.
 - **Anything that resets or writes the local database, or binds ports 3100/3101, goes through the
   stack lock:** `npm run locked -- npm run test:e2e` (also `test:db`, `check:isolation`,
-  `check:evidence`, `db:types`). It takes `/tmp/orca-supabase-stack.lock`, runs `db:reset` from your
+  `check:evidence`, `check:routes`, `check:connector`, `db:types`). It takes `/tmp/orca-supabase-stack.lock`, runs `db:reset` from your
   worktree first, then the command (`scripts/stack-lock.sh`; rules in
   `docs/superpowers/plans/2026-10-05-orca-phase4-execution.md`, section D). `tsc`, lint and
   `npm test` run freely. Migrations added by parallel work use per-workstream timestamp blocks.
@@ -300,7 +304,7 @@ them silently; list what you assumed.
 - The superpowers skills named below may not be installed in every session; if they aren't,
   follow the same flow by hand (plan doc first, then task-by-task commits with tests).
 
-**Map of the docs.** `docs/BACKEND-ROADMAP.md` (decisions + phases, what's done), `docs/MASTERY-PLAN.md`
+**Map of the docs.** `docs/TESTING.md` (what test to write, where, and when to stop), `docs/BACKEND-ROADMAP.md` (decisions + phases, what's done), `docs/MASTERY-PLAN.md`
 (learner model), `docs/TO-DISCUSS.md` (open questions), `docs/superpowers/plans/` (per-phase and
 per-feature plans with status notes), `docs/superpowers/specs/` (designs agreed in brainstorming),
 `docs/QUIZ-RUBRIC.md` (what makes a good question), `docs/OBJECTIVES-ALD.md`
@@ -736,8 +740,14 @@ now, so that part needs rethinking before it's planned.
   in `npm run dev` or with one e2e spec, not the whole suite. Run `npm run test:db` only when a
   migration changed. No plan doc, no subagents or reviews, no worktrees. Update docs only when
   setup or a decision changed. Commit messages are one or two lines.
+- **Tests: read `docs/TESTING.md` before writing one.** In short: pick the lowest layer that sees the bug
+  (unit, pgTAP, `check:routes`/`check:connector`, Playwright); add a step to the flow the change belongs
+  to instead of a one-off test; cover signed out, another student, one bad input, doing it twice and the
+  limit where they apply, and no more; fake only the model and setup rows students can't write; break
+  the code once to see a security or data-loss test fail.
 - **Merge or deploy gate (once, not per change).** Before merging a branch or deploying: `npm test`,
-  `npm run test:db`, `npm run test:e2e`, `npm run check:isolation`, `npm run check:evidence`.
+  `npm run test:db`, `npm run test:e2e`, `npm run check:isolation`, `npm run check:evidence`,
+  `npm run check:routes`, `npm run check:connector`.
 - **Phase work** (a new roadmap phase or a large feature) still uses the plan doc and task-by-task
   flow described above, with Fix mode's checks per commit.
 - `npm run dev` for the preview.
