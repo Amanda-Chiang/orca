@@ -42,11 +42,20 @@ try:
     with tempfile.TemporaryDirectory(prefix='orca-pipeline-integration-') as temporary:
         log=open(pathlib.Path(temporary)/'fake.log','w')
         fake=subprocess.Popen(['node','--experimental-strip-types','e2e/fake-anthropic.ts','55331'],cwd=root,stdout=log,stderr=log); processes.append(fake)
+        # Any HTTP answer means the server is up (PostgREST's root may answer 4xx). CI runners are slow, so wait up to 90 s.
+        import urllib.error
         for port in [55329,55331]:
-            for _ in range(100):
-                try: urllib.request.urlopen('http://127.0.0.1:'+str(port)+('/__health' if port==55331 else '/'),timeout=.3); break
-                except Exception: time.sleep(.1)
-            else: raise RuntimeError('Isolated test server did not start')
+            deadline=time.time()+90
+            while True:
+                try: urllib.request.urlopen('http://127.0.0.1:'+str(port)+('/__health' if port==55331 else '/'),timeout=2); break
+                except urllib.error.HTTPError: break
+                except Exception:
+                    if time.time()>deadline:
+                        log.flush()
+                        rest=subprocess.run(['docker','logs',rest_name],stdout=subprocess.PIPE,stderr=subprocess.STDOUT).stdout.decode(errors='replace')
+                        print('PostgREST log:\n'+rest[-4000:]+'\nFake model log:\n'+(pathlib.Path(temporary)/'fake.log').read_text()[-4000:])
+                        raise RuntimeError('Isolated test server on port '+str(port)+' did not start')
+                    time.sleep(.25)
         child_env=dict(os.environ,ORCA_UPLOAD_PIPELINE='staged',ORCA_MODEL_PROVIDER='anthropic',ORCA_MODEL='claude-opus-5-5',ORCA_READ_MODEL='',ANTHROPIC_API_KEY='fake-test-key',ANTHROPIC_BASE_URL='http://127.0.0.1:55331',NEXT_PUBLIC_SUPABASE_URL='http://127.0.0.1:55329',NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=token,SUPABASE_SECRET_KEY=token,OPENAI_API_KEY='',ORCA_DAILY_BUDGET_USD='100')
         result=run(['node','--experimental-strip-types','--import','./tests/support/register.mjs','scripts/staged-pipeline-integration.ts'],env=child_env)
         print(result.stdout.decode())
