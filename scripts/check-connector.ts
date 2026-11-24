@@ -133,7 +133,8 @@ async function courseFromTheChat(A: Student, link: string, modelUrl: string): Pr
   const events = await rows<{ source: string; outcome: string }>(`evidence_events?owner_id=eq.${A.id}&question_id=eq.${q.id}&select=source,outcome`);
   check("the miss is evidence from the connector, like any answer", events.length === 1 && events[0].source === "connector" && events[0].outcome === "incorrect", events);
   const state2 = await api(`/api/state?course=${courseId}`, { token: A.token });
-  check("the app's state for the course reads the same evidence", state2.status === 200 && JSON.stringify(state2.body).includes(absorption.id), state2.status);
+  const snapshot = body<{ objectives?: Array<{ objectiveId: string; version: number }> }>(state2).objectives?.find((o) => o.objectiveId === absorption.id);
+  check("the app's state for the course has folded the connector's answer into the objective's snapshot", state2.status === 200 && (snapshot?.version ?? 0) >= 1, { status: state2.status, snapshot });
   const after = await tool(link, "course_state", { courseId, detail: "weak" });
   check("course_state now lists it as a weak point", JSON.stringify(after.value).includes(absorption.id), after.value);
 

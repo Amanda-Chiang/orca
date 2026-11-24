@@ -200,7 +200,8 @@ test("a cram started from Claude: the app goes dark, a dive into an exam topic c
     const state = (await tool(page, url, "course_state", { courseId: F.course })) as { cramming: string | null; objectives: Array<{ id: string; status: string }> };
     expect(state.cramming).not.toBeNull();
     const answered = new Set(((await stored(page, student)).evidence as Array<{ objectiveId: string }>).map((e) => e.objectiveId));
-    for (const o of state.objectives.filter((x) => answered.has(x.id))) expect(o.status).toBe("verified");
+    const seen = state.objectives.filter((x) => answered.has(x.id));
+    expect(seen.map((o) => [o.id, o.status])).toEqual([[F.simplify, "verified"]]);
   });
 
   await test.step("Stop cramming in the app ends the cram for Claude too", async () => {
