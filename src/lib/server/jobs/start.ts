@@ -83,16 +83,21 @@ function deps(db: OrcaSupabase, run: "after-response" | "now" = "after-response"
 /** See `startUploadJob` in src/lib/jobs/start.ts. */
 export async function startUploadJob(db: OrcaSupabase, ownerId: string, materialId: string, admissionId?: string): Promise<Generation> {
   if (!stagedPipeline()) return core.startUploadJob(deps(db), ownerId, materialId);
+  // An admission handed in is attached to a run below, or failed here: never left ingesting until it expires.
+  const release = async (error: string) => { if (admissionId) await pipelineRpc(db, "ingestion", { ownerId, itemId: admissionId, action: "fail", error }); };
   const model = serverModel();
-  if (!model) return { state: "no-model" };
+  if (!model) { await release("No AI is connected, so nothing was generated from this material."); return { state: "no-model" }; }
   const { data: material, error } = await db.from("materials").select("id,course_id,filename").eq("owner_id", ownerId).eq("id", materialId).maybeSingle();
   if (error) throw new Error(error.message);
-  if (!material) return { state: "no-text" };
+  if (!material) { await release("The material wasn't found."); return { state: "no-text" }; }
   const { data: prior } = await db.from("pipeline_runs").select("id,status,protocol_version").eq("owner_id", ownerId).eq("material_id", materialId).order("at", { ascending: false }).limit(1).maybeSingle();
   if (prior?.protocol_version === 2 && prior.status === "failed") {
     await pipelineRpc(db, "control_run", { ownerId, runId: prior.id, action: "retry" });
-    await scheduleStages(db, ownerId);
-    return { state: "queued", runId: prior.id };
+    if (!admissionId) {
+      await scheduleStages(db, ownerId);
+      return { state: "queued", runId: prior.id };
+    }
+    // With an admission, attach it below: the requeued run is live again, so the item becomes its alias.
   }
   if (prior && !admissionId) {
     if (prior.status === "done") return { state: "built", runId: prior.id };
@@ -108,10 +113,23 @@ export async function startUploadJob(db: OrcaSupabase, ownerId: string, material
     itemId = item?.id;
   }
   if (!itemId) { itemId = crypto.randomUUID(); await singleton(db, ownerId, material.course_id, itemId, material.filename); await pipelineRpc(db, "charge_item", { ownerId, itemId }); }
-  const attached = await pipelineRpc<{ runId: string }>(db, "attach", { ownerId, itemId, materialId, model });
+  const attached = await attach(db, { ownerId, itemId, materialId, model });
   await scheduleStages(db, ownerId);
   return { state: prior?.status === "done" ? "built" : "queued", runId: attached.runId };
 }
+
+/** `pipeline_attach`, tried again while a duplicate's canonical upload is still being attached (40001, a moment's race). */
+async function attach(db: OrcaSupabase, input: { ownerId: string; itemId: string; materialId: string; model: string }): Promise<{ runId: string }> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await pipelineRpc<{ runId: string }>(db, "attach", input);
+    } catch (e) {
+      if (attempt >= ATTACH_TRIES || (e as { code?: string }).code !== "40001") throw e;
+      await new Promise((resolve) => setTimeout(resolve, 250 * attempt));
+    }
+  }
+}
+const ATTACH_TRIES = 4;
 
 /** See `startTopUpJob` in src/lib/jobs/start.ts. */
 export function startTopUpJob(db: OrcaSupabase, ownerId: string, req: { courseId: string; sessionId: string; objectiveIds: string[] }): Promise<TopUpStart> {
