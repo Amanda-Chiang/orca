@@ -10,6 +10,16 @@
 import type { CramBudget } from "../data.ts";
 import { addDays } from "./agenda.ts";
 
+/**
+ * The student's day (YYYY-MM-DD in their timezone) of an instant: `dayKeyIn(timezone)` on the
+ * server, the store's `useDayKey()` in the browser. `budget.since` is an instant, so the cram's first
+ * day must be read through this, never as its UTC date: a student in New York who starts at 8 pm
+ * would otherwise begin the cram on tomorrow's date and lose today (2026-11-24).
+ */
+export type DayOf = (iso: string) => string;
+/** The UTC date: right only for a student on UTC; the default where no timezone is known (tests). */
+export const utcDay: DayOf = (iso) => iso.slice(0, 10);
+
 /** Hours are entered in steps of this (half an hour). */
 export const HOUR_STEP = 0.5;
 /** The most a day can hold. */
@@ -37,10 +47,10 @@ export function daysUpTo(from: string, examDate: string): string[] {
  * of `since`) to the day before the exam, minus `daysOut` (0 each); nothing when no day is left.
  * The spread isn't rounded to half hours, so the days still sum to `hours`.
  */
-export function perDayOf(budget: CramBudget, examDate: string): Record<string, number> {
+export function perDayOf(budget: CramBudget, examDate: string, dayOf: DayOf = utcDay): Record<string, number> {
   if (budget.perDay) return { ...budget.perDay };
   const out = new Set(budget.daysOut);
-  const days = daysUpTo(budget.since.slice(0, 10), examDate);
+  const days = daysUpTo(dayOf(budget.since), examDate);
   const study = days.filter((d) => !out.has(d));
   const each = study.length ? budget.hours / study.length : 0;
   return Object.fromEntries(days.map((d) => [d, out.has(d) ? 0 : each]));
@@ -59,8 +69,8 @@ export function budgetFromPerDay(perDay: Readonly<Record<string, number>>, since
 }
 
 /** The budget with `perDay` filled in (a budget saved before per-day budgets gets its spread), totals rederived. */
-export function withPerDay(budget: CramBudget, examDate: string): CramBudget {
-  return budgetFromPerDay(perDayOf(budget, examDate), budget.since);
+export function withPerDay(budget: CramBudget, examDate: string, dayOf: DayOf = utcDay): CramBudget {
+  return budgetFromPerDay(perDayOf(budget, examDate, dayOf), budget.since);
 }
 
 /** What a cram without a time budget is assumed to get, per study day (course_state's plan then says `defaulted`). */
@@ -93,21 +103,22 @@ export interface CramBudgetInput {
  * the assumed one, DEFAULT_HOURS_PER_DAY a study day from today, as the plan told Claude). Days on
  * or after the exam are dropped. `since` is the input's, else the exam's, else `now`.
  */
-export function mergeBudget(base: CramBudget | null | undefined, input: CramBudgetInput, context: { today: string; examDate: string; now: string }): CramBudget {
+export function mergeBudget(base: CramBudget | null | undefined, input: CramBudgetInput, context: { today: string; examDate: string; now: string; dayOf?: DayOf }): CramBudget {
   const { today, examDate, now } = context;
+  const dayOf = context.dayOf ?? utcDay;
   const since = input.since ?? base?.since ?? now;
-  const start = base ? withPerDay(base, examDate) : defaultBudget(today, examDate, now);
+  const start = base ? withPerDay(base, examDate, dayOf) : defaultBudget(today, examDate, now);
   let perDay: Record<string, number>;
   if (input.hours !== undefined && !input.perDay) {
     // A total: spread evenly over the days from the start of the cram, minus the days out.
-    perDay = perDayOf({ hours: input.hours, daysOut: input.daysOut ?? [], since }, examDate);
+    perDay = perDayOf({ hours: input.hours, daysOut: input.daysOut ?? [], since }, examDate, dayOf);
   } else {
     perDay = { ...start.perDay, ...(input.perDay ?? {}) };
     for (const d of input.daysOut ?? []) perDay[d] = 0;
   }
   if (input.today !== undefined) perDay[today] = input.today;
   // Days on or after the exam, and days before this cram started (left over from an earlier date), are dropped.
-  const startDay = since.slice(0, 10);
+  const startDay = dayOf(since);
   for (const d of Object.keys(perDay)) if (d >= examDate || d < startDay) delete perDay[d];
   return budgetFromPerDay(perDay, since);
 }

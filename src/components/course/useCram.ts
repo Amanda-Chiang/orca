@@ -44,7 +44,7 @@ export function useCramPlan(course: Course | undefined, exam: Exam | null, maste
     const topics = readiness ? typePlanTopics(readiness) : planTopics(exam, course.topics, objectives[course.id] ?? {}, relations[course.id] ?? [], (id) => mastery.objectives.get(id)?.status ?? "unseen");
     const touchedObjectiveIds = readiness ? typesTouchedSince(log?.attempts ?? [], budget.since) : touchedObjectives(evidence, course.id, budget.since);
     const mocks = materials.filter((m) => m.courseId === course.id && m.heldBack).sort((a, b) => Number(b.id === exam.scope?.reservedMaterialId) - Number(a.id === exam.scope?.reservedMaterialId)).map((m) => ({ materialId: m.id, name: m.filename, ...(exam.scope?.format?.minutes ? { minutes: exam.scope.format.minutes } : {}) }));
-    return { plan: cramPlan({ today, examDate: exam.date, budget, topics, spentMinutes, ...(spentByDay ? { spentByDay } : {}), touchedObjectiveIds, mocks, unit: readiness ? "problem-type" : "topic" }), spentMinutes, topics, readiness, split, studyLoaded: days !== null };
+    return { plan: cramPlan({ today, dayOf: dayKey, examDate: exam.date, budget, topics, spentMinutes, ...(spentByDay ? { spentByDay } : {}), touchedObjectiveIds, mocks, unit: readiness ? "problem-type" : "topic" }), spentMinutes, topics, readiness, split, studyLoaded: days !== null };
   }, [exam, budget, course, objectives, relations, evidence, materials, mastery, dayKey, nowMs, log, days]);
 }
 
