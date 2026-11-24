@@ -261,7 +261,9 @@ them silently; list what you assumed.
   `.env.local`; template in `.env.example`), `npm run db:reset` (re-applies `supabase/migrations/`),
   `npm run test:db` (pgTAP files in `supabase/tests/`), `npm run check:evidence` (starts its own
   `next dev` on a free port against the local stack and drives `/api/evidence` and `/api/state`
-  over HTTP; `ORCA_URL=…` uses a running server instead), `npm run check:isolation` (two throwaway
+  over HTTP; `ORCA_URL=…` uses a running server instead), `npm run check:routes` (`scripts/check-routes.ts`: every API route nothing else calls directly, over HTTP
+  with two throwaway students and the fake model; shared helpers in `scripts/support/http-check.ts`),
+  `npm run check:isolation` (two throwaway
   accounts over the real HTTP API; pass `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` and
   `SUPABASE_SECRET_KEY` to run it against a hosted project), `npm run db:types`, `npm run db:stop`.
   After changing a migration, `npm run db:reset`, then `npm run db:types` to refresh
@@ -272,7 +274,7 @@ them silently; list what you assumed.
   pulls; if it answers 429, wait and retry.
 - **Anything that resets or writes the local database, or binds ports 3100/3101, goes through the
   stack lock:** `npm run locked -- npm run test:e2e` (also `test:db`, `check:isolation`,
-  `check:evidence`, `db:types`). It takes `/tmp/orca-supabase-stack.lock`, runs `db:reset` from your
+  `check:evidence`, `check:routes`, `db:types`). It takes `/tmp/orca-supabase-stack.lock`, runs `db:reset` from your
   worktree first, then the command (`scripts/stack-lock.sh`; rules in
   `docs/superpowers/plans/2026-10-05-orca-phase4-execution.md`, section D). `tsc`, lint and
   `npm test` run freely. Migrations added by parallel work use per-workstream timestamp blocks.
@@ -730,7 +732,8 @@ now, so that part needs rethinking before it's planned.
   migration changed. No plan doc, no subagents or reviews, no worktrees. Update docs only when
   setup or a decision changed. Commit messages are one or two lines.
 - **Merge or deploy gate (once, not per change).** Before merging a branch or deploying: `npm test`,
-  `npm run test:db`, `npm run test:e2e`, `npm run check:isolation`, `npm run check:evidence`.
+  `npm run test:db`, `npm run test:e2e`, `npm run check:isolation`, `npm run check:evidence`,
+  `npm run check:routes`.
 - **Phase work** (a new roadmap phase or a large feature) still uses the plan doc and task-by-task
   flow described above, with Fix mode's checks per commit.
 - `npm run dev` for the preview.

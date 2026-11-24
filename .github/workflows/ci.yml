@@ -94,6 +94,9 @@ jobs:
         run: npm run check:isolation
       - name: Evidence over HTTP (npm run check:evidence)
         run: npm run check:evidence
+      # Every API route nothing else calls directly: signed out, the other student, bad input, the main path.
+      - name: Routes over HTTP (npm run check:routes)
+        run: npm run check:routes
       - name: Browser tests (npm run test:e2e)
         run: npm run test:e2e
 
