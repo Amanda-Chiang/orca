@@ -96,13 +96,6 @@ export default function AddMaterialPage({ searchParams }: PageProps<"/add-materi
   const [file, setFile] = useState<File | null>(null);
   const [websiteUrl, setWebsiteUrl] = useState("");
   const [aiChatUrl, setAiChatUrl] = useState("");
-  const [uploadMenu, setUploadMenu] = useState(false);
-  useEffect(() => {
-    if (!uploadMenu) return;
-    const close = () => setUploadMenu(false);
-    window.addEventListener("click", close);
-    return () => window.removeEventListener("click", close);
-  }, [uploadMenu]);
   const [pastedText, setPastedText] = useState("");
   const [chosenName, setChosenName] = useState<string | null>(null);
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
@@ -408,20 +401,13 @@ export default function AddMaterialPage({ searchParams }: PageProps<"/add-materi
           >
             <div className="flex items-center justify-between gap-3">
               <span className={cn("truncate text-[15px] font-bold", chosenName ? "text-prussian" : "text-periwinkle-deep")}>{filename}</span>
-              {/* Upload: files or a whole folder (every PDF and .pptx in it), as dropping takes either. */}
-              <span className="relative shrink-0" onClick={(e) => e.stopPropagation()}>
-                <button type="button" disabled={busy} aria-haspopup="menu" aria-expanded={uploadMenu} onClick={() => setUploadMenu((o) => !o)} className="flex items-center gap-1 text-[13px] font-semibold text-wisteria-deep" data-part="upload-menu">
-                  <IconUpload size={16} /> {chosenName ? "Replace" : "Upload"}
-                </button>
-                {uploadMenu && (
-                  <span role="menu" className="absolute right-0 top-[24px] z-10 flex w-[150px] flex-col rounded-[12px] border-2 border-alice-deep bg-parchment p-[4px] lip-3 lip-alice">
-                    {([["Files", fileRef], ["A folder", folderRef]] as const).map(([label, ref]) => (
-                      <button key={label} type="button" role="menuitem" onClick={() => { setUploadMenu(false); ref.current?.click(); }} className="rounded-[8px] px-[10px] py-[6px] text-left text-[14px] font-semibold text-prussian hover:bg-alice">
-                        {label}
-                      </button>
-                    ))}
-                  </span>
-                )}
+              {/* Upload files or a whole folder (every PDF and .pptx in it): a browser's picker takes one or the other. */}
+              <span className="flex shrink-0 items-center gap-[12px]" onClick={(e) => e.stopPropagation()}>
+                {([["files", "Upload files", fileRef], ["folder", "Upload folder", folderRef]] as const).map(([part, label, ref]) => (
+                  <button key={part} type="button" disabled={busy} onClick={() => ref.current?.click()} className="flex items-center gap-1 text-[13px] font-semibold text-wisteria-deep hover:underline" data-part={`upload-${part}`}>
+                    <IconUpload size={16} /> {label}
+                  </button>
+                ))}
               </span>
             </div>
             <label className="flex flex-col gap-[6px] text-[13px] font-semibold text-wisteria-deep" onClick={(e) => e.stopPropagation()}>
@@ -482,7 +468,7 @@ export default function AddMaterialPage({ searchParams }: PageProps<"/add-materi
                 {SKELETON.slice(0, 5).map((w, i) => (
                   <span key={i} className="block h-[8px] rounded-pill bg-alice-deep" style={{ width: `${w}%`, opacity: w ? 1 : 0 }} />
                 ))}
-                {/* Filler where the drop prompt was: the Upload menu and dropping take files or a folder. */}
+                {/* Filler where the drop prompt was: the Upload buttons and dropping take files or a folder. */}
                 {SKELETON.slice(5, 11).map((w, i) => (
                   <span key={`f${i}`} className="block h-[8px] rounded-pill bg-alice-deep" style={{ width: `${w}%`, opacity: w ? 1 : 0 }} />
                 ))}
