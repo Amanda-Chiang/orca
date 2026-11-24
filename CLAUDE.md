@@ -387,7 +387,8 @@ model), `docs/TO-DISCUSS.md` (open questions). In short:
   (`src/lib/store.tsx`): `supabase/` holds `config.toml`, the
   migrations (profiles, courses, materials and their pages, pipeline runs, topics, objectives,
   relations, questions, finished sessions, calendar entries, the evidence log, the `materials`
-  Storage bucket, `save_structure`, the `objective_state` snapshots with `record_evidence`,
+  Storage bucket, the `thumbnails` bucket (slide previews drawn while an upload is processed, read by
+  "Which slides were hard?"; `src/lib/server/thumbnails.ts`, 2026-11-24), `save_structure`, the `objective_state` snapshots with `record_evidence`,
   `save_snapshot` and their stale-mark triggers, and the consistent reads `course_structure` and
   `my_data`) and the pgTAP tests; generated types are in
   `src/lib/supabase/database.types.ts`; env variables are listed in `.env.example`. Every table is

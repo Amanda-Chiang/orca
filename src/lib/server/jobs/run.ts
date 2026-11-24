@@ -11,6 +11,7 @@ import { deepReview, type JobOutcome, processMaterial, topUp } from "@/lib/jobs/
 import type { DeepReviewJob, MaterialJob, TopUpJob } from "@/lib/jobs/start";
 import { figureRenderer, pageRenderer } from "@/lib/server/figures";
 import { supabaseJobStore } from "@/lib/server/job-store";
+import { makeThumbnails } from "@/lib/server/thumbnails";
 import { stepCaller } from "@/lib/server/model";
 import { adminClient } from "@/lib/supabase/server";
 import { queueFlagTopUp, resumeNext } from "./start";
@@ -53,7 +54,13 @@ export function runMaterialJob(job: MaterialJob): Promise<JobOutcome> {
   return guarded(job.ownerId, job.runId, async (store, db) => {
     const call = stepCaller({ ownerId: job.ownerId, kind: "upload", runId: job.runId }, { guard: "none" });
     if (!call) throw new Error("the server has no model key");
-    return processMaterial({ store, call, newId: () => crypto.randomUUID(), renderFigure: figureRenderer(db, job.ownerId), renderPage: pageRenderer(db, job.ownerId) }, job);
+    // Slide previews are drawn beside the pipeline; they never fail it (makeThumbnails logs instead).
+    const previews = makeThumbnails(db, job.ownerId, job.materialId);
+    try {
+      return await processMaterial({ store, call, newId: () => crypto.randomUUID(), renderFigure: figureRenderer(db, job.ownerId), renderPage: pageRenderer(db, job.ownerId) }, job);
+    } finally {
+      await previews;
+    }
   });
 }
 

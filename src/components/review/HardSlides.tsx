@@ -15,7 +15,7 @@ import { cn } from "@/lib/cn";
 
 type PdfDoc = { numPages: number; getPage: (n: number) => Promise<{ getViewport: (o: { scale: number }) => { width: number; height: number }; render: (o: { canvas: HTMLCanvasElement; canvasContext: CanvasRenderingContext2D; viewport: unknown }) => { promise: Promise<void> } }> };
 
-/** One page of a PDF drawn as a thumbnail once it scrolls into view. */
+/** One page of a PDF drawn in the browser once it scrolls into view (uploads from before slide previews). */
 function Thumb({ doc, n }: { doc: PdfDoc; n: number }) {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
@@ -27,7 +27,7 @@ function Thumb({ doc, n }: { doc: PdfDoc; n: number }) {
       drawn = true;
       void doc.getPage(n).then((page) => {
         const base = page.getViewport({ scale: 1 });
-        const viewport = page.getViewport({ scale: 150 / base.width });
+        const viewport = page.getViewport({ scale: 300 / base.width });
         canvas.width = Math.ceil(viewport.width);
         canvas.height = Math.ceil(viewport.height);
         const ctx = canvas.getContext("2d");
@@ -37,14 +37,31 @@ function Thumb({ doc, n }: { doc: PdfDoc; n: number }) {
     io.observe(canvas);
     return () => io.disconnect();
   }, [doc, n]);
-  return <canvas ref={ref} className="h-auto w-[150px] rounded-[8px] bg-alice" aria-hidden />;
+  return <canvas ref={ref} className="block h-auto w-full rounded-[8px] bg-alice" data-part="slide-canvas" aria-hidden />;
 }
 
-/** A material's pages: a PDF drawn from its stored file, or a .pptx's slide titles and first lines (no rendered pages). */
-function usePages(material: Material) {
+type Pages = {
+  /** Slide previews drawn on the server (2026-11-24): page number → a signed URL. */
+  thumbs: Map<number, string> | null;
+  /** The PDF itself, drawn in the browser, for uploads from before slide previews. */
+  doc: PdfDoc | null;
+  lines: Array<{ n: number; title: string; line: string }> | null;
+  count: number;
+  error: string | null;
+};
+
+/**
+ * A material's pages, loaded the first time the dialog opens (not with every upload card): the slide
+ * previews the server drew (`src/lib/server/thumbnails.ts`) when all of them are there, else the PDF
+ * drawn from its stored file; a .pptx's slide titles and first lines (no rendered pages).
+ */
+function usePages(material: Material, open: boolean): Pages {
   const pptx = material.filename.toLowerCase().endsWith(".pptx");
-  const [state, setState] = useState<{ doc: PdfDoc | null; lines: Array<{ n: number; title: string; line: string }> | null; count: number; error: string | null }>({ doc: null, lines: null, count: 0, error: null });
+  const [wanted, setWanted] = useState(open);
+  if (open && !wanted) setWanted(true);
+  const [state, setState] = useState<Pages>({ thumbs: null, doc: null, lines: null, count: 0, error: null });
   useEffect(() => {
+    if (!wanted) return;
     let alive = true;
     const db = browserSupabase();
     (async () => {
@@ -55,7 +72,12 @@ function usePages(material: Material) {
           const [title = `Slide ${p.n}`, line = ""] = p.text.split("\n").map((l) => l.trim()).filter(Boolean);
           return { n: p.n, title, line };
         });
-        if (alive) setState({ doc: null, lines, count: lines.length, error: null });
+        if (alive) setState({ thumbs: null, doc: null, lines, count: lines.length, error: null });
+        return;
+      }
+      const thumbs = await previews(db, material.id);
+      if (thumbs) {
+        if (alive) setState({ thumbs, doc: null, lines: null, count: thumbs.size, error: null });
         return;
       }
       if (!material.storagePath) throw new Error("Orca has no file for this material.");
@@ -64,13 +86,31 @@ function usePages(material: Material) {
       const pdfjs = await import("pdfjs-dist");
       pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString();
       const doc = (await pdfjs.getDocument({ data: new Uint8Array(await blob.arrayBuffer()) }).promise) as unknown as PdfDoc;
-      if (alive) setState({ doc, lines: null, count: doc.numPages, error: null });
+      if (alive) setState({ thumbs: null, doc, lines: null, count: doc.numPages, error: null });
     })().catch((e: unknown) => alive && setState((s) => ({ ...s, error: `Orca couldn't open this file: ${e instanceof Error ? e.message : String(e)}` })));
     return () => {
       alive = false;
     };
-  }, [material.id, material.storagePath, pptx]);
+  }, [wanted, material.id, material.storagePath, pptx]);
   return state;
+}
+
+/** The server's slide previews for a material, signed for an hour; null unless there is one for every page. */
+async function previews(db: ReturnType<typeof browserSupabase>, materialId: string): Promise<Map<number, string> | null> {
+  const { data: session } = await db.auth.getSession();
+  const owner = session.session?.user.id;
+  if (!owner) return null;
+  const folder = `${owner}/${materialId}`;
+  const [listed, pages] = await Promise.all([
+    db.storage.from("thumbnails").list(folder, { limit: 1000 }),
+    db.from("material_pages").select("n", { count: "exact", head: true }).eq("material_id", materialId),
+  ]);
+  const count = pages.count ?? 0;
+  if (listed.error || pages.error || count === 0 || (listed.data ?? []).length < count) return null;
+  const paths = Array.from({ length: count }, (_, i) => `${folder}/${i + 1}.jpg`);
+  const signed = await db.storage.from("thumbnails").createSignedUrls(paths, 3600);
+  if (signed.error || signed.data.some((d) => !d.signedUrl)) return null;
+  return new Map(signed.data.map((d, i) => [i + 1, d.signedUrl as string]));
 }
 
 /**
@@ -82,7 +122,7 @@ function usePages(material: Material) {
 export function HardSlides({ course, material, open, onClose }: { course: Course; material: Material; open: boolean; onClose: () => void }) {
   const { objectives, flagSlides } = useOrca();
   const mastery = useMasteryByCourse()[course.id];
-  const pages = usePages(material);
+  const pages = usePages(material, open);
   const [selected, setSelected] = useState<number[]>([]);
   const [done, setDone] = useState(false);
   const catalogue = objectives[course.id];
@@ -167,11 +207,15 @@ export function HardSlides({ course, material, open, onClose }: { course: Course
                       data-part="slide-tile"
                       data-page={n}
                       className={cn(
-                        "pressable flex flex-col gap-[6px] rounded-[14px] border-2 p-[8px] text-left",
+                        "pressable flex min-w-0 flex-col gap-[6px] rounded-[14px] border-2 p-[8px] text-left",
                         on ? "border-wisteria-deep bg-periwinkle" : "border-alice-deep bg-alice",
                         info?.why && "cursor-not-allowed opacity-50",
                       )}
                     >
+                      {pages.thumbs?.get(n) && (
+                        // eslint-disable-next-line @next/next/no-img-element -- a signed Storage URL, already small
+                        <img src={pages.thumbs.get(n)} alt="" className="block h-auto w-full rounded-[8px] bg-alice" data-part="slide-preview" />
+                      )}
                       {pages.doc && <Thumb doc={pages.doc} n={n} />}
                       {line ? (
                         <span className="flex flex-col">

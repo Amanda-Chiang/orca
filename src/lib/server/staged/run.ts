@@ -9,6 +9,7 @@ import { PipelineDeferred, PIPELINE_LIMITS, concurrent, type StageJob, type Stag
 import { supabaseJobStore } from "@/lib/server/job-store";
 import { adminClient } from "@/lib/supabase/server";
 import { pageRenderer, figureRenderer } from "@/lib/server/figures";
+import { makeThumbnails } from "@/lib/server/thumbnails";
 import { stepCaller } from "@/lib/server/model";
 import { describeFigures, transcribePages } from "@/lib/pipeline/transcribe";
 import { type CallStep, type RunInput, runUpload, uploadWritingTargets, writeQuestions } from "@/lib/pipeline/run";
@@ -58,6 +59,8 @@ export async function runPipelineStage(job: StageJob): Promise<void> {
     const loaded = await store.course(task.courseId);
     if (!loaded) throw new Error("The course was deleted");
     if (task.phase === "prepare") {
+      // Slide previews are drawn beside the reading; they never fail it (makeThumbnails logs instead).
+      const previews = makeThumbnails(db, job.ownerId, material.id);
       const render = pageRenderer(db, job.ownerId);
       const warnings: Array<{ n: number; reason: string }> = [];
       for (const pass of [{ marked: "needs-vision", done: "vision", read: transcribePages }, { marked: "needs-figure", done: "figure", read: describeFigures }] as const) {
@@ -68,6 +71,7 @@ export async function runPipelineStage(job: StageJob): Promise<void> {
         const updated = new Map(result.read.map((p) => [p.n, p.text]));
         pages = pages.map((p) => updated.has(p.n) ? { ...p, text: updated.get(p.n)!, source: pass.done } : p);
       }
+      await previews;
       await pipelineRpc(db, "finish", { ...job, checkpoint: { warnings, markers: loaded.markers } });
     } else if (task.phase === "structure") {
       for (let attempt = 0; ; attempt++) {
