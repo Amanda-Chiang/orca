@@ -275,6 +275,11 @@ test("a folder of files: one row each with its own type, prefilled from the shar
   await fakeModel({ extract: ONE_TOPIC, perObjective: 2 });
   await createCourse(page, "Logic");
   await page.goto("/add-material");
+  // The page's Upload menu picks files or a whole folder, as Choose a folder does.
+  await page.locator("[data-part=upload-menu]").click();
+  const [chooser] = await Promise.all([page.waitForEvent("filechooser"), page.getByRole("menuitem", { name: "A folder" }).click()]);
+  expect(await chooser.element().evaluate((el) => (el as HTMLInputElement).webkitdirectory)).toBe(true);
+  await expect(page.getByRole("menu")).toHaveCount(0);
   const homework = makePdf([lines("Homework 1", "Simplify x + xy.")]);
   await page.locator('[data-part=file-input]').setInputFiles([DECK, { name: "hw1.pdf", mimeType: "application/pdf", buffer: Buffer.from(homework) }, { name: "notes.txt", mimeType: "text/plain", buffer: Buffer.from("plain text") }]);
   const rows = page.locator("[data-part=batch-item]");

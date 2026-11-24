@@ -7,7 +7,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { MATERIAL_TYPES, MATERIAL_TYPE_LABELS, type MaterialType, formatUSDate, toISODate } from "@/lib/data";
 import { useOrca } from "@/lib/store";
 import { browserSupabase } from "@/lib/supabase/browser";
-import { type UploadOutcome, type UploadStage, filesFromDataTransfer, importText, importWebsite, uploadMaterial, uploadProblem, admitUploads, concurrent, PIPELINE_LIMITS } from "@/lib/uploads";
+import { type UploadOutcome, type UploadStage, filesFromDataTransfer, importText, uploadMaterial, uploadProblem, admitUploads, concurrent, PIPELINE_LIMITS } from "@/lib/uploads";
 import { type BatchItem, BatchList } from "@/components/upload/BatchList";
 import type { MaterialPages } from "@/lib/data";
 import type { ReflectOutput } from "@/lib/pipeline/schemas";
@@ -94,8 +94,14 @@ export default function AddMaterialPage({ searchParams }: PageProps<"/add-materi
   /** The file's pages as the server read them. */
   const [doc, setDoc] = useState<MaterialPages | null>(null);
   const [file, setFile] = useState<File | null>(null);
-  const [websiteUrl, setWebsiteUrl] = useState("");
   const [aiChatUrl, setAiChatUrl] = useState("");
+  const [uploadMenu, setUploadMenu] = useState(false);
+  useEffect(() => {
+    if (!uploadMenu) return;
+    const close = () => setUploadMenu(false);
+    window.addEventListener("click", close);
+    return () => window.removeEventListener("click", close);
+  }, [uploadMenu]);
   const [pastedText, setPastedText] = useState("");
   const [chosenName, setChosenName] = useState<string | null>(null);
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
@@ -131,7 +137,7 @@ export default function AddMaterialPage({ searchParams }: PageProps<"/add-materi
   if (resumeId && phase.kind === "idle" && !file) {
     return <ResumeUpload materialId={resumeId} course={course} onAnother={() => router.replace(`/add-material?course=${course.slug}`)} />;
   }
-  const filename = aiChatUrl || (pastedText.trim() ? `${type} (pasted)` : websiteUrl || chosenName || "Choose a PDF or .pptx…");
+  const filename = aiChatUrl || (pastedText.trim() ? `${type} (pasted)` : chosenName || "Choose a PDF or .pptx…");
   const busy = phase.kind === "sending" || phase.kind === "working";
   const sendable = batch?.filter((it) => it.problem === null) ?? [];
   const batchFailed = sendable.filter((it) => it.status.kind === "failed");
@@ -149,7 +155,6 @@ export default function AddMaterialPage({ searchParams }: PageProps<"/add-materi
     if (files.length === 1) return onFile(files[0]);
     setFile(null);
     setDoc(null);
-    setWebsiteUrl("");
     setAiChatUrl("");
     setPastedText("");
     setChosenName(`${files.length} files`);
@@ -171,7 +176,6 @@ export default function AddMaterialPage({ searchParams }: PageProps<"/add-materi
     setChosenName(f.name);
     setDoc(null);
     setFile(f);
-    setWebsiteUrl("");
     setAiChatUrl("");
     setPastedText("");
     const problem = uploadProblem(f);
@@ -224,12 +228,12 @@ export default function AddMaterialPage({ searchParams }: PageProps<"/add-materi
   /** `again`: the student chose "Upload again" for a file the course already has (a new copy). */
   const submit = async (again = false) => {
     if (batch) return submitBatch();
-    if (!file && !websiteUrl.trim() && !aiChatUrl.trim() && !pastedText.trim()) return;
+    if (!file && !aiChatUrl.trim() && !pastedText.trim()) return;
     const reflection = type === "Homework" ? note.trim() : "";
     const meta = { courseId: course.id, type, assigned, due, reflect: reflection.length > 0, handwritten: type === "Handwritten notes" && isPdf, again, heldBack: holdBack };
     // The form is done with: it gives way to where the student goes next, so Back from there skips it.
     const leave = () => router.replace(due ? "/calendar" : `/course/${course.slug}`);
-    // Pasted text, a chat link or a website: new material, or one the course already has (then nothing is added again).
+    // Pasted text or a chat link: new material, or one the course already has (then nothing is added again).
     const afterImport = (outcome: UploadOutcome) => {
       if (outcome.kind === "read") addMaterial(outcome.material, { saved: true });
       const g = outcome.generation;
@@ -243,14 +247,6 @@ export default function AddMaterialPage({ searchParams }: PageProps<"/add-materi
         const outcome = await importText({ ...(aiChatUrl.trim() ? { url: aiChatUrl.trim() } : {}), ...(pastedText.trim() ? { text: pastedText.trim() } : {}) }, meta);
         afterImport(outcome);
       } catch (error) { setPhase({ kind: "error", message: error instanceof Error ? error.message : (aiChatUrl.trim() ? "The AI chat import failed." : "The pasted text couldn't be saved.") }); }
-      return;
-    }
-    if (websiteUrl.trim()) {
-      try {
-        setPhase({ kind: "sending", stage: "reading" });
-        const outcome = await importWebsite(websiteUrl.trim(), meta);
-        afterImport(outcome);
-      } catch (error) { setPhase({ kind: "error", message: error instanceof Error ? error.message : "The website import failed." }); }
       return;
     }
     if (!file || unreadable) return;
@@ -401,19 +397,32 @@ export default function AddMaterialPage({ searchParams }: PageProps<"/add-materi
           >
             <div className="flex items-center justify-between gap-3">
               <span className={cn("truncate text-[15px] font-bold", chosenName ? "text-prussian" : "text-periwinkle-deep")}>{filename}</span>
-              <span className="flex shrink-0 items-center gap-1 text-[13px] font-semibold text-wisteria-deep">
-                <IconUpload size={16} /> {chosenName ? "Replace" : "Upload"}
+              {/* Upload: files or a whole folder, as the drop target takes either. */}
+              <span className="relative shrink-0" onClick={(e) => e.stopPropagation()}>
+                <button type="button" disabled={busy} aria-haspopup="menu" aria-expanded={uploadMenu} onClick={() => setUploadMenu((o) => !o)} className="flex items-center gap-1 text-[13px] font-semibold text-wisteria-deep" data-part="upload-menu">
+                  <IconUpload size={16} /> {chosenName ? "Replace" : "Upload"}
+                </button>
+                {uploadMenu && (
+                  <span role="menu" className="absolute right-0 top-[24px] z-10 flex w-[150px] flex-col rounded-[12px] border-2 border-alice-deep bg-parchment p-[4px] lip-3 lip-alice">
+                    {([["Files", fileRef], ["A folder", folderRef]] as const).map(([label, ref]) => (
+                      <button key={label} type="button" role="menuitem" onClick={() => { setUploadMenu(false); ref.current?.click(); }} className="rounded-[8px] px-[10px] py-[6px] text-left text-[14px] font-semibold text-prussian hover:bg-alice">
+                        {label}
+                      </button>
+                    ))}
+                  </span>
+                )}
               </span>
             </div>
-            <label className="flex flex-col gap-[6px] text-[13px] font-semibold text-wisteria-deep" onClick={(e) => e.stopPropagation()}>
-              Or import a public course website
-              <input value={websiteUrl} onChange={(e) => { setWebsiteUrl(e.target.value); setFile(null); setChosenName(null); setAiChatUrl(""); setPastedText(""); setPhase({ kind: "idle" }); }} placeholder="https://example.edu/course" className="h-[40px] rounded-[12px] border-2 border-alice-deep bg-parchment px-[12px] text-[14px] font-medium text-prussian outline-none focus:border-wisteria" />
-            </label>
+            <div className="flex flex-col gap-[9px] py-[4px]" aria-hidden>
+              {SKELETON.slice(6, 9).map((w, i) => (
+                <span key={i} className="block h-[8px] rounded-pill bg-alice-deep" style={{ width: `${w}%` }} />
+              ))}
+            </div>
             <div className="flex flex-col gap-[6px]" onClick={(e) => e.stopPropagation()}>
               <span className="text-[13px] font-semibold text-wisteria-deep">Or paste text</span>
-              <textarea value={pastedText} onChange={(e) => { setPastedText(e.target.value); setAiChatUrl(""); setWebsiteUrl(""); setFile(null); setChosenName(null); setPhase({ kind: "idle" }); }} rows={4} placeholder="Paste a syllabus, your notes, or an exported AI chat. The type above decides how it's read." className="resize-y rounded-[12px] border-2 border-alice-deep bg-parchment px-[12px] py-[9px] text-[13px] font-medium text-prussian outline-none focus:border-wisteria" data-part="paste-text" />
+              <textarea value={pastedText} onChange={(e) => { setPastedText(e.target.value); setAiChatUrl(""); setFile(null); setChosenName(null); setPhase({ kind: "idle" }); }} rows={4} placeholder="Paste a syllabus, your notes, or an exported AI chat. The type above decides how it's read." className="resize-y rounded-[12px] border-2 border-alice-deep bg-parchment px-[12px] py-[9px] text-[13px] font-medium text-prussian outline-none focus:border-wisteria" data-part="paste-text" />
               <span className="text-[13px] font-semibold text-wisteria-deep">Or add an AI chat link</span>
-              <input value={aiChatUrl} onChange={(e) => { setAiChatUrl(e.target.value); setPastedText(""); setWebsiteUrl(""); setFile(null); setChosenName(null); if (e.target.value.trim()) setDefault({ type: "AI chat" }); setPhase({ kind: "idle" }); }} placeholder="Public ChatGPT, Claude, or Gemini share link" className="h-[40px] rounded-[12px] border-2 border-alice-deep bg-parchment px-[12px] text-[14px] font-medium text-prussian outline-none focus:border-wisteria" data-part="ai-chat-url" />
+              <input value={aiChatUrl} onChange={(e) => { setAiChatUrl(e.target.value); setPastedText(""); setFile(null); setChosenName(null); if (e.target.value.trim()) setDefault({ type: "AI chat" }); setPhase({ kind: "idle" }); }} placeholder="Public ChatGPT, Claude, or Gemini share link" className="h-[40px] rounded-[12px] border-2 border-alice-deep bg-parchment px-[12px] text-[14px] font-medium text-prussian outline-none focus:border-wisteria" data-part="ai-chat-url" />
               <span className="text-[11px] leading-snug text-wisteria-deep">In an AI chat, your questions tell Orca what to prioritize. AI answers are treated as context, not course authority.</span>
             </div>
 
@@ -528,7 +537,7 @@ export default function AddMaterialPage({ searchParams }: PageProps<"/add-materi
           )}
 
           <motion.div variants={fadeUp} className="flex flex-col gap-[10px]">
-            <Button onClick={() => void submit()} className={DATE_ROW} disabled={busy || Boolean(file && unreadable) || (batch ? batchPending.length === 0 : !chosenName && !websiteUrl.trim() && !aiChatUrl.trim() && !pastedText.trim())}>
+            <Button onClick={() => void submit()} className={DATE_ROW} disabled={busy || Boolean(file && unreadable) || (batch ? batchPending.length === 0 : !chosenName && !aiChatUrl.trim() && !pastedText.trim())}>
               {phase.kind === "working"
                 ? `Building ${course.name}…`
                 : batch
