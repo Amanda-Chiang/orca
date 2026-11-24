@@ -101,7 +101,7 @@ for (let i = 0; i < 6 && !lateQuestions; i++) {
 assert.ok(lateQuestions, "the late upload reaches its questions phase");
 const template = check(await db.from("questions").select("*").eq("course_id", courseId).limit(1).single());
 assert.ok(template);
-const before = check(await db.from("questions").select("id").eq("course_id", courseId))!.length;
+const before = check(await db.from("questions").select("id").eq("objective_id", template.objective_id))!.length;
 const paid = { ...questionFromRow(template), id: crypto.randomUUID(), prompt: "Simplify a + ab using absorption (paid before the crash).", materialId: lateMaterial };
 await pipelineRpc(db, "checkpoint", { ...lateQuestions, checkpoint: { targets: [{ objectiveId: template.objective_id, desired: before + 1 }], written: { [template.topic_id]: [paid] }, dropped: [] } });
 await pipelineRpc(db, "fail", { ...lateQuestions, error: "Synthetic interruption after question writing" });

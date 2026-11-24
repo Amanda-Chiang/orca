@@ -94,10 +94,10 @@ select public.pipeline_canvas_session('{"ownerId":"aaaaaaaa-0000-4000-8000-00000
 select is((select state from public.pipeline_items where id='a7000000-0000-4000-8000-000000000214'),'alias','second import session aliases the already claimed Canvas source');
 select is((public.pipeline_canvas_summary('{"ownerId":"aaaaaaaa-0000-4000-8000-000000000211","sessionId":"a6000000-0000-4000-8000-000000000212"}')->'files'->>'duplicates')::integer,1,'duplicate summary is session-wide, not counted again on each continuation');
 -- Files waiting their turn in a Canvas import that keeps claiming don't expire.
-select public.pipeline_canvas_session('{"ownerId":"aaaaaaaa-0000-4000-8000-000000000211","courseId":"c0000000-0000-4000-8000-000000000211","sessionId":"a6000000-0000-4000-8000-000000000213","canvasCourseId":"101","site":"https://canvas.example.com","summary":{},"items":[{"id":"a7000000-0000-4000-8000-000000000215","name":"Lecture9.pdf","metadata":{"sourceId":"19"}}]}');
-update public.pipeline_items set expires_at=now()+interval '1 minute' where id='a7000000-0000-4000-8000-000000000215';
+select public.pipeline_canvas_session('{"ownerId":"aaaaaaaa-0000-4000-8000-000000000211","courseId":"c0000000-0000-4000-8000-000000000211","sessionId":"a6000000-0000-4000-8000-000000000213","canvasCourseId":"101","site":"https://canvas.example.com","summary":{},"items":[{"id":"a7000000-0000-4000-8000-000000000215","name":"Lecture9.pdf","metadata":{"sourceId":"19"}},{"id":"a7000000-0000-4000-8000-000000000216","name":"Lecture10.pdf","metadata":{"sourceId":"20"}}]}');
+update public.pipeline_items set expires_at=now()+interval '1 minute' where id in ('a7000000-0000-4000-8000-000000000215','a7000000-0000-4000-8000-000000000216');
 select public.pipeline_canvas_claim('{"ownerId":"aaaaaaaa-0000-4000-8000-000000000211","sessionId":"a6000000-0000-4000-8000-000000000213"}');
-select ok((select expires_at>now()+interval '10 minutes' from public.pipeline_items where id='a7000000-0000-4000-8000-000000000215'),'a continuing Canvas import renews its waiting files');
+select ok((select count(*)>0 and bool_and(expires_at>now()+interval '10 minutes') from public.pipeline_items where batch_id='a6000000-0000-4000-8000-000000000213' and not metadata ? 'claimToken'),'a continuing Canvas import renews its waiting files');
 
 -- Atomic rate receipts cover legacy clients and process-only fallback admissions too.
 select public.pipeline_charge_item('{"ownerId":"aaaaaaaa-0000-4000-8000-000000000211","itemId":"e0000000-0000-4000-8000-000000000211"}');

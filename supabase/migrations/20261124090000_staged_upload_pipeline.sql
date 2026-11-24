@@ -406,12 +406,13 @@ begin
   flavor=coalesce((e->>'deep')::boolean,false);
   -- Both source liveness and identity are rechecked AFTER the paid call.
   if not exists(select 1 from public.materials m where m.id=(e->>'material_id')::uuid and m.course_id=r.course_id and m.owner_id=r.owner_id and m.status='ready' and not m.held_back) then warnings=warnings||jsonb_build_array(jsonb_build_object('prompt',left(e->>'prompt',1200),'reason','Its source material was removed while this question was written.')); continue; end if;
+  -- Already stored (a replayed commit after a lost acknowledgement): skip before the claim check, so it isn't reported as dropped.
+  qkey=e->>'prompt_key';
+  if qkey is null or qkey=any(keys) then continue; end if;
   select max(baseline+need) into cap from public.pipeline_question_claims c where c.run_id=r.id and c.token=tok and c.deep=flavor and private.pipeline_canonical(c.objective_id)=o.id and c.lease_until>now();
   if cap is null then warnings=warnings||jsonb_build_array(jsonb_build_object('prompt',left(e->>'prompt',1200),'reason','Question reservation expired or was superseded.')); continue; end if;
   select count(*) into current_count from public.questions q where q.course_id=r.course_id and private.pipeline_canonical(q.objective_id)=o.id and (case when payload->>'policy'='upload' then true else q.deep=flavor end);
   if current_count>=cap then warnings=warnings||jsonb_build_array(jsonb_build_object('prompt',left(e->>'prompt',1200),'reason','Fresh question stock already meets this request.')); continue; end if;
-  qkey=e->>'prompt_key';
-  if qkey is null or qkey=any(keys) then continue; end if;
   keys=keys||qkey;
   desired=e-'prompt_key'||jsonb_build_object('objective_id',o.id,'topic_id',private.pipeline_topic(o.topic_id));
   perform public.save_structure_rows(r.course_id,jsonb_build_object('questions',jsonb_build_array(desired)));
@@ -656,7 +657,8 @@ begin
  if (select count(*) from public.pipeline_items where owner_id=(payload->>'ownerId')::uuid and source='canvas' and state='ingesting' and metadata ? 'claimToken' and expires_at>now())>=2 then return null; end if;
  select * into i from public.pipeline_items where batch_id=(payload->>'sessionId')::uuid and owner_id=(payload->>'ownerId')::uuid and source='canvas' and state='ingesting' and (not metadata ? 'claimToken' or expires_at<now()) order by sequence for update skip locked limit 1;
  if i.id is null then return null; end if;
- update public.pipeline_items set metadata=metadata||jsonb_build_object('claimToken',token),expires_at=now()+interval '5 minutes' where id=i.id;
+ -- Long enough for a 50 MB download and its upload start inside one import request (300 s) with slack.
+ update public.pipeline_items set metadata=metadata||jsonb_build_object('claimToken',token),expires_at=now()+interval '10 minutes' where id=i.id;
  return jsonb_build_object('id',i.id,'token',token,'metadata',i.metadata,'materialId',i.material_id);
 end; $$;
 create function public.pipeline_canvas_finish(payload jsonb) returns jsonb language plpgsql security definer set search_path='' as $$

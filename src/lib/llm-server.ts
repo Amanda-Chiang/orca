@@ -179,6 +179,7 @@ async function openAiRequest(config: LlmConfig, body: object, fetchImpl: typeof 
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+const GATEWAY_OR_TIMEOUT = new Set([408, 502, 504, 524]);
 const UNSENT_CODES = new Set(["ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN"]);
 /** Whether a failed request certainly never reached the provider (refused connection, unknown host). */
 function neverSent(error: unknown): boolean {
@@ -253,12 +254,18 @@ export async function completeJson<T>(
     try { return await work(report); }
     catch (error) {
       // A request the provider answered with an error status never generated anything (4xx refusals
-      // and 5xx/overloaded alike), and neither did one that never connected. Only a timeout or a
-      // connection lost mid-reply stays held as unknown usage, since it may have been billed.
+      // and 5xx/overloaded alike), and neither did one that never connected. A timeout, a connection
+      // lost mid-reply, or a gateway's 502/504/524 (the provider behind it may have finished and
+      // billed) stays held as unknown usage.
       const status = error && typeof error === "object" && "status" in error ? Number(error.status) : 0;
-      if ((status >= 400 && status !== 408) || neverSent(error)) known = true;
+      if ((status >= 400 && !GATEWAY_OR_TIMEOUT.has(status)) || neverSent(error)) known = true;
       throw error;
-    } finally { await reservation?.settle(known); }
+    } finally {
+      // A failed settle must not replace a paid reply: the hold expires to unknown and is released
+      // once its usage is metered (pipeline_reserve_call).
+      try { await reservation?.settle(known); }
+      catch (settleError) { console.error(`A model reservation couldn't be settled: ${settleError instanceof Error ? settleError.message : String(settleError)}`); }
+    }
   };
   if (config.provider === "anthropic") {
     // The SDK's own retries are off: they would retry a spend-limit 429 too. withRetries decides.

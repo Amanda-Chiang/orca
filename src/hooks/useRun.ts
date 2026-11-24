@@ -54,7 +54,8 @@ export function useRun(runId: string | null | undefined): { run: PipelineRun | n
       if (!checked && pastLimit(run)) {
         checked = true;
         const res = await fetch("/api/runs/check", { method: "POST" }).catch(() => null);
-        if (alive && res?.ok) void read();
+        if (!res?.ok) checked = false; // refused (rate limit) or unreachable: ask again on a later poll
+        else if (alive) void read();
       }
     };
     const channel = db

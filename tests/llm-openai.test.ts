@@ -162,3 +162,19 @@ test("a failed usage write is not retried (a retry would be another paid call)",
   }), /model_usage insert failed/);
   assert.equal(calls, 1);
 });
+
+test("a gateway timeout stays held, and a failed settle never replaces a paid reply", async () => {
+  const settlements: boolean[] = [];
+  let calls = 0;
+  const api: typeof fetch = async () => {
+    if (++calls === 1) return new Response("gateway timeout", { status: 504 });
+    return new Response(JSON.stringify({ status: "completed", model: "gpt-6.1-sol", usage: { input_tokens: 12, output_tokens: 5 }, output: [{ type: "message", content: [{ type: "output_text", text: '{"ok":true}' }] }] }), { status: 200, headers: { "content-type": "application/json" } });
+  };
+  const schema = z.object({ ok: z.boolean() });
+  const out = await completeJson({ provider: "openai", model: "gpt-6.1-sol", apiKey: "fake" }, "sys", "prompt", schema, (text) => schema.parse(JSON.parse(text)), {
+    fetch: api, retryBackoffMs: 0,
+    reserveAttempt: async () => ({ settle: async (known) => { settlements.push(known); if (known) throw new Error("settle_call failed"); } }),
+  });
+  assert.deepEqual(out, { ok: true });
+  assert.deepEqual(settlements, [false, true]);
+});
