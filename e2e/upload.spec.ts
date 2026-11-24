@@ -165,6 +165,9 @@ test("removing material: its file, pages and calendar entry go, the objectives o
   expect(row).toEqual({ status: "removed", storage_path: null, content_hash: null });
   const { data: files } = await student.db.storage.from("materials").list(student.id);
   expect(files ?? []).toEqual([]);
+  // Its slide previews go with it.
+  const { data: previews } = await student.db.storage.from("thumbnails").list(`${student.id}/${before.materials[0].id}`);
+  expect(previews ?? []).toEqual([]);
 
   // Not a duplicate any more: the same deck uploads and builds again.
   await upload(page);
@@ -216,8 +219,13 @@ test("which slides were hard: the deck's pages as a grid; tapping a page flags t
   const modal = page.locator("[data-part=hard-slides-modal]");
   const tiles = modal.locator("[data-part=slide-tile]");
   await expect.poll(() => tiles.count(), { timeout: 30_000 }).toBeGreaterThan(12);
-  // Drawn from the stored file in the browser.
-  await expect.poll(() => tiles.first().locator("canvas").evaluate((c: HTMLCanvasElement) => c.width), { timeout: 30_000 }).toBeGreaterThan(0);
+  // The previews the server drew while processing the upload (2026-11-24), not the PDF drawn in the browser.
+  const preview = tiles.first().locator("img[data-part=slide-preview]");
+  await expect.poll(() => preview.evaluate((i: HTMLImageElement) => i.complete && i.naturalWidth), { timeout: 30_000 }).toBeGreaterThan(0);
+  await expect(modal.locator("canvas")).toHaveCount(0);
+  // Each preview fills its tile: the tile's box fits the preview, never narrower than it.
+  const [img, tile] = await Promise.all([preview.boundingBox(), tiles.first().boundingBox()]);
+  expect(Math.abs(tile!.width - (img!.width + 2 * 8 + 2 * 2))).toBeLessThanOrEqual(1);
   // Slide 5 teaches no topic and no objective cites it: nothing to flag.
   await expect(modal.locator("[data-part=slide-tile][data-page='5']")).toBeDisabled();
   // Select all picks every slide that has something to flag, and turns into Clear (owner, 2026-11-08).

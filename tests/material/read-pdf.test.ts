@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { LIMITS } from "../../src/lib/limits.ts";
 import { type ReadPage, UnreadablePdfError, markFigures, readPdf } from "../../src/lib/material/read-pdf.ts";
-import { renderSlide } from "../../src/lib/material/render-slide.ts";
+import { renderSlide, renderThumbnails } from "../../src/lib/material/render-slide.ts";
 import { isHidden, visibleItems } from "../../src/lib/untrusted/hidden-text.ts";
 import { lines, makeDeck, makePdf } from "../fixtures/pdf.ts";
 
@@ -109,6 +109,17 @@ test("a slide renders on the server as a JPEG figure", async () => {
   const whole = await renderSlide(bytes, 5, { keepText: true });
   assert.match(whole, /^data:image\/jpeg;base64,/);
   assert.notEqual(whole, await renderSlide(bytes, 5));
+});
+
+test("every page of a PDF renders as a small JPEG preview, in order, the document opened once", async () => {
+  const bytes = makeDeck();
+  const pages = (await readPdf(bytes)).pages.length;
+  const seen: Array<{ n: number; size: number }> = [];
+  const drawn = await renderThumbnails(bytes, async (n, jpeg) => { seen.push({ n, size: jpeg.length }); });
+  assert.equal(drawn, pages);
+  assert.deepEqual(seen.map((s) => s.n), Array.from({ length: pages }, (_, i) => i + 1));
+  // A JPEG (FF D8), small enough to load a grid of them at once.
+  assert.ok(seen.every((s) => s.size > 500 && s.size < 60_000), JSON.stringify(seen.map((s) => s.size)));
 });
 
 /** A one-page PDF with `text` on it (Helvetica), made by `producer`. */

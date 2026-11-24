@@ -1,3 +1,4 @@
+import { removeThumbnails } from "./thumbnails";
 import { stagedPipeline, pipelineRpc } from "./staged/db";
 /**
  * Uploads (Phase 4 plan, decisions 7, 10 and 13). Two steps, each a route:
@@ -302,6 +303,7 @@ export async function removeMaterial(db: OrcaSupabase, ownerId: string, id: stri
   if (stagedPipeline()) {
     try {
       const result = await pipelineRpc<{ archivedObjectives: number }>(db, "remove_material", { ownerId, materialId: id });
+      await removeThumbnails(db, ownerId, id);
       if (m.storage_path) {
         const removed = await db.storage.from(BUCKET).remove([m.storage_path]);
         if (removed.error) throw fail("remove the file", removed.error);
@@ -375,6 +377,7 @@ export async function removeMaterial(db: OrcaSupabase, ownerId: string, id: stri
   if (pagesError) throw fail("remove the material's pages", pagesError);
   const { error: eventsError } = await db.from("calendar_events").delete().eq("owner_id", ownerId).eq("material_id", id);
   if (eventsError) throw fail("remove the material's calendar entry", eventsError);
+  await removeThumbnails(db, ownerId, id);
   if (m.storage_path) {
     const removed = await db.storage.from(BUCKET).remove([m.storage_path]);
     if (removed.error) throw fail("remove the file", removed.error);
