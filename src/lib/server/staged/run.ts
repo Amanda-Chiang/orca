@@ -28,14 +28,26 @@ import { pipelineSnapshot } from "./snapshot";
 import { coordinateWriting, questionRows, reclaimWriting, writingLease } from "./writing";
 
 interface QuestionCheckpoint { targets: Array<{ objectiveId: string; desired: number }>; written?: Record<string, QuizQuestion[]>; dropped?: PipelineRun["dropped"] }
+/** The database refused a call because this attempt no longer holds its task (`private.pipeline_task`). */
+const isStale = (error: unknown) => error instanceof Error && /Stale pipeline attempt/.test(error.message);
+
 export async function runPipelineStage(job: StageJob): Promise<void> {
   const db = adminClient();
   let task: StageTask;
   try { task = await pipelineRpc<StageTask>(db, "task", { ...job }); } catch { return; } // duplicate/stale delivery
   const store = supabaseJobStore(db, job.ownerId);
-  const checkpoint = (data: Record<string, unknown>) => pipelineRpc(db, "checkpoint", { ...job, ...data });
+  // Once the database says this attempt is stale (its lease expired or another worker took the task),
+  // stop: no more heartbeats, model calls or saves, and no `fail` (that would be refused too).
   let leaseLost = false;
-  const heartbeat = setInterval(() => { void checkpoint({}).catch(() => { leaseLost = true; }); }, 30_000);
+  const lost = (error: unknown) => {
+    if (isStale(error)) { leaseLost = true; clearInterval(heartbeat); }
+    return error;
+  };
+  const checkpoint = async (data: Record<string, unknown>) => {
+    if (leaseLost) throw new Error("Pipeline lease was revoked");
+    try { return await pipelineRpc(db, "checkpoint", { ...job, ...data }); } catch (error) { throw lost(error); }
+  };
+  const heartbeat: ReturnType<typeof setInterval> = setInterval(() => { void checkpoint({}).catch(() => { leaseLost = true; clearInterval(heartbeat); }); }, 30_000);
   const base = stepCaller({ ownerId: job.ownerId, runId: task.runId, kind: "upload", task: job, phase: task.phase }, { guard: "none" });
   if (!base) { clearInterval(heartbeat); await pipelineRpc(db, "fail", { ...job, error: "No AI connected." }); return; }
   // Successful replies survive transaction conflicts and process restarts. Changed prompt inputs never reuse stale answers.
@@ -161,6 +173,8 @@ export async function runPipelineStage(job: StageJob): Promise<void> {
       await pipelineRpc(db, "finish", { ...job });
     }
   } catch (error) {
+    lost(error);
+    if (leaseLost) return; // another attempt owns the task now, or the sweep will requeue it
     const deferred = error instanceof PipelineDeferred || (error instanceof Error && "code" in error && error.code === "55P03");
     try { await pipelineRpc(db, "fail", { ...job, waiting: deferred, error: error instanceof Error ? error.message : String(error) }); } catch { /* stop/lease replacement won; never revive it */ }
   } finally { clearInterval(heartbeat); }

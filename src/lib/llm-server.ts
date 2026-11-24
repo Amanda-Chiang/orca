@@ -209,6 +209,9 @@ async function withRetries<T>(attempt: () => Promise<T>, opts: { retries?: numbe
  * One-shot structured completion. Anthropic uses structured outputs (schema-enforced);
  * OpenAI-compatible providers get JSON mode plus a lenient parse + zod validation.
  */
+/** Input tokens reserved per page image before a call (a padded bound; see `inputBound`). */
+export const IMAGE_TOKEN_BOUND = 6_000;
+
 export async function completeJson<T>(
   config: LlmConfig,
   system: string,
@@ -239,9 +242,13 @@ export async function completeJson<T>(
   const attempt = async <R>(work: (report: NonNullable<typeof opts.onUsage>) => Promise<R>): Promise<R> => {
     const started = Date.now();
     if (opts.ctx && process.env.ORCA_UPLOAD_PIPELINE === "staged") opts.ctx.usageAt = new Date(started).toISOString();
-    // Byte-level text bound includes schema and role framing. Images are rendered at <=1600px;
-    // reserve a deliberately conservative 64k tokens/image rather than estimating chars/4.
-    const inputBound = Buffer.byteLength(system + prompt + (opts.context ?? "") + JSON.stringify(openAiJsonSchema(schema)), "utf8") + 8192 + (opts.images?.length ?? 0) * 64_000;
+    // A padded estimate, not a guess at the bill: the reservation only has to stay above what the
+    // call uses. Text: half a token per UTF-8 byte (English runs about four bytes a token, so 2x
+    // headroom; non-Latin text is several bytes a character), plus the schema and role framing.
+    // Images are rendered at <=1600 px: measured ~1,300 input tokens a page (2026-11-24, 33 calls);
+    // 6,000 also covers a provider's high-resolution ceiling. Was 64,000 a page and a token a byte,
+    // which reserved ~280k for a call using ~9k and held five files' uploads back.
+    const inputBound = Math.ceil(Buffer.byteLength(system + prompt + (opts.context ?? "") + JSON.stringify(openAiJsonSchema(schema)), "utf8") / 2) + 8192 + (opts.images?.length ?? 0) * IMAGE_TOKEN_BOUND;
     const reservation = opts.reserveAttempt ? await opts.reserveAttempt() : process.env.ORCA_UPLOAD_PIPELINE === "staged" && opts.ctx
       ? await (await import("./server/staged/call-admission.ts")).reserveAttempt(opts.ctx, config.model, inputBound, opts.maxTokens ?? 16000)
       : null;

@@ -215,6 +215,19 @@ export function screenMaterial(pages: ReadonlyArray<{ n: number; text: string }>
   return hits;
 }
 
+/** Letters and digits only, lowercased: a quote matches the notes whatever its quote marks, spacing or punctuation. */
+const bare = (text: string) => text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+
+/**
+ * A reported "instruction" that is really the student's own Notes for Orca, which the map call sees
+ * beside the material: theirs, not the file's, so never a warning about the file (2026-11-24).
+ */
+export function fromNotes(quote: string, notes: OrcaNotes | null | undefined): boolean {
+  const q = bare(quote);
+  if (!q || !notes) return false;
+  return [notes.forThisClass, notes.forAllClasses].some((n) => n != null && bare(n).includes(q));
+}
+
 /** Characters of page text in one part of a file: a batch size, not a limit (a long file is mapped in several parts). */
 export const PART_CHARS = 60_000;
 
@@ -323,7 +336,7 @@ export async function runUpload(input: RunInput, deps: RunDeps): Promise<UploadP
       continue;
     }
     mappedParts++;
-    instructionsFound.push(...mapped.instructionsFound.map((q) => sanitize(q, 240).text).filter((q) => q.length > 0));
+    instructionsFound.push(...mapped.instructionsFound.map((q) => sanitize(q, 240).text).filter((q) => q.length > 0 && !fromNotes(q, input.notes)));
 
     /* Topics: the table of contents first (exact name, then reconciliation with the closest topics) */
     const topicByRef = new Map<string, { kind: "topic"; id: string } | { kind: "dropped" }>();

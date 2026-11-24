@@ -30,7 +30,7 @@ const SKELETON = [92, 100, 78, 96, 60, 0, 100, 88, 94, 70, 0, 90, 84];
 const BULK_FROM = 3;
 
 const STAGE_MESSAGE: Record<UploadStage, string> = {
-  hashing: "Checking whether the course already has this file…",
+  hashing: "Preparing the upload…",
   uploading: "Uploading the file…",
   reading: "Reading the slides…",
 };
@@ -188,19 +188,21 @@ export default function AddMaterialPage({ searchParams }: PageProps<"/add-materi
     if (!batch || batchPending.length === 0) return;
     setPhase({ kind: "sending", stage: "uploading" });
     const patch = (id: string, p: Partial<BatchItem>) => setBatch((b) => b && b.map((it) => (it.id === id ? { ...it, ...p } : it)));
-    let firstRun: string | null = null;
+    // Every run the batch started, in list order (not finishing order), shown together on the review.
+    const runOf = new Map<string, string>();
     let failed = 0;
     let duplicates = 0;
     let staged: boolean;
-    try { staged = await admitUploads(course.id, batchPending.map((it) => ({ id: it.id, name: it.file.name, again: it.again, retry: it.status.kind === "failed" })), batch[0].id); }
+    // Every file is added, even one the course already has (owner, 2026-11-24): no duplicate check.
+    try { staged = await admitUploads(course.id, batchPending.map((it) => ({ id: it.id, name: it.file.name, again: true, retry: it.status.kind === "failed" })), batch[0].id); }
     catch (error) { setPhase({ kind: "error", message: error instanceof Error ? error.message : "Couldn't prepare the upload list." }); return; }
     await concurrent(batchPending, staged ? PIPELINE_LIMITS.ingest : 1, async (it) => {
-      const meta = { courseId: course.id, ...(staged ? { admissionId: it.id } : {}), type: it.type, assigned: it.assigned, due: it.due, reflect: false, handwritten: it.type === "Handwritten notes" && uploadKind(it.file.name, it.file.type) === "pdf", again: it.again === true, heldBack: it.heldBack };
+      const meta = { courseId: course.id, ...(staged ? { admissionId: it.id } : {}), type: it.type, assigned: it.assigned, due: it.due, reflect: false, handwritten: it.type === "Handwritten notes" && uploadKind(it.file.name, it.file.type) === "pdf", again: true, heldBack: it.heldBack };
       try {
         const outcome = await uploadMaterial(it.file, meta, (stage) => patch(it.id, { status: { kind: "sending", message: STAGE_MESSAGE[stage] } }));
         if (outcome.kind === "read") addMaterial(outcome.material, { saved: true });
         const g = outcome.generation;
-        if ("runId" in g && firstRun === null) firstRun = g.runId;
+        if ("runId" in g) runOf.set(it.id, g.runId);
         if (outcome.kind === "duplicate") duplicates++;
         patch(it.id, { status: { kind: outcome.kind === "duplicate" ? "duplicate" : "done" }, again: false });
       } catch (error) {
@@ -212,13 +214,17 @@ export default function AddMaterialPage({ searchParams }: PageProps<"/add-materi
       setPhase({ kind: "error", message: `${failed} of ${batchPending.length} files didn't go through. Fix what each one says and send them again, or go on to the review.` });
       return;
     }
-    // Files the course already has: nothing is added for them unless the student picks Upload again on the row.
-    if (duplicates > 0) {
-      setPhase({ kind: "error", message: `${course.name} already has ${duplicates === 1 ? "1 of these files" : `${duplicates} of these files`}. Choose Upload again on any you want added as a new copy, or go on to the review.` });
-      return;
-    }
-    setPhase({ kind: "working", message: firstRun ? "Orca is building topics and questions from them." : `Saved to ${course.name}.` });
-    window.setTimeout(() => router.replace(firstRun ? `/course/${course.slug}/review?run=${firstRun}` : `/course/${course.slug}`), 1200);
+    // Commented out with the duplicate check (owner, 2026-11-24): files are always added, so none comes back a duplicate.
+    // // Files the course already has: nothing is added for them unless the student picks Upload again on the row.
+    // if (duplicates > 0) {
+    //   setPhase({ kind: "error", message: `${course.name} already has ${duplicates === 1 ? "1 of these files" : `${duplicates} of these files`}. Choose Upload again on any you want added as a new copy, or go on to the review.` });
+    //   return;
+    // }
+    void duplicates;
+    const started = batchPending.flatMap((it) => runOf.get(it.id) ?? []);
+    setPhase({ kind: "working", message: started.length ? "Orca is building topics and questions from them." : `Saved to ${course.name}.` });
+    const review = started.length > 1 ? `?run=${started[0]}&also=${started.slice(1).join(",")}` : started.length ? `?run=${started[0]}` : null;
+    window.setTimeout(() => router.replace(review ? `/course/${course.slug}/review${review}` : `/course/${course.slug}`), 1200);
   };
 
   /** `again`: the student chose "Upload again" for a file the course already has (a new copy). */
@@ -257,7 +263,8 @@ export default function AddMaterialPage({ searchParams }: PageProps<"/add-materi
     try {
       const outcome = await uploadMaterial(
         file,
-        meta,
+        // No duplicate check for files (owner, 2026-11-24): a file the course already has is added again.
+        { ...meta, again: true },
         (stage) => setPhase({ kind: "sending", stage }),
         // In the URL from here on (without re-rendering this page mid-upload): a reload follows this
         // upload instead of showing an empty form.
@@ -400,16 +407,25 @@ export default function AddMaterialPage({ searchParams }: PageProps<"/add-materi
             className="pressable flex aspect-[8.5/11] cursor-pointer flex-col gap-[14px] overflow-hidden px-[28px] pb-[28px] pt-[22px]"
           >
             <div className="flex items-center justify-between gap-3">
-              <span className={cn("truncate text-[15px] font-bold", chosenName ? "text-prussian" : "text-periwinkle-deep")}>{filename}</span>
+              <span className="flex min-w-0 items-baseline gap-[8px]">
+                <span className={cn("truncate text-[15px] font-bold", chosenName ? "text-prussian" : "text-periwinkle-deep")}>{filename}</span>
+                {file && !doc && phase.kind !== "sending" && !unreadable && (
+                  <span className="shrink-0 text-[13px] font-semibold text-wisteria-deep" data-part="file-size">
+                    {(file.size / 1024 / 1024).toFixed(1)} MB
+                  </span>
+                )}
+              </span>
               {/* Upload files or a whole folder (every PDF and .pptx in it): a browser's picker takes one or the other. */}
               <span className="flex shrink-0 items-center gap-[12px]" onClick={(e) => e.stopPropagation()}>
-                {([["files", "Upload files", fileRef], ["folder", "Upload folder", folderRef]] as const).map(([part, label, ref]) => (
+                {([["files", "Upload a file", fileRef], ["folder", "Upload folder", folderRef]] as const).map(([part, label, ref]) => (
                   <button key={part} type="button" disabled={busy} onClick={() => ref.current?.click()} className="flex items-center gap-1 text-[13px] font-semibold text-wisteria-deep hover:underline" data-part={`upload-${part}`}>
                     <IconUpload size={16} /> {label}
                   </button>
                 ))}
               </span>
             </div>
+            {/* Several files: their list takes this space (the other ways in are for one thing at a time). */}
+            {!batch && (<>
             <label className="flex flex-col gap-[6px] text-[13px] font-semibold text-wisteria-deep" onClick={(e) => e.stopPropagation()}>
               Or import a public course website
               <input value={websiteUrl} onChange={(e) => { setWebsiteUrl(e.target.value); setFile(null); setChosenName(null); setAiChatUrl(""); setPastedText(""); setPhase({ kind: "idle" }); }} placeholder="https://example.edu/course" className="h-[40px] rounded-[12px] border-2 border-alice-deep bg-parchment px-[12px] text-[14px] font-medium text-prussian outline-none focus:border-wisteria" />
@@ -421,18 +437,13 @@ export default function AddMaterialPage({ searchParams }: PageProps<"/add-materi
               <input value={aiChatUrl} onChange={(e) => { setAiChatUrl(e.target.value); setPastedText(""); setWebsiteUrl(""); setFile(null); setChosenName(null); if (e.target.value.trim()) setDefault({ type: "AI chat" }); setPhase({ kind: "idle" }); }} placeholder="Public ChatGPT, Claude, or Gemini share link" className="h-[40px] rounded-[12px] border-2 border-alice-deep bg-parchment px-[12px] text-[14px] font-medium text-prussian outline-none focus:border-wisteria" data-part="ai-chat-url" />
               <span className="text-[11px] leading-snug text-wisteria-deep">In an AI chat, your questions tell Orca what to prioritize. AI answers are treated as context, not course authority.</span>
             </div>
+            </>)}
 
             {phase.kind === "sending" && !batch && (
               <div className="flex flex-col gap-[8px]" role="status">
                 <ProgressBar value={phase.stage === "hashing" ? 0.1 : phase.stage === "uploading" ? 0.4 : 0.8} height={10} label="Uploading" />
                 <span className="text-[13px] font-semibold text-wisteria-deep">{STAGE_MESSAGE[phase.stage]}</span>
               </div>
-            )}
-
-            {file && !doc && phase.kind !== "sending" && !unreadable && (
-              <span className="text-[13px] font-semibold text-wisteria-deep" data-part="file-size">
-                {(file.size / 1024 / 1024).toFixed(1)} MB · Orca reads it when you add it
-              </span>
             )}
 
             {batch ? (
@@ -446,10 +457,11 @@ export default function AddMaterialPage({ searchParams }: PageProps<"/add-materi
                   compact={bulk}
                   onChange={(id, p) => setBatch((b) => b && b.map((it) => (it.id === id ? { ...it, ...p, edited: true } : it)))}
                   onRemove={(id) => setBatch((b) => (b && b.length > 1 ? b.filter((it) => it.id !== id) : null))}
-                  onUploadAgain={(id) => {
-                    setBatch((b) => b && b.map((it) => (it.id === id ? { ...it, again: true, status: { kind: "waiting" } } : it)));
-                    setPhase({ kind: "idle" });
-                  }}
+                  // Commented out with the duplicate check (owner, 2026-11-24).
+                  // onUploadAgain={(id) => {
+                  //   setBatch((b) => b && b.map((it) => (it.id === id ? { ...it, again: true, status: { kind: "waiting" } } : it)));
+                  //   setPhase({ kind: "idle" });
+                  // }}
                 />
               </div>
             ) : doc ? (
@@ -485,7 +497,6 @@ export default function AddMaterialPage({ searchParams }: PageProps<"/add-materi
           <motion.section variants={fadeUp} className="flex flex-col gap-[14px]" data-part="material-type" data-type={type}>
             <h2 className="text-[17px] font-bold text-prussian">What kind of material is this?</h2>
             <Select label="What kind of material is this?" value={type} options={MATERIAL_TYPES} labels={MATERIAL_TYPE_LABELS} onChange={(t) => setDefault({ type: t })} className="self-start" />
-            {batch && <span className="text-[13px] font-medium text-wisteria-deep">Applies to every file on the list; change any one of them on its row.</span>}
             {/* Hold-back (contract section 5): one file or pasted text; each batch row has its own box. */}
             {!batch && (
               <label className="flex items-center gap-[10px] text-[15px] font-semibold text-prussian">
@@ -553,11 +564,12 @@ export default function AddMaterialPage({ searchParams }: PageProps<"/add-materi
               {phase.kind === "duplicate" && (
                 <motion.span key="dup" variants={fadeUp} initial="hidden" animate="show" exit="exit" className="text-[14px] font-bold text-prussian" role="status">
                   {course.name} already has this file ({phase.filename}), so nothing was added.{" "}
+                  {/* Commented out with the duplicate check (owner, 2026-11-24): a file is never answered as a duplicate now.
                   {file && (
                     <button type="button" onClick={() => void submit(true)} className="font-bold text-wisteria-deep underline underline-offset-2" data-part="upload-again">
                       Upload it again
                     </button>
-                  )}
+                  )} */}
                 </motion.span>
               )}
               {phase.kind === "error" && (

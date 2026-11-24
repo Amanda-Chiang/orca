@@ -11,7 +11,6 @@ import { NO_STORE } from "./student";
 export type RateVerdict = { ok: true; count: number } | { ok: false; count: number; retryAfterSeconds: number; message: string };
 
 const WHAT: Record<RateAction, string> = {
-  upload: "uploads",
   reflect: "reflection matches",
   grade: "answers graded",
   topUp: "top-ups",

@@ -47,7 +47,7 @@ async function createCourse(page: Page, name: string) {
 async function upload(page: Page, type = "Lecture") {
   await page.goto("/add-material");
   await page.locator('[data-part=file-input]').setInputFiles(DECK);
-  await expect(page.locator("[data-part=file-size]")).toHaveText(/^\d+\.\d MB · Orca reads it when you add it$/);
+  await expect(page.locator("[data-part=file-size]")).toHaveText(/^\d+\.\d MB$/);
   await page.getByLabel("What kind of material is this?").selectOption(type);
   await page.getByRole("button", { name: "Add to course" }).click();
 }
@@ -149,7 +149,7 @@ test("removing material: its file, pages and calendar entry go, the objectives o
   await page.goto("/course/logic/review?tab=uploads");
   const card = page.locator("[data-part=upload-card]").filter({ hasText: DECK_NAME });
   await card.locator("[data-part=remove-material]").click();
-  await expect(card.locator("[data-part=remove-offer]")).toContainText("the objectives only it taught are archived");
+  await expect(card.locator("[data-part=delete-upload-dialog]")).toContainText("only this file taught leave your course");
   await card.locator("[data-part=remove-confirm]").click();
   await expect(page.locator("[data-part=upload-card]")).toHaveCount(0);
 
@@ -348,31 +348,19 @@ test("an upload keeps its place in the URL: a reload follows it to its review, o
   await expect(page.locator("[data-part=resume-upload]")).toContainText("half.pdf didn't finish uploading before the page reloaded.", { timeout: 15_000 });
 });
 
-test("re-uploading the same deck is recognised by its content and adds nothing, unless the student chooses Upload it again", async ({ page, student }) => {
+test("uploading the same deck again adds a second copy, built like any upload (no duplicate check, 2026-11-24)", async ({ page, student }) => {
   await fakeModel({ extract: ONE_TOPIC, perObjective: 6 });
   await createCourse(page, "Logic");
   await upload(page);
-  // A first upload: the warm-up writes one question for its objective.
-  await expect(page.locator("[data-part=run-summary]")).toContainText("1 new topic, 1 new objective, 0 existing objectives covered again, 1 question added.", { timeout: 60_000 });
+  await expect(page.locator("[data-part=run-summary]")).toContainText("1 new topic, 1 new objective", { timeout: 60_000 });
   await upload(page);
-  await expect(page.getByText(`Logic already has this file (${DECK_NAME}), so nothing was added.`)).toBeVisible({ timeout: 30_000 });
-  expect((await fakeCalls()).filter((s) => s === "map")).toHaveLength(1);
-  const state = await stored(page, student);
-  expect(state.materials).toHaveLength(1);
-  expect(state.runs).toHaveLength(1);
-  const { count } = await student.db.from("materials").select("id", { count: "exact", head: true });
-  expect(count).toBe(1);
-
-  // The student wants it anyway: a second copy, read and built like any upload.
-  await page.locator("[data-part=upload-again]").click();
-  await expect(page).toHaveURL(/\/course\/logic\/review\?run=/, { timeout: 30_000 });
-  await expect.poll(async () => (await student.db.from("materials").select("filename, status, content_hash")).data?.length, { timeout: 30_000 }).toBe(2);
-  const { data: copies } = await student.db.from("materials").select("status, content_hash");
+  await expect.poll(async () => (await student.db.from("materials").select("id")).data?.length, { timeout: 30_000 }).toBe(2);
+  const { data: copies } = await student.db.from("materials").select("content_hash");
   expect(new Set(copies!.map((c) => c.content_hash)).size).toBe(1);
   await expect.poll(async () => (await student.db.from("pipeline_runs").select("id")).data?.length, { timeout: 30_000 }).toBe(2);
 });
 
-test("a job that fails says why on the review screen, saves nothing, and uploading again retries it", async ({ page, student }) => {
+test("a job that fails says why on the review screen, saves nothing, and uploading the file again builds a new copy", async ({ page, student }) => {
   await fakeModel({ extract: ONE_TOPIC, fail: { step: "map", message: "The fake API is having a bad day." } });
   await createCourse(page, "Logic");
   await upload(page);
@@ -384,15 +372,13 @@ test("a job that fails says why on the review screen, saves nothing, and uploadi
   expect(state.courses[0].topics).toEqual([]);
   expect(state.runs).toEqual([expect.objectContaining({ status: "failed", error: expect.stringContaining("bad day") })]);
 
-  // The file is kept; uploading it again (now that the model answers) builds it.
+  // Uploading it again (now that the model answers) adds a new copy and builds it; the failed one keeps its Try again.
   await fakeModel({ extract: ONE_TOPIC, perObjective: 2 });
   await upload(page);
   await expect(page.locator("[data-part=run-summary]")).toContainText("1 new topic, 1 new objective, 0 existing objectives covered again, 1 question added.", { timeout: 60_000 });
   state = await stored(page, student);
-  expect(state.materials).toHaveLength(1);
-  // The retry keeps the failed run's time (its place in line), so the two share it: compare as a set.
+  expect(state.materials).toHaveLength(2);
   expect(state.runs.map((r) => r.status).sort()).toEqual(["done", "failed"]);
-  expect(new Set(state.runs.map((r) => r.at)).size).toBe(1);
 });
 
 /* ── The routes directly: limits, a failed read, hidden text, another student ── */
