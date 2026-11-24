@@ -58,3 +58,18 @@ begin
  end loop;
  return null;
 end; $$;
+
+-- A worker told to wait (model capacity, budget, a busy objective) parks its phase as waiting. The
+-- run then carries no error, since pipeline_runs allows one only on a failed run
+-- (pipeline_runs_check): with it set, this update was refused, the worker ended silently, and the
+-- phase stayed running until its twelve-minute lease ran out. The reason stays in progress.message
+-- and on the task row.
+create or replace function public.pipeline_fail(payload jsonb) returns jsonb language plpgsql security definer set search_path='' as $$
+declare t public.pipeline_tasks; waiting boolean=coalesce((payload->>'waiting')::boolean,false);
+begin
+ t=private.pipeline_task(payload);
+ delete from public.pipeline_question_claims where run_id=t.run_id and token=t.token;
+ update public.pipeline_tasks set state=case when waiting then 'waiting' else 'failed' end,error=left(payload->>'error',800),available_at=now()+interval '1 minute',lease_until=null where id=t.id;
+ update public.pipeline_runs set status=case when waiting then 'waiting' else 'failed' end,error=case when waiting then null else left(payload->>'error',800) end,progress=case when waiting then jsonb_build_object('stage','waiting','message',payload->>'error') else null end where id=t.run_id;
+ return '{}';
+end; $$;
