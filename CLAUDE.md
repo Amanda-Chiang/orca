@@ -304,7 +304,7 @@ them silently; list what you assumed.
 - The superpowers skills named below may not be installed in every session; if they aren't,
   follow the same flow by hand (plan doc first, then task-by-task commits with tests).
 
-**Map of the docs.** `docs/BACKEND-ROADMAP.md` (decisions + phases, what's done), `docs/MASTERY-PLAN.md`
+**Map of the docs.** `docs/TESTING.md` (what test to write, where, and when to stop), `docs/BACKEND-ROADMAP.md` (decisions + phases, what's done), `docs/MASTERY-PLAN.md`
 (learner model), `docs/TO-DISCUSS.md` (open questions), `docs/superpowers/plans/` (per-phase and
 per-feature plans with status notes), `docs/superpowers/specs/` (designs agreed in brainstorming),
 `docs/QUIZ-RUBRIC.md` (what makes a good question), `docs/OBJECTIVES-ALD.md`
@@ -733,6 +733,11 @@ now, so that part needs rethinking before it's planned.
   in `npm run dev` or with one e2e spec, not the whole suite. Run `npm run test:db` only when a
   migration changed. No plan doc, no subagents or reviews, no worktrees. Update docs only when
   setup or a decision changed. Commit messages are one or two lines.
+- **Tests: read `docs/TESTING.md` before writing one.** In short: pick the lowest layer that sees the bug
+  (unit, pgTAP, `check:routes`/`check:connector`, Playwright); add a step to the flow the change belongs
+  to instead of a one-off test; cover signed out, another student, one bad input, doing it twice and the
+  limit where they apply, and no more; fake only the model and setup rows students can't write; break
+  the code once to see a security or data-loss test fail.
 - **Merge or deploy gate (once, not per change).** Before merging a branch or deploying: `npm test`,
   `npm run test:db`, `npm run test:e2e`, `npm run check:isolation`, `npm run check:evidence`,
   `npm run check:routes`, `npm run check:connector`.
