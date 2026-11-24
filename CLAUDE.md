@@ -722,6 +722,11 @@ now, so that part needs rethinking before it's planned.
 ## Conventions
 
 - Keep screens thin: data from `useOrca()`, visuals from components, timing from `motion.ts`.
+- **UI text stays minimal (owner, 2026-11-24).** Pages should be clean and explain themselves
+  through layout, labels and controls. Don't add subtitles under headings, blurbs restating
+  what a section is for, "how this works" paragraphs, or cheerful filler. A short label or a
+  state the student needs to act on (an error, an empty state, a confirmation) is fine. When in
+  doubt, leave the explanation out.
 - Pixel values from Figma are fine inline (`text-[22px]`, `rounded-[20px]`); colors must be tokens.
 - **Fix mode (the default for bug fixes and small changes).** Make the narrowest fix, then run
   only `npx tsc --noEmit`, `npx eslint` on the changed files, and the one unit test file covering
