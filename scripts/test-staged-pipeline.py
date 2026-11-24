@@ -23,7 +23,8 @@ try:
     sql(schema.decode())
     if sql("select exists(select 1 from information_schema.columns where table_schema='public' and table_name='materials' and column_name='held_back');").decode().splitlines()[2].strip() != 't':
         sql((root/'supabase/migrations/20261110130000_cram_mode.sql').read_text())
-    sql((root/'supabase/migrations/20261110160000_staged_upload_pipeline.sql').read_text())
+    if sql("select to_regclass('public.pipeline_tasks') is not null;").decode().splitlines()[2].strip() != 't':
+        sql((root/'supabase/migrations/20261124090000_staged_upload_pipeline.sql').read_text())
     sql("grant usage on schema public,private,auth to service_role; grant all on all tables in schema public to service_role; grant execute on all functions in schema public to service_role;")
     sql("""create function public.pipeline_test_seed(payload jsonb) returns jsonb language plpgsql security definer as $$ begin
       insert into auth.users(id,email) values((payload->>'ownerId')::uuid,'stage-integration@example.com');

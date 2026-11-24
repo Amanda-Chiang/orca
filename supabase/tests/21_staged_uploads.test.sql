@@ -56,6 +56,13 @@ select public.pipeline_settle_call('{"ownerId":"aaaaaaaa-0000-4000-8000-00000000
 select is((select state from public.pipeline_call_reservations where id='a1000000-0000-4000-8000-000000000211'),'unknown','lost reply not refunded as free');
 select is(public.pipeline_reserve_call((select value from calls where name='budget')||jsonb_build_object('id','a1000000-0000-4000-8000-000000000216','tokens',2000000))->>'reason','daily-tokens','unknown and active reservations protect token ceiling');
 select is(public.pipeline_reserve_call((select value from calls where name='budget')||jsonb_build_object('id','a1000000-0000-4000-8000-000000000217','globalCap',0.02))->>'reason','global-budget','global ceiling includes held dollars');
+select is((public.pipeline_reserve_call((select value from calls where name='budget')||jsonb_build_object('id','a1000000-0000-4000-8000-000000000218'))->>'ok')::boolean,true,'a fourth active upload call fills the owner permits again');
+select is(public.pipeline_reserve_call((select value from calls where name='budget')||jsonb_build_object('id','a1000000-0000-4000-8000-000000000219'))->>'reason','capacity','a fifth upload call waits');
+select is((public.pipeline_reserve_call((select value from calls where name='budget')||jsonb_build_object('id','a1000000-0000-4000-8000-000000000220','kind','grade'))->>'ok')::boolean,true,'grading never waits behind the student''s own uploads');
+-- An unknown hold whose cut-off reply was metered after all is released, not charged twice.
+insert into public.model_usage(owner_id,kind,model,input_tokens,output_tokens,cost_usd,attempt_id) values('aaaaaaaa-0000-4000-8000-000000000211','upload','gpt-6.1-sol',10,10,0.001,'a1000000-0000-4000-8000-000000000211');
+select public.pipeline_reserve_call((select value from calls where name='budget')||jsonb_build_object('id','a1000000-0000-4000-8000-000000000221','kind','grade'));
+select is((select state from public.pipeline_call_reservations where id='a1000000-0000-4000-8000-000000000211'),'settled','a metered unknown hold is settled');
 
 -- Objective claims are shared by uploads/top-ups, not just exact prompt deduplication.
 insert into public.topics(id,owner_id,course_id,name,review,pos_x,pos_y,sort_order) values('a2000000-0000-4000-8000-000000000211','aaaaaaaa-0000-4000-8000-000000000211','c0000000-0000-4000-8000-000000000211','Logic','confirmed',0,0,0);
@@ -86,6 +93,11 @@ select is(public.pipeline_canvas_claim('{"ownerId":"aaaaaaaa-0000-4000-8000-0000
 select public.pipeline_canvas_session('{"ownerId":"aaaaaaaa-0000-4000-8000-000000000211","courseId":"c0000000-0000-4000-8000-000000000211","sessionId":"a6000000-0000-4000-8000-000000000212","canvasCourseId":"101","site":"https://canvas.example.com","summary":{},"items":[{"id":"a7000000-0000-4000-8000-000000000214","name":"Lecture1.pdf","metadata":{"sourceId":"11"}}]}');
 select is((select state from public.pipeline_items where id='a7000000-0000-4000-8000-000000000214'),'alias','second import session aliases the already claimed Canvas source');
 select is((public.pipeline_canvas_summary('{"ownerId":"aaaaaaaa-0000-4000-8000-000000000211","sessionId":"a6000000-0000-4000-8000-000000000212"}')->'files'->>'duplicates')::integer,1,'duplicate summary is session-wide, not counted again on each continuation');
+-- Files waiting their turn in a Canvas import that keeps claiming don't expire.
+select public.pipeline_canvas_session('{"ownerId":"aaaaaaaa-0000-4000-8000-000000000211","courseId":"c0000000-0000-4000-8000-000000000211","sessionId":"a6000000-0000-4000-8000-000000000213","canvasCourseId":"101","site":"https://canvas.example.com","summary":{},"items":[{"id":"a7000000-0000-4000-8000-000000000215","name":"Lecture9.pdf","metadata":{"sourceId":"19"}}]}');
+update public.pipeline_items set expires_at=now()+interval '1 minute' where id='a7000000-0000-4000-8000-000000000215';
+select public.pipeline_canvas_claim('{"ownerId":"aaaaaaaa-0000-4000-8000-000000000211","sessionId":"a6000000-0000-4000-8000-000000000213"}');
+select ok((select expires_at>now()+interval '10 minutes' from public.pipeline_items where id='a7000000-0000-4000-8000-000000000215'),'a continuing Canvas import renews its waiting files');
 
 -- Atomic rate receipts cover legacy clients and process-only fallback admissions too.
 select public.pipeline_charge_item('{"ownerId":"aaaaaaaa-0000-4000-8000-000000000211","itemId":"e0000000-0000-4000-8000-000000000211"}');

@@ -8,7 +8,9 @@ is the existing whole-upload queue. This branch has not activated hosted process
 `/api/materials/admit` reserves an ordered manifest before a browser hashes/uploads files.
 Single files, pasted notes, chat text and websites use singleton admissions. Folder ingestion uses
 two workers. Canvas freezes the selected files and syllabus in a durable import session before
-claiming up to two downloads; continuations reuse the session rather than selecting again.
+claiming up to two downloads; continuations reuse the session rather than selecting again. Each
+claim and continuation renews the session's waiting files, so a long import doesn't expire its own
+queue; an abandoned import's files still expire fifteen minutes after its last claim.
 Byte verification binds each item to its canonical material and parent run. Verified duplicates
 become aliases and release the ordering barrier.
 
@@ -29,10 +31,13 @@ The phase path is `uploads.ts` / `server/canvas.ts` â†’ `server/materials.ts` â†
 
 Task rows are the durable dispatch outbox. Both inline mode and Trigger use the same database
 claims. Trigger completion dispatches successors; the hourly sweep and `/api/runs/check` recover
-lost dispatches and expired attempts. Browser ingestion expires after fifteen minutes and is
+lost dispatches and expired attempts. A page following a staged run asks `/api/runs/check` at most
+once a minute, and the route is rate-limited per student (`runsCheck`). Browser ingestion expires after fifteen minutes and is
 recoverable only if the actual stored bytes exist. Expiry cannot reconstruct an abandoned upload.
 Pause lets an active phase settle and blocks subsequent phases. Stop fences the attempt; already
-saved structure remains. Retry resumes unfinished phases without replaying a committed structure.
+saved structure remains. Retry resumes unfinished phases without replaying a committed structure; a questions phase
+that had already written its questions claims their stock again and commits them without paying
+again. Retry never turns an alias back into an active item.
 
 The database owns ordering, leases, revision checks and committing transactions. Browser roles
 can read their own manifest items but cannot mutate pipeline internals. Server RPCs are
@@ -46,9 +51,14 @@ owner and `ORCA_MODEL_CONCURRENCY` globally (default twenty), plus existing dail
 global dollar limits. Owner days use the student's timezone; global dollars use UTC. Page charges
 are idempotent. Usage retains the attempt's admission time across midnight.
 
-Known usage settles the reservation; a lost response retains an unknown-usage hold for its budget
-day. Reservation estimates can cause earlier waiting than actual billing would require. There is
-no strict round-robin provider fairness or reserved interactive capacity in this implementation.
+Known usage settles the reservation. So does a request the provider answered with an error status
+(4xx other than 408, and 5xx/overloaded) or one that never connected (refused, unknown host): none
+generated anything. Only a timeout or a connection lost mid-reply retains an unknown-usage hold for
+its budget day, and a hold whose cut-off reply was metered after all (`model_usage.attempt_id`) is
+released at the next reservation. Reservation estimates can cause earlier waiting than actual
+billing would require. Prose grading is interactive: it skips the four per-owner permits (and isn't
+counted in them) but still takes a provider slot and the budgets; when those are full it answers
+429 and the student marks the answer. A failed usage write is never retried as a provider failure.
 A capacity miss parks the phase instead of holding an execution worker polling the provider.
 
 Parallelism does not itself add model calls. Successful paid calls are cached by prompt, model and
@@ -67,7 +77,7 @@ Use the same flag on the web server and Trigger workers. Do not switch a running
 flag independently of its workers. The migration is additive with its control row disabled.
 
 1. Finish the repository merge gate and apply
-   `supabase/migrations/20261110160000_staged_upload_pipeline.sql` to the intended environment
+   `supabase/migrations/20261124090000_staged_upload_pipeline.sql` to the intended environment
    through the normal reviewed migration workflow. Deploy compatible web and worker code.
 2. Stop new admissions temporarily and drain legacy running or handed-off jobs. Inspect
    `npm run pipeline:uploads -- status`. The database refuses cutover while legacy workers remain.
@@ -100,7 +110,7 @@ saved structure or migrate protocol-2 work backwards.
   executes the real phase workers, folder overlap, topic reuse, source union, once-only warm-up,
   question-only retry, and held-back exams. Outbound model requests are restricted to the local fake server.
 
-The local production build is blocked by this environment denying Turbopack's internal process
-port bind while processing KaTeX CSS. Browser, HTTP isolation and evidence merge-gate suites still
-need to run in the normal locked local stack before merge. No real-model benchmark or hosted
-activation has been performed.
+Run both staged suites through the stack lock (`npm run locked -- npm run test:uploads:db`, then
+`test:uploads:integration`); neither is in CI yet. Browser, HTTP isolation and evidence merge-gate
+suites still need to run in the normal locked local stack before merge. No real-model benchmark or
+hosted activation has been performed.

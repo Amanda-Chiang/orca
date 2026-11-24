@@ -4,6 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 import { pipelineRpc } from "../src/lib/server/staged/db.ts";
 import { runPipelineStage } from "../src/lib/server/staged/run.ts";
 import type { OrcaSupabase } from "../src/lib/supabase/server.ts";
+import { questionFromRow } from "../src/lib/supabase/app-rows.ts";
 import type { StageJob } from "../src/lib/jobs/staged/types.ts";
 import { type ExtractScenario } from "../tests/support/extract-scenario.ts";
 
@@ -81,6 +82,40 @@ assert.ok(obj && Array.isArray(obj.signals));
 assert.equal(obj.signals.length, 3, "all files' source signals survive ordered extraction");
 console.log("Folder overlap, catalogue reuse, source union, once-only warm-up and question-only retry passed.");
 
+// Questions already written (and paid for) survive a failed commit: the retry resumes from the
+// `written` checkpoint, claims the stock again under its new token and commits them.
+const lateItem = crypto.randomUUID(), lateMaterial = crypto.randomUUID();
+await pipelineRpc(db, "admit", { ownerId, courseId, batchId: lateItem, source: "browser", items: [{ id: lateItem, name: "Lecture5.pdf" }] });
+await pipelineRpc(db, "charge_item", { ownerId, itemId: lateItem });
+check(await db.from("materials").insert({ id: lateMaterial, owner_id: ownerId, course_id: courseId, filename: "Lecture5.pdf", type: "Lecture", status: "ready", content_hash: "late-bytes" }));
+check(await db.from("material_pages").insert([1, 2].map((n) => ({ owner_id: ownerId, material_id: lateMaterial, n, text: "Absorption: x + xy = x. Simplify Boolean expressions." }))));
+const late = await pipelineRpc<{ runId: string }>(db, "attach", { ownerId, itemId: lateItem, materialId: lateMaterial, model: "claude-opus-5-5" });
+let lateQuestions: StageJob | null = null;
+for (let i = 0; i < 6 && !lateQuestions; i++) {
+  const job = await pipelineRpc<StageJob | null>(db, "claim", { ownerId });
+  if (!job) break;
+  const phase = check(await db.from("pipeline_tasks").select("phase,run_id").eq("id", job.taskId).single());
+  if (phase?.phase === "questions" && phase.run_id === late.runId) lateQuestions = job;
+  else await runPipelineStage(job);
+}
+assert.ok(lateQuestions, "the late upload reaches its questions phase");
+const template = check(await db.from("questions").select("*").eq("course_id", courseId).limit(1).single());
+assert.ok(template);
+const before = check(await db.from("questions").select("id").eq("course_id", courseId))!.length;
+const paid = { ...questionFromRow(template), id: crypto.randomUUID(), prompt: "Simplify a + ab using absorption (paid before the crash).", materialId: lateMaterial };
+await pipelineRpc(db, "checkpoint", { ...lateQuestions, checkpoint: { targets: [{ objectiveId: template.objective_id, desired: before + 1 }], written: { [template.topic_id]: [paid] }, dropped: [] } });
+await pipelineRpc(db, "fail", { ...lateQuestions, error: "Synthetic interruption after question writing" });
+await pipelineRpc(db, "control_run", { ownerId, runId: late.runId, action: "retry" });
+const generateBefore = (await (await fetch("http://127.0.0.1:55331/__calls")).json() as { step: string }[]).filter((c) => c.step === "generate").length;
+for (let i = 0; i < 4; i++) { const job = await pipelineRpc<StageJob | null>(db, "claim", { ownerId }); if (!job) break; await runPipelineStage(job); }
+const lateRun = check(await db.from("pipeline_runs").select("status,questions_added,dropped,error").eq("id", late.runId).single());
+assert.equal(lateRun?.status, "done", lateRun?.error ?? "late run missing");
+assert.equal(lateRun.questions_added, 1, "the question written before the failure is committed: " + JSON.stringify(lateRun.dropped));
+assert.ok(check(await db.from("questions").select("id").eq("id", paid.id).maybeSingle()), "the paid question is stored");
+const generateAfter = (await (await fetch("http://127.0.0.1:55331/__calls")).json() as { step: string }[]).filter((c) => c.step === "generate").length;
+assert.equal(generateAfter, generateBefore, "the retry writes nothing again");
+console.log("A commit that fails after writing keeps its paid questions on retry.");
+
 // A held-back exam may arrive before any ordinary material. It maps structure without
 // writing from the exam or consuming the once-only course warm-up allocation.
 const vaultCourse = crypto.randomUUID();
@@ -98,5 +133,5 @@ assert.ok(vaultRun.objectives_created.length > 0, "held-back exam still maps its
 assert.equal(vaultRun.questions_added, 0, "held-back exam never generates questions");
 assert.equal(check(await db.from("pipeline_warmups").select("course_id").eq("course_id", vaultCourse))!.length, 0, "held-back upload preserves warm-up for ordinary material");
 const vaultCalls = await (await fetch("http://127.0.0.1:55331/__calls")).json() as { step: string }[];
-assert.equal(vaultCalls.filter((c) => c.step === "generate").length, afterRetry.filter((c) => c.step === "generate").length, "no model question calls are paid for held-back material");
+assert.equal(vaultCalls.filter((c) => c.step === "generate").length, generateAfter, "no model question calls are paid for held-back material");
 console.log("Held-back first upload maps structure without writing questions or consuming warm-up.");

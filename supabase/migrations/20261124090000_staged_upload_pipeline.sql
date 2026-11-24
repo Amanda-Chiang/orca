@@ -56,6 +56,7 @@ create table public.pipeline_call_reservations (
  run_id uuid references public.pipeline_runs on delete set null, task_id uuid references public.pipeline_tasks on delete set null,
  task_token uuid, day_start timestamptz not null, utc_start timestamptz not null,
  tokens bigint not null, usd numeric not null, state text not null default 'active' check(state in ('active','settled','unknown')),
+ kind text,
  lease_until timestamptz not null, created_at timestamptz not null default now()
 );
 create index on public.pipeline_call_reservations(owner_id,day_start);
@@ -214,7 +215,7 @@ begin
   if t.phase='prepare' and (select count(*) from public.pipeline_tasks where owner_id=o and phase='prepare' and state in ('dispatched','running'))>=2 then continue; end if;
   if t.phase='structure' then
    if exists(select 1 from public.pipeline_tasks where course_id=t.course_id and phase='structure' and state in ('dispatched','running')) then continue; end if;
-   select * into i from public.pipeline_items where run_id=t.run_id and state='active' limit 1;
+   select * into i from public.pipeline_items where run_id=t.run_id and state='active' order by sequence limit 1;
    if exists(select 1 from public.pipeline_items a left join public.pipeline_runs ar on ar.id=a.run_id where a.course_id=t.course_id and a.sequence<i.sequence and not a.paused and a.state in ('ingesting','active') and (ar.id is null or (ar.structure_committed_at is null and ar.status<>'failed'))) then continue; end if;
   end if;
   update public.pipeline_tasks set state='dispatched',epoch=epoch+1,token=claim_token,lease_until=now()+interval '12 minutes',attempts=attempts+1 where id=t.id;
@@ -386,7 +387,7 @@ begin
 end; $$;
 
 create function public.pipeline_commit_questions(payload jsonb) returns jsonb language plpgsql security definer set search_path='' as $$
-declare r public.pipeline_runs; e jsonb; o public.objectives; cap integer; current_count integer; n integer=0; flavor boolean; tok uuid=(payload->>'token')::uuid; desired jsonb; qkey text; warnings jsonb='[]';
+declare r public.pipeline_runs; e jsonb; o public.objectives; cap integer; current_count integer; n integer=0; flavor boolean; tok uuid=(payload->>'token')::uuid; desired jsonb; qkey text; warnings jsonb='[]'; keys text[];
 begin
  perform 1 from public.courses where id=(select course_id from public.pipeline_runs where id=(payload->>'runId')::uuid and owner_id=(payload->>'ownerId')::uuid) for update;
  select * into r from public.pipeline_runs where id=(payload->>'runId')::uuid and owner_id=(payload->>'ownerId')::uuid for update;
@@ -397,6 +398,8 @@ begin
  if payload ? 'taskId' then perform private.pipeline_task(payload); elsif r.execution_token is distinct from tok then raise exception 'Question worker replaced' using errcode='40001'; end if;
  perform 1 from public.courses where id=r.course_id and deleted_at is null for update;
  if not found then raise exception 'Course deleted' using errcode='40001'; end if;
+ -- The course's prompt keys, computed once (the course row is locked, so no question lands meanwhile).
+ keys=array(select public.pipeline_prompt_key(q.prompt) from public.questions q where q.course_id=r.course_id);
  for e in select * from jsonb_array_elements(coalesce(payload->'questions','[]')) loop
   select * into o from public.objectives where id=private.pipeline_canonical((e->>'objective_id')::uuid) and owner_id=r.owner_id and course_id=r.course_id;
   if o.id is null or o.review='archived' then warnings=warnings||jsonb_build_array(jsonb_build_object('prompt',left(e->>'prompt',1200),'reason','Objective was archived or removed while questions were written.')); continue; end if;
@@ -408,7 +411,8 @@ begin
   select count(*) into current_count from public.questions q where q.course_id=r.course_id and private.pipeline_canonical(q.objective_id)=o.id and (case when payload->>'policy'='upload' then true else q.deep=flavor end);
   if current_count>=cap then warnings=warnings||jsonb_build_array(jsonb_build_object('prompt',left(e->>'prompt',1200),'reason','Fresh question stock already meets this request.')); continue; end if;
   qkey=e->>'prompt_key';
-  if qkey is null or exists(select 1 from public.questions q where q.course_id=r.course_id and public.pipeline_prompt_key(q.prompt)=qkey) then continue; end if;
+  if qkey is null or qkey=any(keys) then continue; end if;
+  keys=keys||qkey;
   desired=e-'prompt_key'||jsonb_build_object('objective_id',o.id,'topic_id',private.pipeline_topic(o.topic_id));
   perform public.save_structure_rows(r.course_id,jsonb_build_object('questions',jsonb_build_array(desired)));
   n=n+1;
@@ -436,7 +440,8 @@ begin
   update public.pipeline_items set paused=false where run_id=r.id and owner_id=r.owner_id;
   update public.pipeline_runs set status='queued' where id=r.id and status='paused';
  elsif action='retry' then
-  update public.pipeline_items set paused=false,state='active' where run_id=r.id and owner_id=r.owner_id;
+  -- Aliases (duplicates bound to this run) stay aliases: only the run's own failed or cancelled items come back.
+  update public.pipeline_items set paused=false,state=case when state in ('failed','cancelled') then 'active' else state end where run_id=r.id and owner_id=r.owner_id;
   update public.pipeline_tasks set state='queued',epoch=epoch+1,token=null,error=null,available_at=now() where run_id=r.id and state in ('failed','cancelled','waiting');
   update public.pipeline_runs set status='queued',error=null where id=r.id and status in ('failed','waiting');
  elsif action='stop' then
@@ -519,18 +524,24 @@ alter table public.model_usage add column step text;
 alter table public.model_usage add column phase text;
 alter table public.model_usage add column duration_ms integer;
 alter table public.model_usage add column attempt_id uuid;
+create index model_usage_attempt on public.model_usage(attempt_id) where attempt_id is not null;
 
 create function public.pipeline_reserve_call(payload jsonb) returns jsonb language plpgsql security definer set search_path='' as $$
 declare o uuid=(payload->>'ownerId')::uuid; day timestamptz=(payload->>'dayStart')::timestamptz; utc timestamptz=(payload->>'utcStart')::timestamptz; spent bigint; held bigint; dollars numeric; reserved numeric; amount bigint=(payload->>'tokens')::bigint; price numeric=(payload->>'usd')::numeric; cap numeric=(payload->>'globalCap')::numeric; rid uuid=(payload->>'id')::uuid;
 begin
- -- Same lock order for all owners: global dollars, then owner tokens/permits.
- perform pg_advisory_xact_lock(91337001);
- perform pg_advisory_xact_lock(hashtextextended(o::text,32));
  if amount<0 or price<0 or day is null or utc is null then raise exception 'Invalid reservation'; end if;
+ -- Lock order: owner tokens/permits, then the course row (the task check, as pipeline_pages does),
+ -- and the global dollar lock last, so no owner waits on another owner's course while holding it.
+ perform pg_advisory_xact_lock(hashtextextended(o::text,32));
  if payload ? 'taskId' then perform private.pipeline_task(payload); end if;
  if payload ? 'runToken' and not exists(select 1 from public.pipeline_runs where id=(payload->>'runId')::uuid and owner_id=o and execution_token=(payload->>'runToken')::uuid and status='running') then raise exception 'Writer replaced before model call' using errcode='40001'; end if;
+ perform pg_advisory_xact_lock(91337001);
  update public.pipeline_call_reservations set state='unknown' where state='active' and lease_until<now();
- if (select count(*) from public.pipeline_call_reservations where owner_id=o and state='active')>=4 or (select count(*) from public.pipeline_call_reservations where state='active')>=coalesce((payload->>'providerSlots')::integer,20) then
+ -- An unknown hold whose usage was metered after all (a cut-off reply) is counted in model_usage: release it.
+ update public.pipeline_call_reservations r set state='settled' where r.state='unknown' and r.utc_start>=utc-interval '1 day' and exists(select 1 from public.model_usage u where u.attempt_id=r.id);
+ -- Interactive grading never waits behind the student's own uploads: it skips the per-owner permits
+ -- (and isn't counted in them), but still takes a provider slot and the budgets.
+ if (coalesce(payload->>'kind','')<>'grade' and (select count(*) from public.pipeline_call_reservations where owner_id=o and state='active' and kind is distinct from 'grade')>=4) or (select count(*) from public.pipeline_call_reservations where state='active')>=coalesce((payload->>'providerSlots')::integer,20) then
   return jsonb_build_object('ok',false,'reason','capacity','message','Waiting for model capacity.');
  end if;
  select coalesce(sum(input_tokens::bigint+output_tokens+cache_write_tokens+cache_read_tokens),0) into spent from public.model_usage where owner_id=o and at>=day;
@@ -539,7 +550,7 @@ begin
  select coalesce(sum(cost_usd),0) into dollars from public.model_usage where at>=utc;
  select coalesce(sum(usd),0) into reserved from public.pipeline_call_reservations where utc_start=utc and state in ('active','unknown');
  if cap is not null and dollars+reserved+price>cap then return jsonb_build_object('ok',false,'reason','global-budget','message','Orca model budget is reserved or used for today.'); end if;
- insert into public.pipeline_call_reservations(id,owner_id,run_id,task_id,task_token,day_start,utc_start,tokens,usd,lease_until) values(rid,o,(payload->>'runId')::uuid,(payload->>'taskId')::uuid,(payload->>'token')::uuid,day,utc,amount,price,now()+interval '12 minutes') on conflict do nothing;
+ insert into public.pipeline_call_reservations(id,owner_id,run_id,task_id,task_token,day_start,utc_start,tokens,usd,kind,lease_until) values(rid,o,(payload->>'runId')::uuid,(payload->>'taskId')::uuid,(payload->>'token')::uuid,day,utc,amount,price,payload->>'kind',now()+interval '12 minutes') on conflict do nothing;
  return jsonb_build_object('ok',true);
 end; $$;
 create function public.pipeline_settle_call(payload jsonb) returns jsonb language plpgsql security definer set search_path='' as $$
@@ -612,6 +623,8 @@ begin
   if coalesce((payload->>'resumeExpired')::boolean,false) then
    update public.pipeline_items set state='ingesting',error=null,expires_at=now()+interval '15 minutes',metadata=metadata-'claimToken'-'outcome' where batch_id=s.id and owner_id=s.owner_id and state='failed' and run_id is null and error like 'Upload interrupted%';
   end if;
+  -- A continuing import keeps its waiting files alive (see pipeline_canvas_claim).
+  update public.pipeline_items set expires_at=greatest(expires_at,now()+interval '15 minutes') where batch_id=s.id and owner_id=s.owner_id and source='canvas' and state='ingesting' and not metadata ? 'claimToken';
   return s.summary||jsonb_build_object('importSessionId',s.id);
  end if;
  perform 1 from public.courses where id=(payload->>'courseId')::uuid and owner_id=(payload->>'ownerId')::uuid and deleted_at is null for update;
@@ -637,6 +650,9 @@ declare i public.pipeline_items; token uuid=gen_random_uuid();
 begin
  perform pg_advisory_xact_lock(hashtextextended(payload->>'ownerId',33));
  if not exists(select 1 from public.pipeline_canvas_sessions s join public.courses c on c.id=s.course_id where s.id=(payload->>'sessionId')::uuid and s.owner_id=(payload->>'ownerId')::uuid and c.deleted_at is null) then raise exception 'No live import session' using errcode='42501'; end if;
+ -- Files still waiting their turn in an import that is making progress must not expire (pipeline_claim
+ -- fails expired ingesting items); an abandoned import's files still expire fifteen minutes after its last claim.
+ update public.pipeline_items set expires_at=greatest(expires_at,now()+interval '15 minutes') where batch_id=(payload->>'sessionId')::uuid and owner_id=(payload->>'ownerId')::uuid and source='canvas' and state='ingesting' and not metadata ? 'claimToken';
  if (select count(*) from public.pipeline_items where owner_id=(payload->>'ownerId')::uuid and source='canvas' and state='ingesting' and metadata ? 'claimToken' and expires_at>now())>=2 then return null; end if;
  select * into i from public.pipeline_items where batch_id=(payload->>'sessionId')::uuid and owner_id=(payload->>'ownerId')::uuid and source='canvas' and state='ingesting' and (not metadata ? 'claimToken' or expires_at<now()) order by sequence for update skip locked limit 1;
  if i.id is null then return null; end if;
