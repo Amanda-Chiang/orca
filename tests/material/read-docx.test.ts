@@ -97,3 +97,72 @@ test("the kind of a .docx comes from its name or type, and from what's inside th
   assert.match(UNSUPPORTED_UPLOAD, /Word \(\.docx\)/);
   assert.equal(officeKind(makeDocx(para("Hi"))), "docx");
 });
+
+test("content controls are looked through, a table in a cell reads inline, and escaped characters decode", async () => {
+  const inner = `<w:tbl><w:tr>${cell("a")}${cell("b")}</w:tr></w:tbl>`;
+  const doc = makeDocx(
+    [
+      `<w:sdt><w:sdtPr/><w:sdtContent>${para("Inside a control")}</w:sdtContent></w:sdt>`,
+      `<w:tbl><w:tr>${cell("Outer")}<w:tc>${inner}${para("after")}</w:tc></w:tr></w:tbl>`,
+      `<w:p>${run("x &amp; y &lt;= z &#x3B1; &#946;")}</w:p>`,
+    ].join(""),
+  );
+  const out = await readDocx(doc);
+  assert.deepEqual(
+    out.pages.map((p) => p.text),
+    ["Inside a control\nOuter | a | b after\nx & y <= z α β"],
+  );
+});
+
+test("page break before a paragraph cuts there; line breaks and tabs keep their place", async () => {
+  const doc = makeDocx(
+    [
+      `<w:p>${run("One")}<w:r><w:br/><w:t>two</w:t><w:tab/><w:t>three</w:t></w:r></w:p>`,
+      `<w:p><w:pPr><w:pageBreakBefore/></w:pPr>${run("Next page")}</w:p>`,
+      `<w:p><w:pPr><w:pageBreakBefore w:val="0"/></w:pPr>${run("Same page")}</w:p>`,
+    ].join(""),
+  );
+  const out = await readDocx(doc);
+  assert.deepEqual(
+    out.pages.map((p) => p.text),
+    ["One\ntwo\tthree", "Next page\nSame page"],
+  );
+});
+
+test("pictures, charts and text boxes aren't read; comments aren't read; endnotes join the page that cites them", async () => {
+  const drawing = `<w:r><w:drawing><wp:inline><a:graphic><w:txbxContent><w:p><w:r><w:t>In a text box</w:t></w:r></w:p></w:txbxContent></a:graphic></wp:inline></w:drawing></w:r>`;
+  const doc = makeDocx(
+    [
+      `<w:p>${run("Before")}${drawing}${run(" after")}</w:p>`,
+      `<w:p><w:commentRangeStart w:id="0"/>${run("Commented")}<w:commentRangeEnd w:id="0"/><w:r><w:commentReference w:id="0"/></w:r><w:r><w:endnoteReference w:id="1"/></w:r></w:p>`,
+    ].join(""),
+    {
+      "word/comments.xml": `<w:comments><w:comment w:id="0"><w:p>${run("A comment")}</w:p></w:comment></w:comments>`,
+      "word/endnotes.xml": `<w:endnotes><w:endnote w:type="continuationSeparator" w:id="0"/><w:endnote w:id="1"><w:p>${run("An endnote.")}</w:p></w:endnote></w:endnotes>`,
+    },
+  );
+  const out = await readDocx(doc);
+  assert.deepEqual(
+    out.pages.map((p) => p.text),
+    ["Before after\nCommented[e1]\n\n[Notes]\n[e1] An endnote."],
+  );
+});
+
+test("a page with only hidden text is left out, its count going to the page before", async () => {
+  const doc = makeDocx([para("First"), pageBreak, `<w:p>${run("secret", "<w:vanish/>")}</w:p>`, pageBreak, para("Second")].join(""));
+  const out = await readDocx(doc);
+  assert.deepEqual(
+    out.pages.map((p) => [p.n, p.text]),
+    [
+      [1, "First"],
+      [2, "Second"],
+    ],
+  );
+  assert.deepEqual(out.hidden, { items: 1, pages: [1] });
+});
+
+test("a file over the upload limit is refused before it's opened", async () => {
+  const big = new Uint8Array(LIMITS.uploadBytes + 1);
+  big.set([0x50, 0x4b, 0x03, 0x04]);
+  await assert.rejects(readDocx(big), isRefused(413));
+});

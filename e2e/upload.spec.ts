@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { type Student, admin, expect, test, stored } from "./fixture";
 import { DECK_NAME, lines, makeDeck, makePdf } from "../tests/fixtures/pdf";
-import { makeDocx, pageBreak, para } from "../tests/fixtures/zip";
+import { makeDocx, pageBreak, para, zip } from "../tests/fixtures/zip";
 import { fakeCalls, fakeModel } from "./fake-model";
 
 /**
@@ -320,6 +320,24 @@ test("a Word document (.docx) uploads like a PDF: it's read into pages and build
   expect(row?.mime).toBe("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 });
 
+test("a .docx among several files uploads with the rest, each built", async ({ page, student }) => {
+  await fakeModel({ extract: ONE_TOPIC, perObjective: 2 });
+  await createCourse(page, "Logic");
+  await page.goto("/add-material");
+  const docx = makeDocx([para("Absorption: x + xy = x."), pageBreak, para("Simplify x + xy.")].join(""));
+  await page.locator("[data-part=file-input]").setInputFiles([DECK, { name: "week2.docx", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", buffer: Buffer.from(docx) }]);
+  const rows = page.locator("[data-part=batch-item]");
+  await expect(rows).toHaveCount(2);
+  await expect(page.getByText("2 files to add")).toBeVisible();
+  await page.getByRole("button", { name: "Add 2 files to course" }).click();
+  await expect(rows.nth(0)).toHaveAttribute("data-status", "done", { timeout: 60_000 });
+  await expect(rows.nth(1)).toHaveAttribute("data-status", "done", { timeout: 60_000 });
+  await expect(page).toHaveURL(/\/course\/logic\/review\?run=/, { timeout: 15_000 });
+  const state = await stored(page, student);
+  expect(state.materials.map((m) => m.filename).sort()).toEqual([DECK_NAME, "week2.docx"].sort());
+  expect(state.runs).toHaveLength(2);
+});
+
 test("a bulk upload (3+ files) hides dates behind Add dates, and every file is simply added", async ({ page, student }) => {
   await fakeModel({ extract: ONE_TOPIC, perObjective: 2 });
   await createCourse(page, "Logic");
@@ -477,6 +495,21 @@ test("hidden text is dropped from the stored pages and recorded on the material"
   expect(await processed.json()).toMatchObject({ pages: [{ n: 1, text: "Karnaugh maps\nGroup adjacent ones." }], hidden: { items: 1, pages: [1] } });
   const { data } = await student.db.from("materials").select("hidden_text").eq("id", id).single();
   expect(data).toEqual({ hidden_text: { items: 1, pages: [1] } });
+});
+
+test("the stored bytes decide the kind: a Word document named .pdf is read as a .docx, and a zip that's neither is refused", async ({ page, student }) => {
+  const courseId = await newCourse(student);
+  const docx = makeDocx([para("Karnaugh maps"), pageBreak, para("Group adjacent ones.")].join(""));
+  const { id, processed } = await sendFile(page.request, student, courseId, docx);
+  expect(processed.status()).toBe(200);
+  expect(await processed.json()).toMatchObject({ pages: [{ n: 1, text: "Karnaugh maps" }, { n: 2, text: "Group adjacent ones." }] });
+  const { data } = await student.db.from("materials").select("mime").eq("id", id).single();
+  expect(data).toEqual({ mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" });
+
+  const other = await sendFile(page.request, student, courseId, zip({ "readme.txt": "not an Office file" }));
+  expect(other.processed.status()).toBe(415);
+  const { data: failed } = await student.db.from("materials").select("status, error").eq("id", other.id).single();
+  expect(failed).toEqual({ status: "failed", error: expect.stringMatching(/Word \(\.docx\) documents/) });
 });
 
 test("a read that died is taken over after a while, and never blocks the file", async ({ page, student }) => {

@@ -58,6 +58,14 @@ test("pickFiles takes modules in order, then loose files, readable kinds only, o
   assert.equal(picked.every((p) => p.type === "Lecture"), true);
 });
 
+test("pickFiles takes a Word document by Canvas's content type even when its name has no extension", () => {
+  const files = [file(1, "Week 3 notes", { "content-type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }), file(2, "Week 4 notes", { "content-type": "application/msword" })];
+  assert.deepEqual(
+    pickFiles([], files).map((p) => p.name),
+    ["Week 3 notes"],
+  );
+});
+
 test("the Link header's next page is found, with or without quotes, and absent on the last page", () => {
   assert.equal(parseNextLink('<https://c.test/api/v1/courses?page=2&per_page=100>; rel="next",<https://c.test/api/v1/courses?page=1>; rel="first"'), "https://c.test/api/v1/courses?page=2&per_page=100");
   assert.equal(parseNextLink("<https://c.test/x?page=3>; rel=next"), "https://c.test/x?page=3");
