@@ -59,7 +59,8 @@ export async function addTextMaterial(db: OrcaSupabase, ownerId: string, input: 
   const chat = type === "AI chat";
   // Stored as the model will see it (decision 13): invisible and control characters removed.
   text = sanitize(text).text;
-  if ((chat ? spokenChars(text) : text.trim().length) < 80) return { status: 422, body: { error: chat ? "Orca couldn't find enough readable chat text. Paste the conversation transcript instead." : "Orca needs at least a paragraph of text to read." } };
+  // Any length of text is taken (owner, 2026-11-24); a chat still needs readable turns, or its transcript wasn't found.
+  if (chat ? spokenChars(text) < 80 : text.trim().length === 0) return { status: 422, body: { error: chat ? "Orca couldn't find enough readable chat text. Paste the conversation transcript instead." : "Paste some text for Orca to read." } };
   const pages = (chat ? chatPages(text) : textPages(text)).map((pageText, i) => ({ n: i + 1, text: pageText }));
   // Jobs read at most this many pages of any material, so longer text is refused, never cut.
   if (pages.length > LIMITS.pagesPerFile) return { status: 413, body: { error: `This text is too long to read in one go (${pages.length} pages; Orca reads at most ${LIMITS.pagesPerFile}). Paste it in parts.` } };
