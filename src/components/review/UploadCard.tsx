@@ -81,12 +81,14 @@ export function UploadCard({ run: stored, material, focused = false, openSlides 
   // A finished stored row wins unless the card was told to follow: useRun keeps its last live row when it stops following, which would show a stopped run as still building.
   const run = follow && live ? live : isFinished(stored) ? stored : (live ?? stored);
   // Try again clicked: shows "Retrying…" until the run leaves the failure it was retried from.
-  const [retryingFrom, setRetryingFrom] = useState<string | null>(null);
+  const [retryingFrom, setRetryingFrom] = useState<{ error: string; startedAt: string } | null>(null);
   // Once the run is seen past the failure (queued, running…), the retry is over: a later failure, even
   // with the same message, shows Try again, not a stuck "Retrying…" (set during render, React's
   // pattern for state that follows a prop).
-  if (retryingFrom !== null && run.status !== "failed") setRetryingFrom(null);
-  const retrying = retryingFrom !== null && run.status === "failed" && (run.error ?? "") === retryingFrom;
+  // A retry that fails again within a second may never be seen queued: every claim restamps
+  // started_at, so a new start time also ends it.
+  if (retryingFrom !== null && (run.status !== "failed" || (run.startedAt ?? "") !== retryingFrom.startedAt)) setRetryingFrom(null);
+  const retrying = retryingFrom !== null && run.status === "failed" && (run.error ?? "") === retryingFrom.error;
   const { courses, refresh } = useOrca();
   const [pickingSlides, setPickingSlides] = useState(openSlides);
   const name = material?.filename ?? "An upload";
@@ -116,7 +118,7 @@ export function UploadCard({ run: stored, material, focused = false, openSlides 
   const act = async (what: "stop" | "remove" | "retry") => {
     setConfirming(null);
     setPausing(null);
-    if (what === "retry") setRetryingFrom(run.error ?? "");
+    if (what === "retry") setRetryingFrom({ error: run.error ?? "", startedAt: run.startedAt ?? "" });
     try {
       if (what === "stop") await stopUpload(run.id);
       else if (what === "retry" && material) await retryUpload(material.id);

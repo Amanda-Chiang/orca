@@ -186,7 +186,8 @@ own courses (Data Structures, Fundamentals of Computer Systems) on the hosted pr
   `20261124120000`), waiting says "held by other calls" vs "used up" (`20261124130000`), a file uploaded again after
   its copy was deleted gets its own run (`20261124150000`), one inline loop per student with back-off and workers
   that stop on a stale lease (`src/lib/server/staged/schedule.ts`, `run.ts`), and a smaller per-image token
-  reservation (`IMAGE_TOKEN_BOUND`, `src/lib/llm-server.ts`). The branch's `staged_upload_limits` migration was
+  reservation (`IMAGE_TOKEN_BOUND`, `src/lib/llm-server.ts`); the last 4 provider slots are kept for grading
+  (other calls stop at `ORCA_MODEL_CONCURRENCY` - 4; migration `20261124160000`). The branch's `staged_upload_limits` migration was
   renumbered `20261124105000` (it clashed with main's `.docx` one).
 - **Upload toasts** (2026-11-08, `src/components/layout/UploadToasts.tsx`, mounted in `providers.tsx`): an upload
   that finishes (done or failed) while the app is open, from any tab or device, pops a toast unless the student is on

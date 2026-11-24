@@ -52,6 +52,10 @@ select is((public.pipeline_reserve_call((select value from calls where name='bud
 select is((public.pipeline_reserve_call((select value from calls where name='budget')||jsonb_build_object('id','a1000000-0000-4000-8000-000000000213'))->>'ok')::boolean,true,'third provider attempt admitted');
 select is((public.pipeline_reserve_call((select value from calls where name='budget')||jsonb_build_object('id','a1000000-0000-4000-8000-000000000214'))->>'ok')::boolean,true,'fourth provider attempt admitted');
 select is(public.pipeline_reserve_call((select value from calls where name='budget')||jsonb_build_object('id','a1000000-0000-4000-8000-000000000215','providerSlots',4))->>'reason','capacity','the provider slots still cap calls running at once');
+-- Grading keeps the last 4 slots (2026-11-24): with 8 slots and 4 calls running, an upload call waits and a grading call goes ahead.
+select is(public.pipeline_reserve_call((select value from calls where name='budget')||jsonb_build_object('id','a1000000-0000-4000-8000-000000000230','providerSlots',8,'kind','upload'))->>'reason','capacity','an upload call stops 4 slots short of the limit');
+select is((public.pipeline_reserve_call((select value from calls where name='budget')||jsonb_build_object('id','a1000000-0000-4000-8000-000000000231','providerSlots',8,'kind','grade'))->>'ok')::boolean,true,'a grading call may use the slots kept for it');
+select public.pipeline_settle_call('{"ownerId":"aaaaaaaa-0000-4000-8000-000000000211","id":"a1000000-0000-4000-8000-000000000231","known":true}');
 select public.pipeline_settle_call('{"ownerId":"aaaaaaaa-0000-4000-8000-000000000211","id":"a1000000-0000-4000-8000-000000000211","known":false}');
 select is((select state from public.pipeline_call_reservations where id='a1000000-0000-4000-8000-000000000211'),'unknown','lost reply not refunded as free');
 select is(public.pipeline_reserve_call((select value from calls where name='budget')||jsonb_build_object('id','a1000000-0000-4000-8000-000000000216','tokens',2000000))->>'reason','daily-tokens','unknown and active reservations protect token ceiling');
