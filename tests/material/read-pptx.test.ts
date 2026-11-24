@@ -1,50 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { crc32, deflateRawSync } from "node:zlib";
 import { readPptx } from "../../src/lib/material/read-pptx.ts";
 import { UnreadablePdfError } from "../../src/lib/material/read-pdf.ts";
 import { uploadKind } from "../../src/lib/material/kind.ts";
-
-/** A zip of the given files (deflated), as PowerPoint writes them. */
-function zip(files: Record<string, string>): Uint8Array {
-  const locals: Buffer[] = [];
-  const central: Buffer[] = [];
-  let offset = 0;
-  for (const [name, content] of Object.entries(files)) {
-    const raw = Buffer.from(content, "utf8");
-    const data = deflateRawSync(raw);
-    const nameBytes = Buffer.from(name, "utf8");
-    const local = Buffer.alloc(30);
-    local.writeUInt32LE(0x04034b50, 0);
-    local.writeUInt16LE(20, 4);
-    local.writeUInt16LE(8, 8);
-    local.writeUInt32LE(crc32(raw), 14);
-    local.writeUInt32LE(data.length, 18);
-    local.writeUInt32LE(raw.length, 22);
-    local.writeUInt16LE(nameBytes.length, 26);
-    const entry = Buffer.alloc(46);
-    entry.writeUInt32LE(0x02014b50, 0);
-    entry.writeUInt16LE(20, 4);
-    entry.writeUInt16LE(20, 6);
-    entry.writeUInt16LE(8, 10);
-    entry.writeUInt32LE(crc32(raw), 16);
-    entry.writeUInt32LE(data.length, 20);
-    entry.writeUInt32LE(raw.length, 24);
-    entry.writeUInt16LE(nameBytes.length, 28);
-    entry.writeUInt32LE(offset, 42);
-    locals.push(local, nameBytes, data);
-    central.push(entry, nameBytes);
-    offset += 30 + nameBytes.length + data.length;
-  }
-  const dir = Buffer.concat(central);
-  const end = Buffer.alloc(22);
-  end.writeUInt32LE(0x06054b50, 0);
-  end.writeUInt16LE(Object.keys(files).length, 8);
-  end.writeUInt16LE(Object.keys(files).length, 10);
-  end.writeUInt32LE(dir.length, 12);
-  end.writeUInt32LE(offset, 16);
-  return new Uint8Array(Buffer.concat([...locals, dir, end]));
-}
+import { officeKind } from "../../src/lib/material/ooxml.ts";
+import { zip } from "../fixtures/zip.ts";
 
 const sp = (body: string, extra = "") => `<p:sp><p:nvSpPr><p:cNvPr id="2" name="s"${extra}/><p:nvPr>${body.startsWith("<p:ph") ? body.slice(0, body.indexOf("/>") + 2) : ""}</p:nvPr></p:nvSpPr><p:txBody>${body}</p:txBody></p:sp>`;
 const p = (...runs: string[]) => `<a:p>${runs.join("")}</a:p>`;
@@ -78,6 +38,10 @@ test("files that aren't decks are refused with a message, and the kind comes fro
   await assert.rejects(readPptx(zip({ "word/document.xml": "<w:document/>" })), (e: unknown) => e instanceof UnreadablePdfError && e.status === 415);
   await assert.rejects(readPptx(deck.subarray(0, deck.length - 30)), (e: unknown) => e instanceof UnreadablePdfError && e.status === 422);
   assert.equal(uploadKind("L01.pptx", ""), "pptx");
+  // The server tells a deck from a Word document (both zips) by what's inside.
+  assert.equal(officeKind(deck), "pptx");
+  assert.equal(officeKind(zip({ "word/document.xml": "<w:document/>" })), "docx");
+  assert.equal(officeKind(zip({ "readme.txt": "hi" })), null);
   assert.equal(uploadKind("notes", "application/pdf"), "pdf");
   assert.equal(uploadKind("old.ppt", "application/vnd.ms-powerpoint"), null);
 });

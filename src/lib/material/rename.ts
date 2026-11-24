@@ -10,9 +10,9 @@ import { type ScreenHit, screen } from "../untrusted/screen.ts";
 /** The most characters a name (before the extension) may have. */
 export const NAME_CHARS = 200;
 
-/** A file's name split at its kept extension (".pdf" or ".pptx"; none for pasted text, chats and websites). */
+/** A file's name split at its kept extension (".pdf", ".pptx" or ".docx"; none for pasted text, chats and websites). */
 export function splitName(filename: string): { stem: string; ext: string } {
-  const m = /\.(pdf|pptx)$/i.exec(filename);
+  const m = /\.(pdf|pptx|docx)$/i.exec(filename);
   return m ? { stem: filename.slice(0, m.index), ext: filename.slice(m.index) } : { stem: filename, ext: "" };
 }
 

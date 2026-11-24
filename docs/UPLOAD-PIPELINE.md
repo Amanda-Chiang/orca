@@ -49,7 +49,7 @@ Each paid provider attempt reserves a conservative input/output token and dollar
 calling the model, including retries and calls outside uploads. Limits are `ORCA_MODEL_CONCURRENCY`
 active calls globally (default twenty), plus existing daily page/token and global dollar limits.
 There is no per-student cap on calls at once (removed 2026-11-24: four made a student's own uploads
-defer each other mid-reading; migration `20261124100000`). Owner days use the student's timezone; global dollars use UTC. Page charges
+defer each other mid-reading; migration `20261124105000`). Owner days use the student's timezone; global dollars use UTC. Page charges
 are idempotent. Usage retains the attempt's admission time across midnight.
 
 Known usage settles the reservation. So does a request the provider answered with an error status

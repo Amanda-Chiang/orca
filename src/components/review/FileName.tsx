@@ -7,7 +7,7 @@ import { renameMaterial } from "@/lib/uploads";
 import { useOrca } from "@/lib/store";
 
 /**
- * An upload's name on its card, with Rename (owner, 2026-11-24): the part before ".pdf" / ".pptx" is
+ * An upload's name on its card, with Rename (owner, 2026-11-24): the part before ".pdf", ".pptx" or ".docx" is
  * editable, the extension is shown and kept. Saved through PATCH /api/materials/:id, which screens it.
  */
 export function FileName({ material, fallback }: { material: Material | undefined; fallback: string }) {

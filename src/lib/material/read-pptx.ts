@@ -8,6 +8,7 @@
  */
 import { LIMITS } from "../limits.ts";
 import { sanitize } from "../untrusted/sanitize.ts";
+import { attr, decode, relationships } from "./ooxml.ts";
 import { type HiddenText, type ReadPage, UnreadablePdfError } from "./read-pdf.ts";
 import { ZipError, looksLikeZip, openZip } from "./unzip.ts";
 
@@ -21,37 +22,6 @@ export interface ReadPptx {
 const MIN_VISIBLE_SZ = 200;
 /** Placeholders that hold furniture, not content: slide numbers, dates, footers, the notes page's slide picture. */
 const FURNITURE = new Set(["sldNum", "dt", "ftr", "hdr", "sldImg"]);
-
-const ENTITIES: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" };
-function decode(s: string): string {
-  return s.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (whole, e: string) => {
-    if (e[0] === "#") {
-      const code = e[1] === "x" || e[1] === "X" ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
-      return Number.isFinite(code) && code <= 0x10ffff ? String.fromCodePoint(code) : "";
-    }
-    return ENTITIES[e] ?? whole;
-  });
-}
-
-const attr = (tag: string, name: string) => tag.match(new RegExp(`\\b${name}="([^"]*)"`))?.[1] ?? null;
-
-/** A part's relationships: id → target path inside the archive (resolved against the part's folder). */
-function relationships(zip: ReturnType<typeof openZip>, part: string): Array<{ id: string; type: string; target: string }> {
-  const slash = part.lastIndexOf("/");
-  const folder = part.slice(0, slash);
-  const xml = zip.text(`${folder}/_rels/${part.slice(slash + 1)}.rels`);
-  if (!xml) return [];
-  return [...xml.matchAll(/<Relationship\b[^>]*>/g)].map(([tag]) => {
-    const target = attr(tag, "Target") ?? "";
-    const parts = target.startsWith("/") ? target.slice(1).split("/") : [...folder.split("/"), ...target.split("/")];
-    const path: string[] = [];
-    for (const p of parts) {
-      if (p === "..") path.pop();
-      else if (p && p !== ".") path.push(p);
-    }
-    return { id: attr(tag, "Id") ?? "", type: attr(tag, "Type") ?? "", target: path.join("/") };
-  });
-}
 
 /** The visible text of a slide or notes page, paragraph by paragraph; what was hidden is counted. */
 function partText(xml: string): { text: string; hidden: number } {

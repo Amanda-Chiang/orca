@@ -5,6 +5,7 @@ import { renamed, splitName } from "../../src/lib/material/rename.ts";
 test("an upload's extension is kept; only the name before it changes", () => {
   assert.deepEqual(splitName("Lecture 3.pdf"), { stem: "Lecture 3", ext: ".pdf" });
   assert.deepEqual(splitName("Deck.PPTX"), { stem: "Deck", ext: ".PPTX" });
+  assert.deepEqual(splitName("Notes.docx"), { stem: "Notes", ext: ".docx" });
   assert.deepEqual(splitName("Syllabus (pasted), Nov 7"), { stem: "Syllabus (pasted), Nov 7", ext: "" });
   const out = renamed("Computer Architecture 4.pdf", "  Week 4:   caches  ");
   assert.equal(out.ok && out.filename, "Week 4: caches.pdf");
