@@ -39,7 +39,7 @@ test("dayOf takes the UTC day and refuses junk", () => {
 const file = (id: number, name: string, extra: Partial<CanvasFile> = {}): CanvasFile => ({ id, display_name: name, url: `https://canvas.test/files/${id}/download`, "content-type": name.endsWith(".pdf") ? "application/pdf" : "application/octet-stream", created_at: `2026-09-${String(id).padStart(2, "0")}T12:00:00Z`, ...extra });
 
 test("pickFiles takes modules in order, then loose files, readable kinds only, once each", () => {
-  const files = [file(5, "L05.pdf"), file(2, "L02.pdf"), file(3, "notes.docx"), file(9, "L01.pdf"), file(7, "hidden.pdf", { locked_for_user: true })];
+  const files = [file(5, "L05.pdf"), file(2, "L02.pdf"), file(3, "notes.docx"), file(4, "old.doc"), file(9, "L01.pdf"), file(7, "hidden.pdf", { locked_for_user: true })];
   const modules: CanvasModule[] = [
     { id: 20, name: "Week 2", position: 2, items: [{ id: 1, type: "File", title: "L02.pdf", position: 1, content_id: 2 }, { id: 2, type: "Page", title: "Reading", position: 2 }] },
     { id: 10, name: "Week 1", position: 1, unlock_at: "2026-09-08T04:00:00Z", items: [{ id: 3, type: "File", title: "L01.pdf", position: 1, content_id: 9 }, { id: 4, type: "File", title: "Slides.pptx", position: 2, content_id: 42 }] },
@@ -52,6 +52,7 @@ test("pickFiles takes modules in order, then loose files, readable kinds only, o
       [42, "Slides.pptx", "Week 1", "2026-09-08", false],
       [2, "L02.pdf", "Week 2", "2026-09-02", true],
       [5, "L05.pdf", null, "2026-09-05", true],
+      [3, "notes.docx", null, "2026-09-03", true],
     ],
   );
   assert.equal(picked.every((p) => p.type === "Lecture"), true);
