@@ -161,7 +161,7 @@ async function openAiRequest(config: LlmConfig, body: object, fetchImpl: typeof 
     });
   } catch (error) {
     const timedOut = error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
-    throw new OpenAiError(error instanceof Error ? error.message : String(error), { timedOut });
+    throw Object.assign(new OpenAiError(error instanceof Error ? error.message : String(error), { timedOut }), { cause: error });
   }
   if (!res.ok) {
     const raw = await res.text().catch(() => "");
@@ -178,6 +178,16 @@ async function openAiRequest(config: LlmConfig, body: object, fetchImpl: typeof 
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+const UNSENT_CODES = new Set(["ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN"]);
+/** Whether a failed request certainly never reached the provider (refused connection, unknown host). */
+function neverSent(error: unknown): boolean {
+  for (let e: unknown = error, depth = 0; e && typeof e === "object" && depth < 5; e = (e as { cause?: unknown }).cause, depth++) {
+    const code = (e as { code?: unknown }).code;
+    if (typeof code === "string" && UNSENT_CODES.has(code)) return true;
+  }
+  return false;
+}
 
 /** Run `attempt` up to 1 + `LIMITS.modelRetries` times, backing off, honouring `retry-after`, for transient failures only. */
 async function withRetries<T>(attempt: () => Promise<T>, opts: { retries?: number; backoffMs?: number } = {}): Promise<T> {
@@ -242,9 +252,11 @@ export async function completeJson<T>(
     };
     try { return await work(report); }
     catch (error) {
-      // A definite rejected request never started generation; timeouts remain conservatively held.
+      // A request the provider answered with an error status never generated anything (4xx refusals
+      // and 5xx/overloaded alike), and neither did one that never connected. Only a timeout or a
+      // connection lost mid-reply stays held as unknown usage, since it may have been billed.
       const status = error && typeof error === "object" && "status" in error ? Number(error.status) : 0;
-      if (status >= 400 && status < 500 && status !== 408) known = true;
+      if ((status >= 400 && status !== 408) || neverSent(error)) known = true;
       throw error;
     } finally { await reservation?.settle(known); }
   };
@@ -293,10 +305,9 @@ export async function completeJson<T>(
               };
             }
           });
+          let response: Awaited<ReturnType<typeof stream.finalMessage>>;
           try {
-            const response = await stream.finalMessage();
-            await report(usageOf(response), response.model || config.model);
-            return response;
+            response = await stream.finalMessage();
           } catch (error) {
             const { partial } = seen;
             if (partial) {
@@ -310,6 +321,10 @@ export async function completeJson<T>(
             if (error instanceof Anthropic.APIError) throw error;
             throw new Anthropic.APIConnectionError({ message: `The reply stream failed: ${error instanceof Error ? error.message : String(error)}`, cause: error instanceof Error ? error : undefined });
           }
+          // Metered outside the stream's catch: a failed usage write is not a connection failure, so it
+          // is neither metered twice nor retried (a retry would be another paid call).
+          await report(usageOf(response), response.model || config.model);
+          return response;
         }),
         { backoffMs: opts.retryBackoffMs },
       );

@@ -20,6 +20,21 @@ export function coordinateWriting(db: OrcaSupabase, lease: WritingLease, desired
     }
   };
 }
+/**
+ * Reserve stock again for questions written by an earlier attempt of this task. The claims die with
+ * a failed attempt (pipeline_fail), and the commit only honours claims under the live token, so a
+ * retry resumed from the `written` checkpoint must claim before it commits, or every paid question
+ * would be discarded as an expired reservation.
+ */
+export async function reclaimWriting(db: OrcaSupabase, lease: WritingLease, targets: ReadonlyArray<{ objectiveId: string; desired: number }>): Promise<void> {
+  if (!targets.length) return;
+  try {
+    await pipelineRpc(db, "claim_questions", { ...lease, deep: false, targets: targets.map((t) => ({ objectiveId: t.objectiveId, need: t.desired, desired: t.desired })) });
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && (error.code === "55P03" || error.code === "40001")) throw new PipelineDeferred("question-stock", "Another writer changed this objective. Resuming with fresh question stock.");
+    throw error;
+  }
+}
 export function questionRows(bank: Readonly<Record<string, QuizQuestion[]>>) {
   return Object.entries(bank).flatMap(([topicId, qs]) => qs.map((q, index) => ({ ...questionToRow(q, topicId, index), prompt_key: promptKey(q.prompt) })));
 }

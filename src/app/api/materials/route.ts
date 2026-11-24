@@ -31,6 +31,13 @@ export async function POST(request: Request) {
       parsed.data.admissionId = crypto.randomUUID();
       await singleton(db, student.id, parsed.data.courseId, parsed.data.admissionId, parsed.data.filename, "browser", { again: !!parsed.data.again });
       await pipelineRpc(db, "charge_item", { ownerId: student.id, itemId: parsed.data.admissionId });
+    } else if (stagedPipeline() && parsed.data.admissionId) {
+      // Only a browser admission may be sent from here, and it carries the upload rate receipt
+      // (charge_item is idempotent): a Canvas, text or web item's id must not skip the rate limit.
+      const { data: item, error } = await db.from("pipeline_items").select("source").eq("id", parsed.data.admissionId).eq("owner_id", student.id).maybeSingle();
+      if (error) throw new Error(`Couldn't read the upload admission: ${error.message}`);
+      if (!item || item.source !== "browser") return reply(404, { error: "No such upload admission." });
+      await pipelineRpc(db, "charge_item", { ownerId: student.id, itemId: parsed.data.admissionId });
     }
     // Decision 10: at most LIMITS.rate.upload starts a day per student (a re-upload of a known file counts too).
     if (!stagedPipeline() || !parsed.data.admissionId) {

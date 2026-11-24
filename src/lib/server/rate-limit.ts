@@ -24,6 +24,7 @@ const WHAT: Record<RateAction, string> = {
   canvasConnect: "Canvas connections",
   heartbeat: "heartbeats",
   timer: "timer starts and stops",
+  runsCheck: "run checks",
 };
 
 function spell(seconds: number): string {

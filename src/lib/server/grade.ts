@@ -20,7 +20,8 @@
 import type { AnswerRubric } from "@/lib/data";
 import { GRADE_SYSTEM, GradeSchema, type GradeResult, RubricSchema, cleanAnswer, gradePrompt, parseGradeLoose, validateGrade } from "@/lib/grading";
 import { LlmError, completeJson } from "@/lib/llm-server";
-import { gradeConfig, meter } from "@/lib/server/model";
+import { PipelineDeferred } from "@/lib/jobs/staged/types";
+import { gradeConfig, meter, type ModelCtx } from "@/lib/server/model";
 import { rateLimit } from "@/lib/server/rate-limit";
 import { flaggedCount, recordSecurityEvents, summaryHit } from "@/lib/server/security";
 import { checkBudget } from "@/lib/server/usage";
@@ -75,16 +76,20 @@ export async function gradeAnswer(db: OrcaSupabase, ownerId: string, questionId:
   const flagged = summaryHit(suspected.hits);
   if (flagged) await recordSecurityEvents(db, ownerId, "student_answer", [flagged], { questionId });
 
+  // One ctx for the call and its meter, so the attempt id and usage time reach model_usage.
+  const ctx: ModelCtx = { ownerId, kind: "grade" };
   try {
     const result = await completeJson(config, GRADE_SYSTEM, gradePrompt(q.prompt, rubric.data as AnswerRubric, answer), GradeSchema, parseGradeLoose, {
       effort: "low",
       maxTokens: 1024,
-      ctx: { ownerId, kind: "grade" },
-      onUsage: meter({ ownerId, kind: "grade" }, db),
+      ctx,
+      onUsage: meter(ctx, db, config.model),
     });
     return { status: 200, body: validateGrade(result, rubric.data as AnswerRubric) };
   } catch (e) {
     if (e instanceof LlmError) return { status: e.status >= 500 ? 502 : e.status, body: { error: e.message } };
+    // The staged pipeline's model allowance (provider slots or a budget) is full right now.
+    if (e instanceof PipelineDeferred) return { status: 429, body: { error: `${e.message} Mark this answer yourself for now.`, retryAfterSeconds: 30 } };
     throw e;
   }
 }

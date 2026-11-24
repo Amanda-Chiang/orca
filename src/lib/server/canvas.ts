@@ -271,7 +271,7 @@ async function importSyllabus(db: OrcaSupabase, ownerId: string, courseId: strin
 type FileResult = "added" | "duplicate" | "failed" | "skipped";
 
 async function importFile(db: OrcaSupabase, ownerId: string, courseId: string, client: CanvasClient, pick: PickedFile, admissionId?: string): Promise<{ result: FileResult; materialId: string | null }> {
-  const file = pick.file ?? (await client.get<CanvasFile>(`/files/${pick.id}`).catch((e: unknown) => (e instanceof CanvasError && e.status !== 401 ? null : Promise.reject(e))));
+  const file = pick.file ?? (await client.get<CanvasFile>(`/files/${pick.id}`).catch((e: unknown) => (e instanceof CanvasError && !(admissionId && e.status === 401) ? null : Promise.reject(e))));
   if (!file || file.locked_for_user) return { result: "skipped", materialId: null };
   if ((file.size ?? 0) > LIMITS.uploadBytes) return { result: "skipped", materialId: null };
   const kind = uploadKind(file.display_name, file["content-type"] ?? "");
@@ -280,7 +280,7 @@ async function importFile(db: OrcaSupabase, ownerId: string, courseId: string, c
   try {
     bytes = await client.download(file.url, LIMITS.uploadBytes);
   } catch (e) {
-    if (e instanceof CanvasError && e.status !== 401) return { result: "skipped", materialId: null };
+    if (e instanceof CanvasError && !(admissionId && e.status === 401)) return { result: "skipped", materialId: null };
     throw e;
   }
   const hash = createHash("sha256").update(bytes).digest("hex");

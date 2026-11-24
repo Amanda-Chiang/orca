@@ -24,7 +24,7 @@ import { RecordError, supabaseSnapshotStore } from "@/lib/server/snapshot-store"
 import type { ConfusionEvent } from "@/lib/mastery/types";
 import { pipelineRpc } from "./db";
 import { pipelineSnapshot } from "./snapshot";
-import { coordinateWriting, questionRows, writingLease } from "./writing";
+import { coordinateWriting, questionRows, reclaimWriting, writingLease } from "./writing";
 
 interface QuestionCheckpoint { targets: Array<{ objectiveId: string; desired: number }>; written?: Record<string, QuizQuestion[]>; dropped?: PipelineRun["dropped"] }
 export async function runPipelineStage(job: StageJob): Promise<void> {
@@ -137,6 +137,21 @@ export async function runPipelineStage(job: StageJob): Promise<void> {
           }
         }
         await checkpoint({ checkpoint: { ...saved, written, dropped } });
+      } else {
+        // Resumed after the paid writing (the commit failed or the worker died): claim the stock again
+        // under this attempt's token, so the commit keeps what was already paid for.
+        const snapshot = await pipelineSnapshot(db, job.ownerId, task.courseId);
+        const desired = new Map<string, number>();
+        for (const spec of saved.targets) {
+          const id = resolveObjectiveId(spec.objectiveId, snapshot.structure.objectives);
+          desired.set(id, Math.max(desired.get(id) ?? 0, spec.desired));
+        }
+        const writtenFor = new Set(Object.values(written).flat().map((q) => resolveObjectiveId(q.objectiveId, snapshot.structure.objectives)));
+        await reclaimWriting(db, writingLease(job, task.runId), [...writtenFor].flatMap((id) => {
+          const want = desired.get(id);
+          const o = snapshot.structure.objectives[id];
+          return want && o && o.review !== "archived" ? [{ objectiveId: id, desired: want }] : [];
+        }));
       }
       await pipelineRpc(db, "commit_questions", { ...writingLease(job, task.runId), questions: questionRows(written), dropped });
       await pipelineRpc(db, "finish", { ...job });

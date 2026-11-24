@@ -155,9 +155,15 @@ export function uploadProblem(file: File): string | null {
 
 /** Reserve file order before any concurrent hash/transfer/parse work. Older servers return staged:false. */
 export async function admitUploads(courseId: string, items: Array<{ id: string; name: string; again?: boolean; retry?: boolean }>, batchId = crypto.randomUUID()): Promise<boolean> {
+  // A server without the staged pipeline answers staged:false; remember it for a while rather than
+  // asking again before every file.
+  if (Date.now() - legacyServerAt < LEGACY_SERVER_MS) return false;
   const result = await post<{ staged: boolean }>("/api/materials/admit", { courseId, batchId, items: items.map((it) => ({ id: it.id, name: it.name, metadata: { again: !!it.again, retry: !!it.retry } })) });
+  if (!result.staged) legacyServerAt = Date.now();
   return result.staged;
 }
+const LEGACY_SERVER_MS = 5 * 60_000;
+let legacyServerAt = -Infinity;
 export { concurrent, PIPELINE_LIMITS };
 
 /** `onStarted` gets the material's id as soon as the server has made it (the page keeps it in its URL, so a reload can follow it). */
