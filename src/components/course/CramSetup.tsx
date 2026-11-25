@@ -151,7 +151,7 @@ export function CramSetup({ exam, course, candidates, materials, catalogue, mast
           onChange={(e) => setWorries(e.target.value)}
           maxLength={WORDS_MAX}
           rows={2}
-          placeholder="e.g. Thevenin equivalents, anything with op-amps. Not sure? Leave it: Claude checks first."
+          placeholder="e.g. Thevenin equivalents, anything with op-amps. Not sure? Leave it: your AI checks first."
           data-part="cram-worries"
           className="min-h-[64px] w-full resize-y rounded-[16px] border-2 border-alice-deep bg-parchment px-[16px] py-[12px] text-[16px] text-prussian outline-none focus:border-wisteria"
         />

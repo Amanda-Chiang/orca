@@ -11,7 +11,7 @@ import { ProgressBar } from "@/components/ui/ProgressBar";
  */
 export const SOURCE_STYLE: ReadonlyArray<{ key: StudySource; label: string; color: string }> = [
   { key: "app", label: "In Orca", color: "bg-wisteria" },
-  { key: "claude", label: "With Claude", color: "bg-study-coral" },
+  { key: "claude", label: "With your AI", color: "bg-study-coral" },
   { key: "timer", label: "Study timer", color: "bg-study-mint" },
 ];
 

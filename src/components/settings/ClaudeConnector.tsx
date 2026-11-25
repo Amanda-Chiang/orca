@@ -11,8 +11,8 @@ interface Status {
 }
 
 /**
- * Settings → Claude connector: one secret link per student that Claude calls while they study in a
- * chat (`/api/connector`). The link is shown once; making a new one replaces the old.
+ * Settings → AI connector: one secret link per student that their AI (Claude or ChatGPT) calls while
+ * they study in a chat (`/api/connector`). The link is shown once; making a new one replaces the old.
  */
 export function ClaudeConnectorCard() {
   const [status, setStatus] = useState<Status | null>(null);
@@ -79,14 +79,18 @@ export function ClaudeConnectorCard() {
   return (
     <Card id="connector" className="flex flex-col gap-[12px] scroll-mt-[24px] px-[24px] pb-[22px] pt-[20px]" data-part="claude-connector">
       <div className="flex flex-col gap-[4px]">
-        <h2 className="text-[22px] font-bold text-prussian">Claude connector</h2>
+        <h2 className="text-[22px] font-bold text-prussian">AI connector</h2>
         <p className="text-[14px] font-medium text-wisteria-deep">
-          Study in Claude as usual. With this connected, Claude knows what each exam covers and what you&apos;re weak on, and every answer it grades goes on your record here.
+          Works with Claude and ChatGPT. Study in the chat you already use; with this connected, it knows what each exam covers and what you&apos;re weak on, and every answer it grades goes on your record here.
         </p>
       </div>
       {url ? (
         <div className="flex flex-col gap-[8px]" data-part="connector-link">
-          <p className="text-[13px] font-semibold text-prussian">Your link, shown once. In Claude: Settings → Connectors → Add custom connector, paste it as the URL, no sign-in.</p>
+          <p className="text-[13px] font-semibold text-prussian">Your link, shown once. Paste it as the connector URL, no sign-in:</p>
+          <ul className="flex flex-col gap-[2px] text-[13px] font-medium text-prussian" data-part="connector-steps">
+            <li><b>Claude:</b> Settings → Connectors → Add custom connector.</li>
+            <li><b>ChatGPT:</b> Settings → Connectors → Create (turn on developer mode first), paste it as the MCP server URL.</li>
+          </ul>
           <code className="break-all rounded-[12px] border-2 border-alice-deep bg-alice px-[12px] py-[8px] text-[12px] text-prussian" data-part="connector-url">{url}</code>
           <div className="flex items-center gap-[10px]">
             <Button size="sm" variant="secondary" onClick={() => void copy()}>{copied ? "Copied" : "Copy link"}</Button>
@@ -100,7 +104,7 @@ export function ClaudeConnectorCard() {
       )}
       <div className="flex flex-wrap items-center gap-[10px]">
         <Button size="sm" onClick={() => void create()} disabled={busy || status === null} data-part="connector-create">
-          {status?.connected ? "Make a new link" : "Connect Claude"}
+          {status?.connected ? "Make a new link" : "Connect your AI"}
         </Button>
         {status?.connected && !confirming && (
           <Button size="sm" variant="ghost" onClick={() => setConfirming(true)} disabled={busy} data-part="connector-revoke">
@@ -111,7 +115,7 @@ export function ClaudeConnectorCard() {
       </div>
       {status?.connected && confirming && (
         <div className="flex flex-wrap items-center gap-[10px] rounded-[14px] border-2 border-alice-deep bg-alice px-[14px] py-[10px]" data-part="connector-revoke-confirm">
-          <span className="text-[13px] font-semibold text-prussian">Disconnect Claude? The link stops working at once; Claude would need a new one.</span>
+          <span className="text-[13px] font-semibold text-prussian">Disconnect? The link stops working at once; your AI would need a new one.</span>
           <Button size="sm" variant="danger" onClick={() => void revoke()} disabled={busy} data-part="connector-revoke-yes">
             Yes, disconnect
           </Button>

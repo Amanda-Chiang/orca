@@ -60,7 +60,7 @@ export function CramBanner({ course, exam }: { course: Pick<Course, "slug">; exa
         </Link>
         {!connected && (
           <Link href="/settings#connector" data-part="study-with-claude" className={PILL}>
-            Study with Claude
+            Study with your AI
           </Link>
         )}
         {/* To the cram's results, which end the cram (src/lib/cram-exit.ts); the dive back up plays when they close. */}

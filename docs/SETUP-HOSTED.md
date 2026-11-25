@@ -241,11 +241,12 @@ from public.question_feedback f join public.questions q on q.id = f.question_id
 where f.rating = 'down' order by f.created_at desc limit 50;
 ```
 
-## 8. The Claude connector (a student does this, not the owner)
+## 8. The AI connector (a student does this, not the owner)
 
-1. In Orca: Settings → Claude connector → **Connect Claude**. Copy the link (shown once).
+1. In Orca: Settings → AI connector → **Connect your AI**. Copy the link (shown once).
 2. In Claude (web or desktop): Settings → Connectors → **Add custom connector**. Name it Orca, paste
-   the link as the URL, leave authentication off, save.
+   the link as the URL, leave authentication off, save. In ChatGPT: Settings → Connectors → turn on
+   developer mode → **Create**, paste the link as the MCP server URL, no authentication.
 3. In a chat, turn the Orca connector on and say what you're studying for. Claude calls
    `course_state` on its own; approve its tool calls the first time. Its five tools: `course_state`,
    `set_exam`, `questions_for`, `record_answer` and `flag_check` (what the student asked about or
