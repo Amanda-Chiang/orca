@@ -1,6 +1,6 @@
 /**
  * The Claude connector against Supabase: the student's secret link (one per account, only its hash
- * stored) and the tools in `src/lib/connector/mcp.ts` (v0.4; the material, question and evidence
+ * stored) and the tools in `src/lib/connector/mcp.ts` (v0.6; the material, question and evidence
  * tools live one per file under `connector/`) read and written with the service-role client, every
  * query scoped to that student.
  */
@@ -8,6 +8,10 @@ import { createHash, randomBytes } from "node:crypto";
 import type { AnswerKey, AnswerReport, CheckedAnswer, ConnectorTools, CourseMode, CourseState, ExamLine, FlagCheckResult, MaterialLine, NextQuestions, ObjectiveLine, QuestionLine, RecordedAnswer, ScopeInput, ScopeSummary, SelfGradeNeeded, TopicLine, VaultLine, WritingLine } from "@/lib/connector/mcp";
 import { addMaterial } from "@/lib/server/connector/add-material";
 import { addQuestions } from "@/lib/server/connector/add-questions";
+import { setCourse } from "@/lib/server/connector/set-course";
+import { setPreferences } from "@/lib/server/connector/preferences";
+import { checkNotes } from "@/lib/pipeline/notes";
+import { LIMITS } from "@/lib/limits";
 import { cramFields } from "@/lib/server/connector/cram-plan";
 import { logEvidence } from "@/lib/server/connector/log-evidence";
 import { materialFor } from "@/lib/server/connector/material-for";
@@ -178,9 +182,14 @@ export function scopeSummary(scope: ExamScope, topicIds: readonly string[], obje
 
 export function connectorTools(db: OrcaSupabase, ownerId: string, now: () => Date = () => new Date()): ConnectorTools {
   const owns = async (courseId: string) => {
-    const { data, error } = await db.from("courses").select("id, name").eq("owner_id", ownerId).eq("id", courseId).is("deleted_at", null).maybeSingle();
+    const { data, error } = await db.from("courses").select("id, name, orca_notes").eq("owner_id", ownerId).eq("id", courseId).is("deleted_at", null).maybeSingle();
     if (error) throw new Error(`Couldn't read the course: ${error.message}`);
     return data;
+  };
+  /** Stored notes, screened again as a job loads them (a note written straight through RLS meets the same rules); refused ones are left out. */
+  const readNotes = (raw: string | null, maxChars: number) => {
+    const out = checkNotes(raw, maxChars);
+    return out.ok ? out.text : null;
   };
 
   const courseState = async (courseId: string, options: { detail?: "summary" | "weak" | "full"; topicIds?: string[]; asOf?: string } = {}): Promise<CourseState | null> => {
@@ -191,7 +200,7 @@ export function connectorTools(db: OrcaSupabase, ownerId: string, now: () => Dat
       db.from("objectives").select("id, topic_id, name, review, merged_into, material_id, signals").eq("owner_id", ownerId).eq("course_id", courseId),
       db.from("questions").select("id, objective_id, deep").eq("owner_id", ownerId).eq("course_id", courseId),
       db.from("exams").select("id, title, date, topic_ids, cramming, scope").eq("owner_id", ownerId).eq("course_id", courseId).order("date"),
-      db.from("profiles").select("timezone").eq("owner_id", ownerId).maybeSingle(),
+      db.from("profiles").select("timezone, orca_notes").eq("owner_id", ownerId).maybeSingle(),
       readCourseState(supabaseSnapshotStore(db, ownerId, courseId)),
       db.from("question_feedback").select("question_id").eq("owner_id", ownerId).eq("rating", "down"),
       db.from("pipeline_runs").select("id, status, objective_ids").eq("owner_id", ownerId).eq("course_id", courseId).eq("kind", "top-up").in("status", ["queued", "waiting", "running"]).order("at"),
@@ -284,6 +293,7 @@ export function connectorTools(db: OrcaSupabase, ownerId: string, now: () => Dat
 
     return {
       course: { id: course.id, name: course.name },
+      notes: { account: readNotes(profile.data?.orca_notes ?? null, LIMITS.notesChars), course: readNotes(course.orca_notes, LIMITS.notesChars) },
       today,
       exams: options.detail === "summary" || options.detail === "weak" ? examLines.map(summarised) : examLines,
       topics: topicLines,
@@ -399,6 +409,14 @@ export function connectorTools(db: OrcaSupabase, ownerId: string, now: () => Dat
   };
 
   return {
+    async preferences() {
+      const { data, error } = await db.from("profiles").select("orca_notes, marker_notes").eq("owner_id", ownerId).maybeSingle();
+      if (error) throw new Error(`Couldn't read the account: ${error.message}`);
+      return { notes: readNotes(data?.orca_notes ?? null, LIMITS.notesChars), markerNotes: readNotes(data?.marker_notes ?? null, LIMITS.markerChars) };
+    },
+
+    setPreferences: (change) => setPreferences(db, ownerId, change),
+
     async courses() {
       const { data, error } = await db.from("courses").select("id, name").eq("owner_id", ownerId).is("deleted_at", null).order("created_at");
       if (error) throw new Error(`Couldn't read the courses: ${error.message}`);
@@ -580,6 +598,7 @@ export function connectorTools(db: OrcaSupabase, ownerId: string, now: () => Dat
     materialFor: (courseId, objectiveIds) => materialFor(db, ownerId, courseId, objectiveIds),
     vaultMaterial: (courseId, materialId, options) => vaultMaterial(db, ownerId, courseId, materialId, options),
     addQuestions: (courseId, questions) => addQuestions(db, ownerId, courseId, questions),
+    setCourse: (input) => setCourse(db, ownerId, input),
     addMaterial: (courseId, input) => addMaterial(db, ownerId, courseId, input),
     logEvidence: (courseId, objectiveId, entry, sessionId) => logEvidence(db, ownerId, courseId, objectiveId, entry, sessionId),
     logSession: (courseId, entry) => logSession(db, ownerId, courseId, entry, now),
