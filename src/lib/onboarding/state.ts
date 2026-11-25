@@ -19,6 +19,17 @@ export function withSeen(state: OnboardingState, ids: readonly string[]): Onboar
 }
 
 /**
+ * Two copies of the same account's tips state put together: a tip seen in either stays seen, and
+ * skipping in either stays skipped (neither ever goes back). Used where a copy read from the
+ * database meets the one on screen, so a read that started before a tip was marked can't bring it
+ * back, and a write from a stale tab can't erase what another tab marked. `a` when nothing is new.
+ */
+export function mergeOnboarding(a: OnboardingState, b: OnboardingState): OnboardingState {
+  const merged = withSeen(a, b.seen);
+  return b.skipped && !merged.skipped ? { ...merged, skipped: true } : merged;
+}
+
+/**
  * The profile row's value. A database from before the column (a hosted project whose migrations
  * are pushed by hand) sends none: the tips stay off there, since seeing one couldn't be saved.
  */

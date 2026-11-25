@@ -78,7 +78,7 @@ import { snapshotFromRow } from "./supabase/rows";
 import { confusionEventId } from "./mastery/ids";
 import { resolveObjectiveId } from "./mastery/catalogue";
 import type { Json } from "./supabase/database.types";
-import { type OnboardingState, TIPS_OFF, withSeen } from "./onboarding/state";
+import { type OnboardingState, TIPS_OFF, mergeOnboarding, onboardingFromProfile, withSeen } from "./onboarding/state";
 import { useNow } from "@/hooks/useNow";
 
 interface OrcaState {
@@ -890,7 +890,12 @@ export function OrcaProvider({ children }: { children: React.ReactNode }) {
       save(async () => {
         const { data } = await browserSupabase().auth.getSession();
         if (!data.session) throw new Error("you're signed out");
-        mustChange(await browserSupabase().from("profiles").update({ onboarding: next }).eq("owner_id", data.session.user.id).select("owner_id"));
+        // Saved over what the database holds now, not in place of it: this copy may be stale (another
+        // tab, or a refresh that replaced it before the change), and a tip seen anywhere stays seen.
+        const stored = must(await browserSupabase().from("profiles").select("onboarding").eq("owner_id", data.session.user.id).single());
+        if (!stored) throw new Error("your profile wasn't found");
+        const merged = mergeOnboarding(next, onboardingFromProfile(stored.onboarding));
+        mustChange(await browserSupabase().from("profiles").update({ onboarding: merged }).eq("owner_id", data.session.user.id).select("owner_id"));
         if (pendingOnboarding.current === next) pendingOnboarding.current = null;
       });
     },
@@ -961,7 +966,9 @@ export function OrcaProvider({ children }: { children: React.ReactNode }) {
     const next = queue.current.then(async () => {
       try {
         const loaded = await loadAll();
-        setState((s) => ({ ...initialState, ...loaded, llm: s.llm }));
+        // The read may have started before a tip was marked seen on screen (uploads finishing one by
+        // one refresh again and again): the tips state keeps both, or a dismissed tip comes back.
+        setState((s) => ({ ...initialState, ...loaded, onboarding: s.onboarding === TIPS_OFF ? loaded.onboarding : mergeOnboarding(loaded.onboarding, s.onboarding), llm: s.llm }));
       } catch (e) {
         setSaveError(`Couldn't load the latest changes: ${message(e)}. Reload the page to see them.`);
       }
