@@ -396,9 +396,12 @@ test("uploading the same deck again adds a second copy, built like any upload (n
   await expect(page.locator("[data-part=run-summary]")).toContainText("1 new topic, 1 new objective", { timeout: 60_000 });
   await upload(page);
   await expect.poll(async () => (await student.db.from("materials").select("id")).data?.length, { timeout: 30_000 }).toBe(2);
-  const { data: copies } = await student.db.from("materials").select("content_hash");
-  expect(new Set(copies!.map((c) => c.content_hash)).size).toBe(1);
   await expect.poll(async () => (await student.db.from("pipeline_runs").select("id")).data?.length, { timeout: 30_000 }).toBe(2);
+  // The fingerprint is stored once the server has read a copy: both read, both the same file.
+  await expect.poll(async () => {
+    const { data: copies } = await student.db.from("materials").select("content_hash");
+    return copies!.every((c) => c.content_hash) ? new Set(copies!.map((c) => c.content_hash)).size : 0;
+  }, { timeout: 30_000 }).toBe(1);
 });
 
 test("a job that fails says why on the review screen, saves nothing, and uploading the file again builds a new copy", async ({ page, student }) => {
