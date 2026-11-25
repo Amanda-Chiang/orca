@@ -25,6 +25,11 @@ const WHAT: Record<RateAction, string> = {
   timer: "timer starts and stops",
   runsCheck: "run checks",
   feedback: "feedback messages",
+  calendarFeed: "calendar feed links",
+  google: "Google files",
+  notionConnect: "Notion connections",
+  notionPages: "Notion page listings",
+  notionImport: "Notion imports",
 };
 
 function spell(seconds: number): string {

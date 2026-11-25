@@ -15,9 +15,11 @@ import { ConfigRow, REVIEW_LABELS } from "@/components/config/ConfigRow";
 import { MarkerNotes } from "@/components/config/MarkerNotes";
 import { NotesForOrca } from "@/components/config/NotesForOrca";
 import { AccountCard, SignOutButton, TimezoneRow } from "@/components/settings/Account";
+import { CalendarFeedCard } from "@/components/settings/CalendarFeed";
 import { CanvasConnectionCard } from "@/components/settings/CanvasConnection";
 import { ClaudeConnectorCard } from "@/components/settings/ClaudeConnector";
 import { FeedbackCard } from "@/components/settings/FeedbackCard";
+import { NotionConnectionCard } from "@/components/settings/NotionConnection";
 import { fadeSwap, fadeUp, stagger } from "@/lib/motion";
 import { Button } from "@/components/ui/Button";
 
@@ -90,6 +92,8 @@ function SettingsBody() {
                     <>
                       <ClaudeConnectorCard />
                       <CanvasConnectionCard />
+                      <NotionConnectionCard />
+                      <CalendarFeedCard />
                     </>
                   )}
                   {section.key === "feedback" && <FeedbackCard />}
