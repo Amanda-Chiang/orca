@@ -61,7 +61,8 @@ export function eventFromRow(r: EvidenceRow): EvidenceEvent {
     sessionId: r.session_id,
     ...(r.note !== null ? { response: r.note } : {}),
     ...reported,
-    ...(r.grader_note !== null ? { graderNote: graderNoteFromJson(r.grader_note) } : {}),
+    // Loose check: a database without migration 20261125090000 has no grader_note at all (undefined).
+    ...(r.grader_note != null ? { graderNote: graderNoteFromJson(r.grader_note) } : {}),
   };
 }
 
