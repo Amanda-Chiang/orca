@@ -24,7 +24,7 @@ import { ProgressBar } from "@/components/ui/ProgressBar";
 import { RoundButton } from "@/components/ui/RoundButton";
 import { TruthTable } from "@/components/quiz/TruthTable";
 import { ShortAnswer } from "@/components/quiz/ShortAnswer";
-import { type GradeResult, gradeExact, isDontKnow } from "@/lib/grading";
+import { type GradeResult, gradeExact, graderNoteOf, isDontKnow } from "@/lib/grading";
 import { useServerStatus } from "@/hooks/useServerModel";
 import { type TopUpStatus, useTopUp } from "@/hooks/useTopUp";
 import { goBack } from "@/lib/nav-history";
@@ -230,7 +230,7 @@ export function QuizRunner({ course, items: firstItems, mode, title, backHref, a
 
   /** One graded answer → one evidence event. Called only after grading has finished. */
   const logAnswer = useCallback(
-    (at: RunnerItem, outcome: Outcome, grader: Grader) => {
+    (at: RunnerItem, outcome: Outcome, grader: Grader, said?: { response?: string; grade?: GradeResult }) => {
       // One id per run; the "review missed" restart stays in the same session.
       sessionId.current ??= crypto.randomUUID();
       const objective = liveObjectiveOf(at.question, catalogue ?? {});
@@ -245,6 +245,14 @@ export function QuizRunner({ course, items: firstItems, mode, title, backHref, a
         outcome,
         grader,
         source: SOURCE[mode],
+        // Kept for the List view's History (owner, 2026-11-25): what the student answered, and what the rubric grader said.
+        ...(said?.response?.trim() ? { response: said.response.trim() } : {}),
+        ...(grader === "rubric" && said?.grade
+          ? {
+              graderNote: graderNoteOf(said.grade),
+              ...(said.grade.errorType ? { errorType: said.grade.errorType } : {}),
+            }
+          : {}),
       });
     },
     [course.id, mode, catalogue, recordEvidence],
@@ -259,7 +267,7 @@ export function QuizRunner({ course, items: firstItems, mode, title, backHref, a
     else setMissed((m) => [...m, item]);
     setStage(ok ? "solution" : retry ? "retry" : "spot");
     showResult(ok ? "correct" : "incorrect", ok ? null : retry ? "Try once more before the answer shows." : `The answer is ${item.question.options[item.question.answer]}.`);
-    logAnswer(item, ok ? "correct" : "incorrect", "choice");
+    logAnswer(item, ok ? "correct" : "incorrect", "choice", { response: item.question.options[selected] });
     if (!ok) queueSibling(item);
   }, [selected, checked, item, logAnswer, showResult, queueSibling]);
 
@@ -280,7 +288,7 @@ export function QuizRunner({ course, items: firstItems, mode, title, backHref, a
     gradingOff ?? (serverStatus === undefined ? null : serverStatus.serverModel === null ? "no AI connected" : serverStatus.grading === "self" ? "model grading is off for your account" : null);
 
   const settle = useCallback(
-    (result: GradeResult, grader: Grader | null, gaveUp = false) => {
+    (result: GradeResult, grader: Grader | null, gaveUp = false, response?: string) => {
       if (!item || checked) return;
       setGrade(result);
       setChecked(true);
@@ -292,7 +300,7 @@ export function QuizRunner({ course, items: firstItems, mode, title, backHref, a
       const next: AfterMissStage = !miss || grader === null || grader === "self" ? "solution" : !gaveUp && canRetry(item.question) ? "retry" : "spot";
       setStage(next);
       showResult(result.outcome, grader === null ? "Not counted." : grader === "self" ? result.feedback : next === "retry" ? "Try once more before the solution shows." : null);
-      if (grader) logAnswer(item, result.outcome, grader);
+      if (grader) logAnswer(item, result.outcome, grader, { ...(response !== undefined ? { response } : {}), grade: result });
       if (grader && miss) queueSibling(item);
     },
     [item, checked, logAnswer, showResult, queueSibling],
@@ -302,7 +310,7 @@ export function QuizRunner({ course, items: firstItems, mode, title, backHref, a
     async (response: string) => {
       if (!q || checked || grading) return;
       if (q.exact?.length) {
-        settle(gradeExact(response, q.exact), "exact", isDontKnow(response));
+        settle(gradeExact(response, q.exact), "exact", isDontKnow(response), response);
         return;
       }
       if (!q.rubric) return;
@@ -321,7 +329,7 @@ export function QuizRunner({ course, items: firstItems, mode, title, backHref, a
           return;
         }
         if (!res.ok || data.error) throw new Error(data.error ?? "Grading failed.");
-        settle(data, "rubric", isDontKnow(response));
+        settle(data, "rubric", isDontKnow(response), response);
       } catch (error) {
         setUngraded((n) => n + 1);
         settle(
@@ -608,8 +616,8 @@ export function QuizRunner({ course, items: firstItems, mode, title, backHref, a
                   {...(q.deep ? { value: deepResponse, onValueChange: setDeepResponse, hideCheck: true } : {})}
                   onSubmit={submitAnswer}
                   onDontKnow={retrying ? giveUpRetry : dontKnow}
-                  onSelfReport={(ok) =>
-                    settle({ outcome: ok ? "correct" : "incorrect", feedback: ok ? "Marked as known." : "Marked as missed; it'll come back." }, "self")
+                  onSelfReport={(ok, response) =>
+                    settle({ outcome: ok ? "correct" : "incorrect", feedback: ok ? "Marked as known." : "Marked as missed; it'll come back." }, "self", false, response)
                   }
                 />
               </div>
