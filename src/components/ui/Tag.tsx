@@ -10,6 +10,7 @@ export const TAG_LABELS: Record<EventKind, string> = {
   hw: "HW due",
   lab: "Lab",
   rev: "Review",
+  dive: "Dive in",
   exam: "Exam",
 };
 
@@ -17,6 +18,7 @@ const looks: Record<EventKind, string> = {
   hw: "bg-alice text-prussian ring-2 ring-inset ring-alice-deep",
   lab: "bg-alice text-prussian ring-2 ring-inset ring-alice-deep",
   rev: "bg-wisteria text-parchment",
+  dive: "bg-wisteria text-parchment",
   exam: "bg-prussian text-parchment",
 };
 
