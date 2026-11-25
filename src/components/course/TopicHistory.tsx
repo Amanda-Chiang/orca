@@ -20,13 +20,13 @@ const SOURCE_LABEL: Record<EvidenceSource, string> = {
   "quick-review": "Quick review",
   "deep-review": "Dive",
   requiz: "Missed-question review",
-  connector: "With Claude",
+  connector: "With your AI",
 };
 const FLAG_LABEL: Record<FlagSource, string> = {
   homework: "from a homework reflection",
   "handwritten-marker": "marked in your notes",
-  connector: "Claude asked for a check",
-  "connector-struggled": "you were stuck with Claude",
+  connector: "your AI asked for a check",
+  "connector-struggled": "you were stuck in the chat",
   slide: "a slide you found hard",
   manual: "you flagged it",
 };
@@ -111,7 +111,7 @@ export function TopicHistory({
             <div className="mt-[16px] flex flex-col gap-[22px] overflow-auto px-[32px]">
               {sections.length === 0 ? (
                 <p className="text-[16px] text-wisteria-deep" data-part="history-empty">
-                  Nothing answered on this topic yet. Questions you answer, here or with Claude, show up here.
+                  Nothing answered on this topic yet. Questions you answer, here or with your AI, show up here.
                 </p>
               ) : (
                 sections.map((s) => (
@@ -159,7 +159,7 @@ function HistoryRow({ entry, questions }: { entry: HistoryEntry; questions: Read
   const q = e.kind === "answer" ? questions.get(e.questionId) : undefined;
   const prompt = e.kind === "work" ? e.problem : q?.prompt ?? null;
   const result = RESULT[e.outcome];
-  const from = e.kind === "work" ? "Claude's problem" : e.source === "connector" ? (q?.source === "claude" ? "Claude's question" : "With Claude") : SOURCE_LABEL[e.source];
+  const from = e.kind === "work" ? "Your AI's problem" : e.source === "connector" ? (q?.source === "claude" ? "Your AI's question" : "With your AI") : SOURCE_LABEL[e.source];
   return (
     <li className="border-b border-alice/70 last:border-b-0" data-part="history-attempt" data-outcome={e.outcome}>
       <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} className="flex w-full cursor-pointer items-center gap-[12px] py-[9px] text-left">
@@ -223,7 +223,7 @@ function HistoryRow({ entry, questions }: { entry: HistoryEntry; questions: Read
               Kind of mistake: {ERROR_LABEL[e.errorType]}
             </p>
           )}
-          {e.kind === "work" && <p className="text-[13px] text-wisteria-deep">{e.basis === "claude" ? "Judged by Claude" : e.basis === "official-solution" ? "Checked against the official solution" : "Checked against a known answer"}</p>}
+          {e.kind === "work" && <p className="text-[13px] text-wisteria-deep">{e.basis === "claude" ? "Judged by your AI" : e.basis === "official-solution" ? "Checked against the official solution" : "Checked against a known answer"}</p>}
           {q?.explanation && (
             <div>
               <Label>Why</Label>
@@ -258,7 +258,7 @@ function Change({ entry }: { entry: HistoryEntry }) {
 
 function markerText(e: Extract<EvidenceEvent, { kind: "confusion" | "mark" | "signal" }>): string {
   if (e.kind === "mark") return "You marked it mastered";
-  if (e.kind === "signal") return e.signal === "got-it" ? "You told Claude you got it: a check is due" : "You told Claude you were lost";
+  if (e.kind === "signal") return e.signal === "got-it" ? "You told your AI you got it: a check is due" : "You told your AI you were lost";
   const what = e.flagSource === "connector" ? "Check requested" : "Flagged as hard";
   return `${what}: ${FLAG_LABEL[e.flagSource]}${e.note ? ` (“${e.note}”)` : ""}`;
 }

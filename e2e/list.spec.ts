@@ -171,16 +171,16 @@ test("History: older answers, Claude's questions and problems, marks and signals
   await expect(markers).toHaveCount(3);
   await expect(markers.nth(0)).toHaveAttribute("data-kind", "mark");
   await expect(markers.nth(0)).toContainText("You marked it mastered");
-  await expect(markers.nth(1)).toContainText("You told Claude you were lost");
+  await expect(markers.nth(1)).toContainText("You told your AI you were lost");
   await expect(markers.nth(2)).toContainText("Flagged as hard: you flagged it");
   // Asking for something harder changes nothing, so it isn't listed.
   await expect(section).not.toContainText("harder");
 
   const attempts = section.locator("[data-part=history-attempt]");
   await expect(attempts).toHaveCount(4);
-  await expect(attempts.nth(0)).toContainText("Claude's problem");
+  await expect(attempts.nth(0)).toContainText("Your AI's problem");
   await expect(attempts.nth(0)).toContainText("Sign-extend 1001 to 6 bits.");
-  await expect(attempts.nth(1)).toContainText("Claude's question · with a hint");
+  await expect(attempts.nth(1)).toContainText("Your AI's question · with a hint");
   await expect(attempts.nth(2)).toContainText("Topic quiz · marked by you");
   await expect(attempts.nth(3)).toContainText("Quick review");
 

@@ -291,7 +291,7 @@ test.describe("the day's welcome", () => {
     await expect(welcome.locator("[data-part=cram-schedule] [data-part=cram-day-col]")).toHaveCount(3);
     await expect(page.locator("[data-part=cram-tab-today]")).toHaveCount(0);
     // Cram with Claude, track it here; no connector yet, so Connect Claude.
-    await expect(welcome.locator("[data-part=cram-welcome-claude]")).toContainText("Cram with Claude, track it here");
+    await expect(welcome.locator("[data-part=cram-welcome-claude]")).toContainText("Cram with your AI, track it here");
     await expect(welcome.locator("[data-part=cram-welcome-connect]")).toHaveAttribute("href", "/settings#connector");
     // Start study timer beside the welcome: it runs for this course.
     await welcome.locator("[data-part=cram-welcome-timer]").click();
