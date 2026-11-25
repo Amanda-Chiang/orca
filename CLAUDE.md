@@ -152,6 +152,13 @@ own courses (Data Structures, Fundamentals of Computer Systems) on the hosted pr
   value and unit (`quantityOf`), "I don't know" as a miss on choice and exact questions (`isDontKnow`),
   `course_state` `detail: "weak"`, and `scope.history` (who changed the scope or budget, and what;
   `src/lib/course/scope-history.ts`). The plan lists what wasn't built and why.
+- **Since 2026-11-25: courses from the chat** (owner; connector v0.6, fifteen tools, no migration): `set_course` creates
+  a course (no `courseId`; same slug, island look and map spot as the app, review settings inherited; a live course
+  with the same name is refused with its id) or changes its name, schedule (class times and review days; a part left
+  out keeps the stored one, null clears) and Notes for Orca (screened as on the settings page, hits logged
+  `orca_notes`). No delete from the chat. Claude confirms the name before creating and never creates one unasked.
+  Server code `src/lib/server/connector/set-course.ts`; `createCourse` in `src/lib/server/courses.ts` is shared with
+  the Canvas import.
 - **Since 2026-11-22: cram mode you enter** (plan `docs/superpowers/plans/2026-11-22-cram-mode-immersive.md`; owner):
   while a course crams for an exam (`crammingExam` in `src/lib/course/exam-card.ts`: `cramming` and the date not past,
   so it ends by itself the day after; `useCramming(courseId)` in the store gives the exam and `examTopicIds`), its

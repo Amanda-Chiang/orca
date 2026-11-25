@@ -40,7 +40,6 @@ import {
   type SessionProgress,
   type Course,
   type ExamScope,
-  type IslandVariant,
   type Material,
   type QuizResult,
   type Objective,
@@ -69,7 +68,7 @@ import { type ObjectiveAccumulator, dayKeyIn } from "./mastery/objective-state";
 import { isUsable } from "./mastery/snapshots";
 import { courseObjectiveWeights, examScopeWeights } from "./course/weights";
 import { laidOut } from "./course/layout";
-import { placeIslands } from "./course/islands";
+import { VARIANT_CYCLE, placeIslands } from "./course/islands";
 import { crammingExam, examTopicIds } from "./course/exam-card";
 import { streakDays } from "./mastery/streak";
 import { browserSupabase } from "./supabase/browser";
@@ -243,7 +242,6 @@ type OrcaContextValue = OrcaState &
 
 const OrcaContext = createContext<OrcaContextValue | null>(null);
 
-const VARIANT_CYCLE: IslandVariant[] = ["ald", "circuit", "signals", "linear", "stats"];
 
 /* ── Talking to Supabase ──────────────────────────────────────────────── */
 

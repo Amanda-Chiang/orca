@@ -1,6 +1,6 @@
 /**
  * The Claude connector against Supabase: the student's secret link (one per account, only its hash
- * stored) and the tools in `src/lib/connector/mcp.ts` (v0.4; the material, question and evidence
+ * stored) and the tools in `src/lib/connector/mcp.ts` (v0.6; the material, question and evidence
  * tools live one per file under `connector/`) read and written with the service-role client, every
  * query scoped to that student.
  */
@@ -8,6 +8,7 @@ import { createHash, randomBytes } from "node:crypto";
 import type { AnswerKey, AnswerReport, CheckedAnswer, ConnectorTools, CourseMode, CourseState, ExamLine, FlagCheckResult, MaterialLine, NextQuestions, ObjectiveLine, QuestionLine, RecordedAnswer, ScopeInput, ScopeSummary, SelfGradeNeeded, TopicLine, VaultLine, WritingLine } from "@/lib/connector/mcp";
 import { addMaterial } from "@/lib/server/connector/add-material";
 import { addQuestions } from "@/lib/server/connector/add-questions";
+import { setCourse } from "@/lib/server/connector/set-course";
 import { cramFields } from "@/lib/server/connector/cram-plan";
 import { logEvidence } from "@/lib/server/connector/log-evidence";
 import { materialFor } from "@/lib/server/connector/material-for";
@@ -580,6 +581,7 @@ export function connectorTools(db: OrcaSupabase, ownerId: string, now: () => Dat
     materialFor: (courseId, objectiveIds) => materialFor(db, ownerId, courseId, objectiveIds),
     vaultMaterial: (courseId, materialId, options) => vaultMaterial(db, ownerId, courseId, materialId, options),
     addQuestions: (courseId, questions) => addQuestions(db, ownerId, courseId, questions),
+    setCourse: (input) => setCourse(db, ownerId, input),
     addMaterial: (courseId, input) => addMaterial(db, ownerId, courseId, input),
     logEvidence: (courseId, objectiveId, entry, sessionId) => logEvidence(db, ownerId, courseId, objectiveId, entry, sessionId),
     logSession: (courseId, entry) => logSession(db, ownerId, courseId, entry, now),
