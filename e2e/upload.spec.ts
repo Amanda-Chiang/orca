@@ -4,6 +4,7 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { type Student, admin, expect, test, stored } from "./fixture";
 import { DECK_NAME, lines, makeDeck, makePdf } from "../tests/fixtures/pdf";
+import { makeDocx, pageBreak, para, zip } from "../tests/fixtures/zip";
 import { fakeCalls, fakeModel } from "./fake-model";
 
 /**
@@ -47,7 +48,7 @@ async function createCourse(page: Page, name: string) {
 async function upload(page: Page, type = "Lecture") {
   await page.goto("/add-material");
   await page.locator('[data-part=file-input]').setInputFiles(DECK);
-  await expect(page.locator("[data-part=file-size]")).toHaveText(/^\d+\.\d MB · Orca reads it when you add it$/);
+  await expect(page.locator("[data-part=file-size]")).toHaveText(/^\d+\.\d MB$/);
   await page.getByLabel("What kind of material is this?").selectOption(type);
   await page.getByRole("button", { name: "Add to course" }).click();
 }
@@ -149,7 +150,7 @@ test("removing material: its file, pages and calendar entry go, the objectives o
   await page.goto("/course/logic/review?tab=uploads");
   const card = page.locator("[data-part=upload-card]").filter({ hasText: DECK_NAME });
   await card.locator("[data-part=remove-material]").click();
-  await expect(card.locator("[data-part=remove-offer]")).toContainText("the objectives only it taught are archived");
+  await expect(card.locator("[data-part=delete-upload-dialog]")).toContainText("only this file taught leave your course");
   await card.locator("[data-part=remove-confirm]").click();
   await expect(page.locator("[data-part=upload-card]")).toHaveCount(0);
 
@@ -165,6 +166,9 @@ test("removing material: its file, pages and calendar entry go, the objectives o
   expect(row).toEqual({ status: "removed", storage_path: null, content_hash: null });
   const { data: files } = await student.db.storage.from("materials").list(student.id);
   expect(files ?? []).toEqual([]);
+  // Its slide previews go with it.
+  const { data: previews } = await student.db.storage.from("thumbnails").list(`${student.id}/${before.materials[0].id}`);
+  expect(previews ?? []).toEqual([]);
 
   // Not a duplicate any more: the same deck uploads and builds again.
   await upload(page);
@@ -216,8 +220,13 @@ test("which slides were hard: the deck's pages as a grid; tapping a page flags t
   const modal = page.locator("[data-part=hard-slides-modal]");
   const tiles = modal.locator("[data-part=slide-tile]");
   await expect.poll(() => tiles.count(), { timeout: 30_000 }).toBeGreaterThan(12);
-  // Drawn from the stored file in the browser.
-  await expect.poll(() => tiles.first().locator("canvas").evaluate((c: HTMLCanvasElement) => c.width), { timeout: 30_000 }).toBeGreaterThan(0);
+  // The previews the server drew while processing the upload (2026-11-24), not the PDF drawn in the browser.
+  const preview = tiles.first().locator("img[data-part=slide-preview]");
+  await expect.poll(() => preview.evaluate((i: HTMLImageElement) => i.complete && i.naturalWidth), { timeout: 30_000 }).toBeGreaterThan(0);
+  await expect(modal.locator("canvas")).toHaveCount(0);
+  // Each preview fills its tile: the tile's box fits the preview, never narrower than it.
+  const [img, tile] = await Promise.all([preview.boundingBox(), tiles.first().boundingBox()]);
+  expect(Math.abs(tile!.width - (img!.width + 2 * 8 + 2 * 2))).toBeLessThanOrEqual(1);
   // Slide 5 teaches no topic and no objective cites it: nothing to flag.
   await expect(modal.locator("[data-part=slide-tile][data-page='5']")).toBeDisabled();
   // Select all picks every slide that has something to flag, and turns into Clear (owner, 2026-11-08).
@@ -267,13 +276,18 @@ test("a folder of files: one row each with its own type, prefilled from the shar
   await fakeModel({ extract: ONE_TOPIC, perObjective: 2 });
   await createCourse(page, "Logic");
   await page.goto("/add-material");
+  // Upload folder opens a folder picker; Upload files a picker for several files.
+  const [folder] = await Promise.all([page.waitForEvent("filechooser"), page.locator("[data-part=upload-folder]").click()]);
+  expect(await folder.element().evaluate((el) => (el as HTMLInputElement).webkitdirectory)).toBe(true);
+  const [files] = await Promise.all([page.waitForEvent("filechooser"), page.locator("[data-part=upload-files]").click()]);
+  expect(files.isMultiple()).toBe(true);
   const homework = makePdf([lines("Homework 1", "Simplify x + xy.")]);
   await page.locator('[data-part=file-input]').setInputFiles([DECK, { name: "hw1.pdf", mimeType: "application/pdf", buffer: Buffer.from(homework) }, { name: "notes.txt", mimeType: "text/plain", buffer: Buffer.from("plain text") }]);
   const rows = page.locator("[data-part=batch-item]");
   await expect(rows).toHaveCount(3);
   await expect(page.getByText("2 files to add · 1 skipped")).toBeVisible();
   await expect(rows.nth(2)).toHaveAttribute("data-status", "skipped");
-  await expect(rows.nth(2)).toContainText("Orca can read PDFs and PowerPoint (.pptx) decks.");
+  await expect(rows.nth(2)).toContainText("Orca can read PDFs, PowerPoint (.pptx) decks and Word (.docx) documents.");
 
   // The shared default reaches every row; a row changed by hand keeps its own choice after that.
   await page.getByLabel("What kind of material is this?").selectOption("Syllabus");
@@ -294,6 +308,46 @@ test("a folder of files: one row each with its own type, prefilled from the shar
     [DECK_NAME, "Lecture", null],
     ["hw1.pdf", "Homework", "2026-11-03"],
   ]);
+  expect(state.runs).toHaveLength(2);
+});
+
+test("a Word document (.docx) uploads like a PDF: it's read into pages and builds the course", async ({ page, student }) => {
+  await fakeModel({ extract: ONE_TOPIC, perObjective: 2 });
+  await createCourse(page, "Logic");
+  await page.goto("/add-material");
+  const docx = makeDocx([para("Boolean Algebra", "Heading1"), para("Absorption: x + xy = x."), pageBreak, para("Simplify x + xy using absorption.")].join(""));
+  await page.locator("[data-part=file-input]").setInputFiles({ name: "notes.docx", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", buffer: Buffer.from(docx) });
+  await page.getByLabel("What kind of material is this?").selectOption("Typed notes");
+  await page.getByRole("button", { name: "Add to course" }).click();
+  await expect(page).toHaveURL(/\/course\/logic\/review\?run=/, { timeout: 30_000 });
+  await expect(page.locator("[data-part=run-summary]")).toContainText("1 new topic, 1 new objective", { timeout: 60_000 });
+
+  const state = await stored(page, student);
+  expect(state.materials.map((m) => m.filename)).toEqual(["notes.docx"]);
+  const { data: pages } = await student.db.from("material_pages").select("n, text").order("n");
+  expect(pages).toEqual([
+    { n: 1, text: "Boolean Algebra\nAbsorption: x + xy = x." },
+    { n: 2, text: "Simplify x + xy using absorption." },
+  ]);
+  const { data: row } = await student.db.from("materials").select("mime").eq("id", state.materials[0].id).single();
+  expect(row?.mime).toBe("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+});
+
+test("a .docx among several files uploads with the rest, each built", async ({ page, student }) => {
+  await fakeModel({ extract: ONE_TOPIC, perObjective: 2 });
+  await createCourse(page, "Logic");
+  await page.goto("/add-material");
+  const docx = makeDocx([para("Absorption: x + xy = x."), pageBreak, para("Simplify x + xy.")].join(""));
+  await page.locator("[data-part=file-input]").setInputFiles([DECK, { name: "week2.docx", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", buffer: Buffer.from(docx) }]);
+  const rows = page.locator("[data-part=batch-item]");
+  await expect(rows).toHaveCount(2);
+  await expect(page.getByText("2 files to add")).toBeVisible();
+  await page.getByRole("button", { name: "Add 2 files to course" }).click();
+  await expect(rows.nth(0)).toHaveAttribute("data-status", "done", { timeout: 60_000 });
+  await expect(rows.nth(1)).toHaveAttribute("data-status", "done", { timeout: 60_000 });
+  await expect(page).toHaveURL(/\/course\/logic\/review\?run=/, { timeout: 15_000 });
+  const state = await stored(page, student);
+  expect(state.materials.map((m) => m.filename).sort()).toEqual([DECK_NAME, "week2.docx"].sort());
   expect(state.runs).toHaveLength(2);
 });
 
@@ -335,31 +389,22 @@ test("an upload keeps its place in the URL: a reload follows it to its review, o
   await expect(page.locator("[data-part=resume-upload]")).toContainText("half.pdf didn't finish uploading before the page reloaded.", { timeout: 15_000 });
 });
 
-test("re-uploading the same deck is recognised by its content and adds nothing, unless the student chooses Upload it again", async ({ page, student }) => {
+test("uploading the same deck again adds a second copy, built like any upload (no duplicate check, 2026-11-24)", async ({ page, student }) => {
   await fakeModel({ extract: ONE_TOPIC, perObjective: 6 });
   await createCourse(page, "Logic");
   await upload(page);
-  // A first upload: the warm-up writes one question for its objective.
-  await expect(page.locator("[data-part=run-summary]")).toContainText("1 new topic, 1 new objective, 0 existing objectives covered again, 1 question added.", { timeout: 60_000 });
+  await expect(page.locator("[data-part=run-summary]")).toContainText("1 new topic, 1 new objective", { timeout: 60_000 });
   await upload(page);
-  await expect(page.getByText(`Logic already has this file (${DECK_NAME}), so nothing was added.`)).toBeVisible({ timeout: 30_000 });
-  expect((await fakeCalls()).filter((s) => s === "map")).toHaveLength(1);
-  const state = await stored(page, student);
-  expect(state.materials).toHaveLength(1);
-  expect(state.runs).toHaveLength(1);
-  const { count } = await student.db.from("materials").select("id", { count: "exact", head: true });
-  expect(count).toBe(1);
-
-  // The student wants it anyway: a second copy, read and built like any upload.
-  await page.locator("[data-part=upload-again]").click();
-  await expect(page).toHaveURL(/\/course\/logic\/review\?run=/, { timeout: 30_000 });
-  await expect.poll(async () => (await student.db.from("materials").select("filename, status, content_hash")).data?.length, { timeout: 30_000 }).toBe(2);
-  const { data: copies } = await student.db.from("materials").select("status, content_hash");
-  expect(new Set(copies!.map((c) => c.content_hash)).size).toBe(1);
+  await expect.poll(async () => (await student.db.from("materials").select("id")).data?.length, { timeout: 30_000 }).toBe(2);
   await expect.poll(async () => (await student.db.from("pipeline_runs").select("id")).data?.length, { timeout: 30_000 }).toBe(2);
+  // The fingerprint is stored once the server has read a copy: both read, both the same file.
+  await expect.poll(async () => {
+    const { data: copies } = await student.db.from("materials").select("content_hash");
+    return copies!.every((c) => c.content_hash) ? new Set(copies!.map((c) => c.content_hash)).size : 0;
+  }, { timeout: 30_000 }).toBe(1);
 });
 
-test("a job that fails says why on the review screen, saves nothing, and uploading again retries it", async ({ page, student }) => {
+test("a job that fails says why on the review screen, saves nothing, and uploading the file again builds a new copy", async ({ page, student }) => {
   await fakeModel({ extract: ONE_TOPIC, fail: { step: "map", message: "The fake API is having a bad day." } });
   await createCourse(page, "Logic");
   await upload(page);
@@ -371,15 +416,13 @@ test("a job that fails says why on the review screen, saves nothing, and uploadi
   expect(state.courses[0].topics).toEqual([]);
   expect(state.runs).toEqual([expect.objectContaining({ status: "failed", error: expect.stringContaining("bad day") })]);
 
-  // The file is kept; uploading it again (now that the model answers) builds it.
+  // Uploading it again (now that the model answers) adds a new copy and builds it; the failed one keeps its Try again.
   await fakeModel({ extract: ONE_TOPIC, perObjective: 2 });
   await upload(page);
   await expect(page.locator("[data-part=run-summary]")).toContainText("1 new topic, 1 new objective, 0 existing objectives covered again, 1 question added.", { timeout: 60_000 });
   state = await stored(page, student);
-  expect(state.materials).toHaveLength(1);
-  // The retry keeps the failed run's time (its place in line), so the two share it: compare as a set.
+  expect(state.materials).toHaveLength(2);
   expect(state.runs.map((r) => r.status).sort()).toEqual(["done", "failed"]);
-  expect(new Set(state.runs.map((r) => r.at)).size).toBe(1);
 });
 
 /* ── The routes directly: limits, a failed read, hidden text, another student ── */
@@ -454,6 +497,21 @@ test("hidden text is dropped from the stored pages and recorded on the material"
   expect(await processed.json()).toMatchObject({ pages: [{ n: 1, text: "Karnaugh maps\nGroup adjacent ones." }], hidden: { items: 1, pages: [1] } });
   const { data } = await student.db.from("materials").select("hidden_text").eq("id", id).single();
   expect(data).toEqual({ hidden_text: { items: 1, pages: [1] } });
+});
+
+test("the stored bytes decide the kind: a Word document named .pdf is read as a .docx, and a zip that's neither is refused", async ({ page, student }) => {
+  const courseId = await newCourse(student);
+  const docx = makeDocx([para("Karnaugh maps"), pageBreak, para("Group adjacent ones.")].join(""));
+  const { id, processed } = await sendFile(page.request, student, courseId, docx);
+  expect(processed.status()).toBe(200);
+  expect(await processed.json()).toMatchObject({ pages: [{ n: 1, text: "Karnaugh maps" }, { n: 2, text: "Group adjacent ones." }] });
+  const { data } = await student.db.from("materials").select("mime").eq("id", id).single();
+  expect(data).toEqual({ mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" });
+
+  const other = await sendFile(page.request, student, courseId, zip({ "readme.txt": "not an Office file" }));
+  expect(other.processed.status()).toBe(415);
+  const { data: failed } = await student.db.from("materials").select("status, error").eq("id", other.id).single();
+  expect(failed).toEqual({ status: "failed", error: expect.stringMatching(/Word \(\.docx\) documents/) });
 });
 
 test("a read that died is taken over after a while, and never blocks the file", async ({ page, student }) => {

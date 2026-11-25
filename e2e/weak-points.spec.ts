@@ -2,10 +2,10 @@ import { COURSE_SLUG, F, FIXTURE_STATE, admin, daysAgo, expect, ids, objective, 
 
 /** Weak points first (docs/superpowers/specs/2026-11-04-weak-points-first-design.md): only flagged or missed objectives come due. */
 
-test("nothing flagged: no quick review is due, the island and the course say so", async ({ page, student }) => {
+test("nothing flagged: no quick review is due, and the course says so", async ({ page, student }) => {
   await seedFixtureCourse(student);
   await page.goto("/");
-  await expect(page.locator('[data-part="island-note"]')).toHaveText("No weak spots flagged yet");
+  await expect(page.locator('[data-part="island-note"]')).toHaveCount(0);
   await expect(page.getByText("Quick review ·")).toHaveCount(0);
   await page.goto(`/course/${COURSE_SLUG}`);
   // The trail shows only topics with weak spots: none yet.

@@ -7,6 +7,7 @@ import { BackButton } from "@/components/layout/BackButton";
 import { Screen } from "@/components/layout/Screen";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { Select } from "@/components/ui/Select";
 import { fadeUp, stagger } from "@/lib/motion";
 import { useOrca } from "@/lib/store";
 import { cn } from "@/lib/cn";
@@ -41,18 +42,20 @@ interface CanvasFileLine {
 type Progress =
   | { kind: "idle" }
   | { kind: "listing" }
-  | { kind: "picking"; files: CanvasFileLine[]; chosen: Set<string> }
+  | { kind: "picking"; files: CanvasFileLine[]; chosen: Set<string>; into: string }
   | { kind: "running"; pulled: number }
   | { kind: "done"; summary: ImportSummary }
   | { kind: "failed"; message: string };
 
 const NO_MODULE = "Files not in a module";
+/** The picker's "Import into" value for a new course. */
+const NEW_COURSE = "new";
 
 /**
  * Which files to pull (owner, 2026-11-08): the course's readable files grouped by module, every new
  * one ticked; files already in Orca are shown ticked and fixed. Nothing is pulled until Import.
  */
-function Picker({ files, chosen, onChange, onImport, onCancel }: { files: CanvasFileLine[]; chosen: Set<string>; onChange: (next: Set<string>) => void; onImport: () => void; onCancel: () => void }) {
+function Picker({ files, chosen, onChange, into, onInto, targets, onImport, onCancel }: { files: CanvasFileLine[]; chosen: Set<string>; onChange: (next: Set<string>) => void; into: string; onInto: (next: string) => void; targets: { id: string; name: string }[] | null; onImport: () => void; onCancel: () => void }) {
   const groups = new Map<string, CanvasFileLine[]>();
   for (const f of files) {
     const key = f.module ?? NO_MODULE;
@@ -105,6 +108,21 @@ function Picker({ files, chosen, onChange, onImport, onCancel }: { files: Canvas
           </div>
         );
       })}
+      {targets && (
+        <label className="flex flex-wrap items-center gap-[8px] pt-[4px] text-[13px] font-bold text-prussian">
+          Import into
+          <Select
+            size="sm"
+            label="Import into"
+            value={into}
+            options={[NEW_COURSE, ...targets.map((t) => t.id)]}
+            labels={Object.fromEntries([[NEW_COURSE, "A new course"], ...targets.map((t) => [t.id, t.name])])}
+            onChange={onInto}
+            className="max-w-[320px] [&>span:first-child]:min-w-0 [&>span:first-child]:truncate"
+            data-part="canvas-into"
+          />
+        </label>
+      )}
       <div className="flex flex-wrap items-center gap-[10px] pt-[4px]">
         <Button size="sm" onClick={onImport} data-part="canvas-import-chosen">
           {count === 0 ? "Import dates and syllabus only" : `Import ${count} file${count === 1 ? "" : "s"}`}
@@ -135,7 +153,7 @@ function summaryLine(s: ImportSummary): string {
 
 /** Import a course from Canvas: its slides, assignments, exam dates and syllabus, no uploading. */
 export default function ImportCanvasPage() {
-  const { refresh } = useOrca();
+  const { refresh, courses: orcaCourses } = useOrca();
   const [courses, setCourses] = useState<CanvasCourseLine[] | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [notConnected, setNotConnected] = useState(false);
@@ -165,18 +183,20 @@ export default function ImportCanvasPage() {
       setProgress((p) => ({ ...p, [c.id]: { kind: "failed", message: body?.error ?? "Orca couldn't list that course's files." } }));
       return;
     }
-    setProgress((p) => ({ ...p, [c.id]: { kind: "picking", files: body.files!, chosen: new Set(body.files!.filter((f) => !f.linked).map((f) => f.id)) } }));
+    setProgress((p) => ({ ...p, [c.id]: { kind: "picking", files: body.files!, chosen: new Set(body.files!.filter((f) => !f.linked).map((f) => f.id)), into: NEW_COURSE } }));
   };
 
-  const importCourse = async (c: CanvasCourseLine, fileIds: string[]) => {
+  const importCourse = async (c: CanvasCourseLine, fileIds: string[], into: string) => {
+    // Only a Canvas course not linked yet can pick its Orca course; once linked, imports go there.
+    const intoCourseId = !c.linkedCourseId && into !== NEW_COURSE ? into : undefined;
     setProgress((p) => ({ ...p, [c.id]: { kind: "running", pulled: 0 } }));
     let last: ImportSummary | null = null;
-    const storageKey = `orca-canvas-import:${c.id}:${[...fileIds].sort().join(",")}`;
+    const storageKey = `orca-canvas-import:${c.id}:${intoCourseId ?? NEW_COURSE}:${[...fileIds].sort().join(",")}`;
     const importSessionId = sessionStorage.getItem(storageKey) ?? crypto.randomUUID();
     sessionStorage.setItem(storageKey, importSessionId);
     // Each request pulls files until its time budget is used; keep going while Canvas has more.
     for (let round = 0; round < 10; round++) {
-      const res = await fetch("/api/canvas/import", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ canvasCourseId: c.id, fileIds, importSessionId, resumeExpired: round === 0 }) });
+      const res = await fetch("/api/canvas/import", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ canvasCourseId: c.id, fileIds, importSessionId, resumeExpired: round === 0, ...(intoCourseId ? { intoCourseId } : {}) }) });
       const body = (await res.json().catch(() => null)) as (ImportSummary & { error?: string }) | null;
       if (!res.ok || !body || !("course" in body)) {
         // A later round failing (a 429, a Canvas hiccup) keeps what the earlier rounds pulled: those files
@@ -249,7 +269,10 @@ export default function ImportCanvasPage() {
                         files={p.files}
                         chosen={p.chosen}
                         onChange={(chosen) => setProgress((x) => ({ ...x, [c.id]: { ...p, chosen } }))}
-                        onImport={() => void importCourse(c, [...p.chosen])}
+                        into={p.into}
+                        onInto={(into) => setProgress((x) => ({ ...x, [c.id]: { ...p, into } }))}
+                        targets={c.linkedCourseId ? null : orcaCourses.map((o) => ({ id: o.id, name: o.name }))}
+                        onImport={() => void importCourse(c, [...p.chosen], p.into)}
                         onCancel={() => setProgress((x) => ({ ...x, [c.id]: { kind: "idle" } }))}
                       />
                     )}

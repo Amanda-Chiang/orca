@@ -29,6 +29,7 @@ test("the CSP needs the nonce for scripts, allows Supabase, and forbids framing"
   assert.match(csp, /script-src 'self' 'nonce-abc' 'strict-dynamic'(;|$)/);
   assert.doesNotMatch(csp, /unsafe-eval/);
   assert.match(csp, /connect-src 'self' http:\/\/127\.0\.0\.1:54321 ws:\/\/127\.0\.0\.1:54321/);
+  assert.match(csp, /img-src 'self' blob: data: http:\/\/127\.0\.0\.1:54321(;|$)/);
   assert.match(csp, /frame-ancestors 'none'/);
   assert.match(contentSecurityPolicy({ nonce: "abc", dev: true }), /'unsafe-eval'/);
 });

@@ -60,8 +60,11 @@ export function useRun(runId: string | null | undefined): { run: PipelineRun | n
     };
     const channel = db
       .channel(`run-${runId}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "pipeline_runs", filter: `id=eq.${runId}` }, (payload) => {
-        if (alive && payload.new && "id" in payload.new) setLive(runFromRow(payload.new as Parameters<typeof runFromRow>[0]));
+      // A Realtime message is only a signal to read the row again: it can leave out large jsonb
+      // columns (an update that doesn't change `dropped` sends it as unchanged TOAST), so the
+      // payload isn't a whole run.
+      .on("postgres_changes", { event: "*", schema: "public", table: "pipeline_runs", filter: `id=eq.${runId}` }, () => {
+        if (alive) void read();
       })
       .subscribe((status) => {
         if (status === "SUBSCRIBED") void read();

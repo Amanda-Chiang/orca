@@ -1,14 +1,16 @@
+import { removeThumbnails } from "./thumbnails";
 import { stagedPipeline, pipelineRpc } from "./staged/db";
 /**
  * Uploads (Phase 4 plan, decisions 7, 10 and 13). Two steps, each a route:
  *
- * 1. `startUpload` (POST /api/materials): checks what the browser says about the file (PDF or .pptx, at most
+ * 1. `startUpload` (POST /api/materials): checks what the browser says about the file (PDF, .pptx or .docx, at most
  *    50 MB), recognises a file already in the course by its SHA-256, and otherwise records the
  *    material (status `uploaded`) and hands back a signed upload URL for
  *    `<owner>/<material id>` in the private `materials` bucket.
  * 2. `processUpload` (POST /api/materials/:id/process): once the file is in Storage, the server
  *    takes it from there (never from the browser), hashes it, recognises a duplicate again (the
- *    browser's hash is only a shortcut), reads it (pdf.js for a PDF, the slide XML for a .pptx) into sanitised `material_pages`, drops
+ *    browser's hash is only a shortcut), reads it (pdf.js for a PDF, the slide XML for a .pptx, the body XML for a .docx; the
+ *    two are zips told apart by their main part) into sanitised `material_pages`, drops
  *    and counts hidden text, and marks the material `ready`. A file that can't be read is marked
  *    `failed` with why.
  *
@@ -22,7 +24,9 @@ import { LIMITS } from "@/lib/limits";
 import { heldBackByDefault } from "@/lib/material/hold-back";
 import { UNSUPPORTED_UPLOAD, UPLOAD_MIMES, type UploadKind, uploadKind } from "@/lib/material/kind";
 import { type HiddenText, type ReadPage, UnreadablePdfError, looksLikePdf, readPdf } from "@/lib/material/read-pdf";
+import { readDocx } from "@/lib/material/read-docx";
 import { readPptx } from "@/lib/material/read-pptx";
+import { officeKind } from "@/lib/material/ooxml";
 import { looksLikeZip } from "@/lib/material/unzip";
 import { isOwnPath, uploadPath } from "@/lib/material/paths";
 import { cancelJobs, checkRuns } from "@/lib/server/jobs/start";
@@ -215,11 +219,14 @@ export async function processUpload(db: OrcaSupabase, ownerId: string, id: strin
       return reply(200, known);
     }
     // The stored bytes decide how it's read, not the name or type the browser gave.
-    const kind: UploadKind | null = looksLikePdf(bytes) ? "pdf" : looksLikeZip(bytes) ? "pptx" : null;
+    // A zip is a .pptx or a .docx by its main part.
+    let kind: UploadKind;
     let read: { pages: ReadPage[]; hidden: HiddenText };
     try {
-      if (!kind) throw new UnreadablePdfError(UNSUPPORTED_UPLOAD, 415);
-      read = kind === "pdf" ? await readPdf(bytes, { handwritten: m.handwritten }) : await readPptx(bytes);
+      const sniffed = looksLikePdf(bytes) ? "pdf" : looksLikeZip(bytes) ? officeKind(bytes) : null;
+      if (!sniffed) throw new UnreadablePdfError(UNSUPPORTED_UPLOAD, 415);
+      kind = sniffed;
+      read = kind === "pdf" ? await readPdf(bytes, { handwritten: m.handwritten }) : kind === "pptx" ? await readPptx(bytes) : await readDocx(bytes);
     } catch (e) {
       if (!(e instanceof UnreadablePdfError)) throw e;
       await setFailed(e.message);
@@ -302,6 +309,7 @@ export async function removeMaterial(db: OrcaSupabase, ownerId: string, id: stri
   if (stagedPipeline()) {
     try {
       const result = await pipelineRpc<{ archivedObjectives: number }>(db, "remove_material", { ownerId, materialId: id });
+      await removeThumbnails(db, ownerId, id);
       if (m.storage_path) {
         const removed = await db.storage.from(BUCKET).remove([m.storage_path]);
         if (removed.error) throw fail("remove the file", removed.error);
@@ -375,6 +383,7 @@ export async function removeMaterial(db: OrcaSupabase, ownerId: string, id: stri
   if (pagesError) throw fail("remove the material's pages", pagesError);
   const { error: eventsError } = await db.from("calendar_events").delete().eq("owner_id", ownerId).eq("material_id", id);
   if (eventsError) throw fail("remove the material's calendar entry", eventsError);
+  await removeThumbnails(db, ownerId, id);
   if (m.storage_path) {
     const removed = await db.storage.from(BUCKET).remove([m.storage_path]);
     if (removed.error) throw fail("remove the file", removed.error);

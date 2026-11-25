@@ -122,7 +122,7 @@ export interface PickedFile {
 }
 
 /**
- * The course's readable files (PDF and .pptx), modules first in their order (that's how the class
+ * The course's readable files (PDF, .pptx and .docx), modules first in their order (that's how the class
  * met them), then the rest of the file list by the number in their names, then creation date (see
  * `sequenceNumber`); one entry per Canvas file. A module
  * item whose file isn't in the list (the Files tab is hidden, say) is kept with `file: null` for

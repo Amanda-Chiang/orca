@@ -40,3 +40,43 @@ export async function renderSlide(bytes: Uint8Array, pageNumber: number, { maxWi
     await task.destroy();
   }
 }
+
+/** Preview width in pixels: the "Which slides were hard?" tiles are about 140 px wide, drawn sharp at 2×. */
+export const THUMBNAIL_WIDTH = 320;
+
+/**
+ * Every page of a PDF as a small JPEG preview (2026-11-24, "Which slides were hard?"), the document
+ * opened once. `onPage` gets each page's bytes in order; a page that fails to draw is skipped and
+ * the rest go on. Returns how many pages were drawn.
+ */
+export async function renderThumbnails(bytes: Uint8Array, onPage: (n: number, jpeg: Uint8Array) => Promise<void>, { width = THUMBNAIL_WIDTH, quality = 70 }: { width?: number; quality?: number } = {}): Promise<number> {
+  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  const task = pdfjs.getDocument({ data: bytes.slice(), verbosity: pdfjs.VerbosityLevel.ERRORS });
+  let drawn = 0;
+  try {
+    const doc = await task.promise;
+    if (doc.numPages > LIMITS.pagesPerFile) throw new Error(`more than ${LIMITS.pagesPerFile} pages`);
+    for (let n = 1; n <= doc.numPages; n++) {
+      let jpeg: Uint8Array;
+      try {
+        const page = await doc.getPage(n);
+        const base = page.getViewport({ scale: 1 });
+        const viewport = page.getViewport({ scale: width / base.width });
+        const { canvas, context } = (doc.canvasFactory as { create: (w: number, h: number) => unknown }).create(Math.ceil(viewport.width), Math.ceil(viewport.height)) as {
+          canvas: { encode: (format: "jpeg", quality: number) => Promise<Uint8Array> };
+          context: CanvasRenderingContext2D;
+        };
+        await page.render({ canvas: canvas as unknown as HTMLCanvasElement, canvasContext: context, viewport }).promise;
+        jpeg = await canvas.encode("jpeg", quality);
+        page.cleanup();
+      } catch {
+        continue;
+      }
+      await onPage(n, jpeg);
+      drawn++;
+    }
+    return drawn;
+  } finally {
+    await task.destroy();
+  }
+}

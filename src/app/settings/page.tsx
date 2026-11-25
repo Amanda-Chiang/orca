@@ -38,9 +38,9 @@ async function saveMarkerNotes(markers: string | null) {
  * to the home page's stats strip (src/components/map/StudyStats.tsx).
  */
 const SECTIONS = [
-  { key: "preferences", label: "Preferences", blurb: "How Orca studies with you, in every class unless a class's own settings say otherwise." },
-  { key: "connections", label: "Connections", blurb: "Study in Claude, and pull your classes from Canvas." },
-  { key: "account", label: "Account", blurb: "Who you are in Orca and how you sign in." },
+  { key: "preferences", label: "Preferences" },
+  { key: "connections", label: "Connections" },
+  { key: "account", label: "Account" },
 ] as const;
 
 type SectionKey = (typeof SECTIONS)[number]["key"];
@@ -67,10 +67,7 @@ function SettingsBody() {
     <div className="flex min-h-0 flex-1 gap-[20px] overflow-hidden px-[24px] pb-[28px] pt-[20px]">
       <SectionRail current={section.key} />
       <main className={cn("flex min-h-0 min-w-0 flex-1 flex-col gap-[14px]", section.key === "preferences" ? "max-w-[1000px]" : "max-w-[720px]")} data-part="settings-section" data-section={section.key}>
-        <div className="flex shrink-0 flex-col gap-[4px] px-[4px]">
-          <h2 className="text-[28px] font-semibold leading-tight text-prussian">{section.label}</h2>
-          <p className="text-[15px] font-medium text-wisteria-deep">{section.blurb}</p>
-        </div>
+        <h2 className="shrink-0 px-[4px] text-[28px] font-semibold leading-tight text-prussian">{section.label}</h2>
         {/* Each column scrolls independently; padding leaves room for the cards' lips. */}
         <div className="-mx-[8px] flex min-h-0 flex-1 flex-col">
           <AnimatePresence mode="wait">

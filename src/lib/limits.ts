@@ -35,8 +35,6 @@ export const LIMITS = {
 
   /** Requests per student: a fixed window counted in Postgres (`hit_rate_limit`). */
   rate: {
-    /** Starting an upload (POST /api/materials). */
-    upload: { max: 20, windowSeconds: 24 * 3600 },
     /** Matching a reflection note (POST /api/reflect). */
     reflect: { max: 10, windowSeconds: 3600 },
     /** Grading a prose answer (POST /api/grade). */

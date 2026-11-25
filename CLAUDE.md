@@ -81,8 +81,11 @@ own courses (Data Structures, Fundamentals of Computer Systems) on the hosted pr
     `src/lib/server/notes.ts`); jobs screen them again when they load them.
   - **Exams** have their own table (each course's exams, dates, optional topics), edited with
     "Edit Exams" on the course page; they show on the calendar and drive the exam cadences.
-  - Homework reflection is a text box on the upload page; the calendar shows scheduled reviews,
-    has a course filter and expanding weeks.
+  - Homework reflection is a text box on the upload page; the calendar (2026-11-24, owner) has
+    Week and Month views, colour = course (`src/lib/course/colors.ts`, shared with /progress) and
+    shape = type (exam solid, homework outlined, quick review a dot, dive a ring), a day pop-up for
+    "+n more", and a Filter pop-up by course and type combined (`src/lib/course/calendar-view.ts`;
+    view and filter kept in the URL).
 - **Since 2026-10-18** (details in `docs/BACKEND-ROADMAP.md` §2 and the plan docs): handwritten
   and scanned PDF pages read from their images, figures on typed slides described; thumbs up/down
   on questions (a thumbs down skips and replaces it, its note feeds question writing); unfinished
@@ -157,7 +160,7 @@ own courses (Data Structures, Fundamentals of Computer Systems) on the hosted pr
   cards drop out everywhere (`useTodos`; the home count and the calendar's reviews too), the warm-up and the
   course-wide Dive in pill hide (topic dives stay, exam topics only), Path has a Weak spots / Exam / All switch (`path-cram-view`, Exam by default), Path and List show the exam's topics ("Show N
   other topics": faint, `data-off-exam`, not playable), the Atlas draws the others faint until a neighbour is
-  hovered (`TopicGraph muted`), the red (`cram` token) CRAM MODE banner (`CramBanner`, `data-part="cram-banner"`) sits on top, the nav (calendar, add material, the course's settings) floats at the bottom right, the top bar over those pages is the blue of cram mode's path rims (`alice-deep` under its tokens), the logo's orca keeps its colours (`orca-body`, `orca-belly`), the dive covers the whole window, the home island (the rim of a not-started topic on cram mode's path, a purple ring inside it and a dark centre, `Island cram`) and its name take the dark look with the path's pulsing halo behind (`island-halo`, the spot `data-cramming`), the sidebar opens with a red cram card per cramming course (`CramCards`, `data-part="cram-card"`: the course, the exam, days left, % of its objectives verified, to the cram page), and the calendar marks the crammed exam red and the course's other entries with a red ring, with a Cramming key and "· cramming" in the course filter. One exam per course crams at a time
+  hovered (`TopicGraph muted`), the red (`cram` token) CRAM MODE banner (`CramBanner`, `data-part="cram-banner"`) sits on top, the nav (calendar, add material, the course's settings) floats at the bottom right, the top bar over those pages is the blue of cram mode's path rims (`alice-deep` under its tokens), the logo's orca keeps its colours (`orca-body`, `orca-belly`), the dive covers the whole window, the home island (the rim of a not-started topic on cram mode's path, a purple ring inside it and a dark centre, `Island cram`) and its name take the dark look with the path's pulsing halo behind (`island-halo`, the spot `data-cramming`), the sidebar opens with a red cram card per cramming course (`CramCards`, `data-part="cram-card"`: the course, the exam, days left, % of its objectives verified, to the cram page), and the calendar marks the crammed exam red, with a Cramming key and "· cramming" in the filter. One exam per course crams at a time
   (the store's `updateExam` and the connector's `set_exam`). Assumptions in `docs/TO-DISCUSS.md`; e2e
   `e2e/cram-immersive.spec.ts`.
 - **List view History** (2026-11-25, owner; branch `list-history`): each List row's History opens `TopicHistory`, the
@@ -181,6 +184,20 @@ own courses (Data Structures, Fundamentals of Computer Systems) on the hosted pr
   (`useStudyDays` scoped to the course from the cram's start, a running timer included), and the cram page's Your
   Progress uses the same tiles, source colors and timer (`src/components/study/StudyParts.tsx`); the connector's
   `course_state` still counts only Orca and Claude time.
+- **Uploads, 2026-11-24 (owner; branch `upload-improvements`):** no daily upload limit (the 20 files a day of decision 10
+  is gone, migration `20261124140000`; pages and tokens a day still bound model work) and **no duplicate check for
+  files** (every file is a new copy: the add-material page sends `again: true`; pasted text, web and Canvas still
+  skip what's already there; the duplicate UI is commented out). Uploads can be renamed (the part before the
+  extension; `PATCH /api/materials/:id`, screened like notes, `src/lib/material/rename.ts`), deleted from any card
+  state behind one pop-up (`DeleteUploadDialog`), and each finished card lists what it added (`WhatItAdded`, reject
+  topics/objectives there). Card actions sit top right; Stop acts at once; Try again/Stop/Pause/Resume follow the run
+  live. Staged fixes: `pipeline_snapshot` is ordered (topic positions followed heap order; migration
+  `20261124120000`), waiting says "held by other calls" vs "used up" (`20261124130000`), a file uploaded again after
+  its copy was deleted gets its own run (`20261124150000`), one inline loop per student with back-off and workers
+  that stop on a stale lease (`src/lib/server/staged/schedule.ts`, `run.ts`), and a smaller per-image token
+  reservation (`IMAGE_TOKEN_BOUND`, `src/lib/llm-server.ts`); the last 4 provider slots are kept for grading
+  (other calls stop at `ORCA_MODEL_CONCURRENCY` - 4; migration `20261124160000`). The branch's `staged_upload_limits` migration was
+  renumbered `20261124105000` (it clashed with main's `.docx` one).
 - **Upload toasts** (2026-11-08, `src/components/layout/UploadToasts.tsx`, mounted in `providers.tsx`): an upload
   that finishes (done or failed) while the app is open, from any tab or device, pops a toast unless the student is on
   that course's uploads; uploads of one course finishing while its toast is up share it. One upload's toast opens
@@ -267,7 +284,11 @@ them silently; list what you assumed.
   `.env.local`; template in `.env.example`), `npm run db:reset` (re-applies `supabase/migrations/`),
   `npm run test:db` (pgTAP files in `supabase/tests/`), `npm run check:evidence` (starts its own
   `next dev` on a free port against the local stack and drives `/api/evidence` and `/api/state`
-  over HTTP; `ORCA_URL=…` uses a running server instead), `npm run check:isolation` (two throwaway
+  over HTTP; `ORCA_URL=…` uses a running server instead), `npm run check:routes` (`scripts/check-routes.ts`: every API route nothing else calls directly, over HTTP
+  with two throwaway students and the fake model; shared helpers in `scripts/support/http-check.ts`),
+  `npm run check:connector` (`scripts/check-connector.ts`: the MCP connector in flows: a course built from the chat,
+  another student's link, a ChatGPT-style client),
+  `npm run check:isolation` (two throwaway
   accounts over the real HTTP API; pass `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` and
   `SUPABASE_SECRET_KEY` to run it against a hosted project), `npm run db:types`, `npm run db:stop`.
   After changing a migration, `npm run db:reset`, then `npm run db:types` to refresh
@@ -278,7 +299,7 @@ them silently; list what you assumed.
   pulls; if it answers 429, wait and retry.
 - **Anything that resets or writes the local database, or binds ports 3100/3101, goes through the
   stack lock:** `npm run locked -- npm run test:e2e` (also `test:db`, `check:isolation`,
-  `check:evidence`, `db:types`). It takes `/tmp/orca-supabase-stack.lock`, runs `db:reset` from your
+  `check:evidence`, `check:routes`, `check:connector`, `db:types`). It takes `/tmp/orca-supabase-stack.lock`, runs `db:reset` from your
   worktree first, then the command (`scripts/stack-lock.sh`; rules in
   `docs/superpowers/plans/2026-10-05-orca-phase4-execution.md`, section D). `tsc`, lint and
   `npm test` run freely. Migrations added by parallel work use per-workstream timestamp blocks.
@@ -306,7 +327,7 @@ them silently; list what you assumed.
 - The superpowers skills named below may not be installed in every session; if they aren't,
   follow the same flow by hand (plan doc first, then task-by-task commits with tests).
 
-**Map of the docs.** `docs/BACKEND-ROADMAP.md` (decisions + phases, what's done), `docs/MASTERY-PLAN.md`
+**Map of the docs.** `docs/TESTING.md` (what test to write, where, and when to stop), `docs/BACKEND-ROADMAP.md` (decisions + phases, what's done), `docs/MASTERY-PLAN.md`
 (learner model), `docs/TO-DISCUSS.md` (open questions), `docs/superpowers/plans/` (per-phase and
 per-feature plans with status notes), `docs/superpowers/specs/` (designs agreed in brainstorming),
 `docs/QUIZ-RUBRIC.md` (what makes a good question), `docs/OBJECTIVES-ALD.md`
@@ -393,7 +414,8 @@ model), `docs/TO-DISCUSS.md` (open questions). In short:
   (`src/lib/store.tsx`): `supabase/` holds `config.toml`, the
   migrations (profiles, courses, materials and their pages, pipeline runs, topics, objectives,
   relations, questions, finished sessions, calendar entries, the evidence log, the `materials`
-  Storage bucket, `save_structure`, the `objective_state` snapshots with `record_evidence`,
+  Storage bucket, the `thumbnails` bucket (slide previews drawn while an upload is processed, read by
+  "Which slides were hard?"; `src/lib/server/thumbnails.ts`, 2026-11-24), `save_structure`, the `objective_state` snapshots with `record_evidence`,
   `save_snapshot` and their stale-mark triggers, and the consistent reads `course_structure` and
   `my_data`) and the pgTAP tests; generated types are in
   `src/lib/supabase/database.types.ts`; env variables are listed in `.env.example`. Every table is
@@ -604,10 +626,11 @@ All 11 Figma screens are built. Where things live:
 - `src/lib/jobs/` + `src/lib/server/jobs/` + `src/trigger/` — upload and top-up jobs (`ORCA_JOBS=inline|trigger`). A queued
   upload can be **paused** from the Uploads tab (`POST /api/runs/pause`, one run or a whole course's; run status `paused`,
   uploads only, migration `20261031100000`): it leaves the queue (nothing waits behind it, never taken for dead) and
-  Resume puts it back in line by upload time; re-uploading a paused file resumes its run instead of starting a second.
+  Resume puts it back in line by upload time. Since 2026-11-24 a file uploaded again from the add-material page is a
+  new copy with its own run (no duplicate check), even if an earlier copy is paused or failed.
   A running upload can be **stopped** (`POST /api/runs/stop`, `stopRun`: failed with `STOPPED_ERROR`, the queue moves
-  on; a job still alive can't revive it, its final save checks the run is still running). A retried upload (Try again,
-  or the file uploaded again after a failure) keeps the failed run's `at`, so it goes back to its place in line.
+  on; a job still alive can't revive it, its final save checks the run is still running). A retried upload (Try again)
+  keeps the failed run's `at`, so it goes back to its place in line.
   Settings' Disconnect buttons (Canvas, Claude connector) ask first (2026-11-07). Material can be **removed**
   from a course (`DELETE /api/materials/:id`, `removeMaterial`): file, pages and calendar entry go, the row stays with
   status `removed` (not loaded; hash cleared so the file can be uploaded again), the objectives only it taught and a
@@ -617,7 +640,7 @@ All 11 Figma screens are built. Where things live:
 - `src/lib/server/` — route helpers, model step caller (`model.ts`), grading, usage metering, rate limits.
 - `src/lib/model-config.ts`, `llm-server.ts`, `pricing.ts`, `limits.ts` — provider choice, model calls, prices, every limit.
 - `src/lib/untrusted/` — sanitising, prompt data blocks, injection screen, output validation.
-- `src/lib/material/read-pdf.ts`, `read-pptx.ts` (+ `unzip.ts`, `kind.ts`), `src/lib/uploads.ts` — PDFs and .pptx decks to
+- `src/lib/material/read-pdf.ts`, `read-pptx.ts`, `read-docx.ts` (+ `ooxml.ts`, `unzip.ts`, `kind.ts`), `src/lib/uploads.ts` — PDFs, .pptx decks and .docx documents (2026-11-24; how a .docx is cut into pages: `docs/TO-DISCUSS.md`) to
   Storage, read on the server into `material_pages`. The upload page takes several files or a whole folder at once
   (`filesFromDataTransfer` walks dropped folders; `src/components/upload/BatchList.tsx` is the per-file list with
   type and dates prefilled from the page's shared defaults; files are sent one after another, each row showing where
@@ -728,6 +751,13 @@ now, so that part needs rethinking before it's planned.
 ## Conventions
 
 - Keep screens thin: data from `useOrca()`, visuals from components, timing from `motion.ts`.
+- **UI text stays minimal (owner, 2026-11-24).** Pages should be clean and explain themselves
+  through layout, labels and controls. Don't add subtitles under headings, blurbs restating
+  what a section is for, "how this works" paragraphs, or cheerful filler. A short label or a
+  state the student needs to act on (an error, an empty state, a confirmation) is fine. When
+  something really needs explaining, put it behind an info icon beside its label: a tooltip of one
+  or two sentences on hover or focus (there's no shared one yet; build it on `ui/AnchoredBubble`).
+  When in doubt, leave the explanation out.
 - Pixel values from Figma are fine inline (`text-[22px]`, `rounded-[20px]`); colors must be tokens.
 - **Fix mode (the default for bug fixes and small changes).** Make the narrowest fix, then run
   only `npx tsc --noEmit`, `npx eslint` on the changed files, and the one unit test file covering
@@ -735,8 +765,14 @@ now, so that part needs rethinking before it's planned.
   in `npm run dev` or with one e2e spec, not the whole suite. Run `npm run test:db` only when a
   migration changed. No plan doc, no subagents or reviews, no worktrees. Update docs only when
   setup or a decision changed. Commit messages are one or two lines.
+- **Tests: read `docs/TESTING.md` before writing one.** In short: pick the lowest layer that sees the bug
+  (unit, pgTAP, `check:routes`/`check:connector`, Playwright); add a step to the flow the change belongs
+  to instead of a one-off test; cover signed out, another student, one bad input, doing it twice and the
+  limit where they apply, and no more; fake only the model and setup rows students can't write; break
+  the code once to see a security or data-loss test fail.
 - **Merge or deploy gate (once, not per change).** Before merging a branch or deploying: `npm test`,
-  `npm run test:db`, `npm run test:e2e`, `npm run check:isolation`, `npm run check:evidence`.
+  `npm run test:db`, `npm run test:e2e`, `npm run check:isolation`, `npm run check:evidence`,
+  `npm run check:routes`, `npm run check:connector`.
 - **Phase work** (a new roadmap phase or a large feature) still uses the plan doc and task-by-task
   flow described above, with Fix mode's checks per commit.
 - `npm run dev` for the preview.

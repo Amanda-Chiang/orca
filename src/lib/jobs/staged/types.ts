@@ -1,6 +1,6 @@
 /** Durable upload protocol. These contracts also run under plain Node in tests. */
 export const PIPELINE_PROTOCOL = 2;
-export const PIPELINE_LIMITS = { ingest: 2, prepare: 2, callsPerOwner: 4, ingestLeaseMs: 15 * 60_000, taskLeaseMs: 12 * 60_000, structureRetries: 2 } as const;
+export const PIPELINE_LIMITS = { ingest: 2, prepare: 5, ingestLeaseMs: 15 * 60_000, taskLeaseMs: 12 * 60_000, structureRetries: 2 } as const;
 export type Phase = "prepare" | "structure" | "questions";
 export interface StageJob { ownerId: string; taskId: string; token: string }
 export interface StageTask extends StageJob { runId: string; materialId: string; courseId: string; phase: Phase; checkpoint: unknown; revision: number; attempt: number }

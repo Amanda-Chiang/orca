@@ -2,7 +2,6 @@ import { singleton } from "@/lib/server/staged/admission";
 import { pipelineRpc, stagedPipeline } from "@/lib/server/staged/db";
 import { z } from "zod";
 import { UploadRequest, startUpload } from "@/lib/server/materials";
-import { rateLimit, tooManyRequests } from "@/lib/server/rate-limit";
 import { forStudent, reply } from "@/lib/server/student";
 import { uploadReply } from "@/lib/server/upload-reply";
 
@@ -11,7 +10,7 @@ import { uploadReply } from "@/lib/server/upload-reply";
  * 201 { material, upload: { path, token } }: send the file to Storage with the token, then
  * POST /api/materials/:id/process. 200 { duplicate }: the course already has this file.
  * A duplicate also says what happens to its questions (`generation`, see upload-reply.ts).
- * 413 over 50 MB, 415 not a PDF, 404 not your course. See `src/lib/server/materials.ts`.
+ * 413 over 50 MB, 415 not a PDF, .pptx or .docx, 404 not your course. See `src/lib/server/materials.ts`.
  */
 export const runtime = "nodejs";
 // A duplicate whose questions were never built starts the job here (inline mode runs it after the response).
@@ -32,18 +31,14 @@ export async function POST(request: Request) {
       await singleton(db, student.id, parsed.data.courseId, parsed.data.admissionId, parsed.data.filename, "browser", { again: !!parsed.data.again });
       await pipelineRpc(db, "charge_item", { ownerId: student.id, itemId: parsed.data.admissionId });
     } else if (stagedPipeline() && parsed.data.admissionId) {
-      // Only a browser admission may be sent from here, and it carries the upload rate receipt
-      // (charge_item is idempotent): a Canvas, text or web item's id must not skip the rate limit.
+      // Only a browser admission may be sent from here, and it carries the upload receipt
+      // (charge_item is idempotent; it no longer counts uploads): a Canvas, text or web item's id can't be sent here.
       const { data: item, error } = await db.from("pipeline_items").select("source").eq("id", parsed.data.admissionId).eq("owner_id", student.id).maybeSingle();
       if (error) throw new Error(`Couldn't read the upload admission: ${error.message}`);
       if (!item || item.source !== "browser") return reply(404, { error: "No such upload admission." });
       await pipelineRpc(db, "charge_item", { ownerId: student.id, itemId: parsed.data.admissionId });
     }
-    // Decision 10: at most LIMITS.rate.upload starts a day per student (a re-upload of a known file counts too).
-    if (!stagedPipeline() || !parsed.data.admissionId) {
-      const rate = await rateLimit(db, student.id, "upload");
-      if (!rate.ok) return tooManyRequests(rate);
-    }
+    // No daily upload limit (owner, 2026-11-24): the pages and tokens a day bound the model work.
     return uploadReply(db, student.id, await startUpload(db, student.id, parsed.data), parsed.data.admissionId);
   });
 }

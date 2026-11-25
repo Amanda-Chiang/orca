@@ -17,7 +17,7 @@ become aliases and release the ordering barrier.
 The phase path is `uploads.ts` / `server/canvas.ts` → `server/materials.ts` →
 `server/jobs/start.ts` → `server/staged/schedule.ts` → `server/staged/run.ts`:
 
-1. **Prepare:** two files per owner may read scans/figures concurrently. Successful batches and
+1. **Prepare:** five files per owner may read scans/figures concurrently (ten tasks per owner in all). Successful batches and
    schema-checked model responses are checkpointed.
 2. **Structure:** one writer per course holds the lane through extraction/reconciliation and an
    atomic save. The earliest unresolved admission is the barrier. A coherent snapshot and course
@@ -46,9 +46,10 @@ service-role-only and verify owner/course/material consistency and live executio
 ## Model costs and limits
 
 Each paid provider attempt reserves a conservative input/output token and dollar bound before
-calling the model, including retries and calls outside uploads. Limits are four active calls per
-owner and `ORCA_MODEL_CONCURRENCY` globally (default twenty), plus existing daily page/token and
-global dollar limits. Owner days use the student's timezone; global dollars use UTC. Page charges
+calling the model, including retries and calls outside uploads. Limits are `ORCA_MODEL_CONCURRENCY`
+active calls globally (default twenty), plus existing daily page/token and global dollar limits.
+There is no per-student cap on calls at once (removed 2026-11-24: four made a student's own uploads
+defer each other mid-reading; migration `20261124105000`). Owner days use the student's timezone; global dollars use UTC. Page charges
 are idempotent. Usage retains the attempt's admission time across midnight.
 
 Known usage settles the reservation. So does a request the provider answered with an error status
@@ -56,8 +57,7 @@ Known usage settles the reservation. So does a request the provider answered wit
 generated anything. Only a timeout or a connection lost mid-reply retains an unknown-usage hold for
 its budget day, and a hold whose cut-off reply was metered after all (`model_usage.attempt_id`) is
 released at the next reservation. Reservation estimates can cause earlier waiting than actual
-billing would require. Prose grading is interactive: it skips the four per-owner permits (and isn't
-counted in them) but still takes a provider slot and the budgets; when those are full it answers
+billing would require. Prose grading is interactive: it takes a provider slot and the budgets; when those are full it answers
 429 and the student marks the answer. A failed usage write is never retried as a provider failure.
 A capacity miss parks the phase instead of holding an execution worker polling the provider.
 

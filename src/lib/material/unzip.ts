@@ -1,5 +1,5 @@
 /**
- * Just enough of a zip reader for .pptx decks (Node's own zlib, no dependency): the central
+ * Just enough of a zip reader for .pptx decks and .docx documents (Node's own zlib, no dependency): the central
  * directory lists the entries, and an entry is inflated only when it's asked for, never past
  * `maxEntryBytes` (a zip bomb stops there) or `maxTotalBytes` over the whole file. Encrypted and
  * ZIP64 archives are refused. Loads under plain Node.
