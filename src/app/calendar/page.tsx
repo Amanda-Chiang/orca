@@ -168,7 +168,7 @@ export default function CalendarPage() {
           ))}
         </div>
         {courses.length > 0 && <CalendarFilter filter={filter} onChange={setFilter} courses={courses} colors={colors} cramming={cram.courses} />}
-        <div className="flex items-center gap-[12px] text-[12.5px] font-semibold text-prussian" aria-label="Key" data-part="calendar-key">
+        <div className="flex items-center gap-[14px] text-[14px] font-bold text-prussian" aria-label="Key" data-part="calendar-key">
           {ENTRY_TYPES.map((t) => (
             <span key={t} className="inline-flex items-center gap-[5px] whitespace-nowrap">
               <TypeMark type={t} />
