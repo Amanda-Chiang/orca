@@ -117,3 +117,29 @@ test("the server's view files a question saved under a stale topic by its object
   assert.deepEqual(view.attribution.objectives.get("Y")?.questionIds, ["q-y", "dive-q"], "X was merged into Y while a dive wrote for X");
   assert.deepEqual(view.attribution.objectives.get("Z")?.questionIds, ["q-z"], "an objective created in a topic merged meanwhile follows the topic");
 });
+
+/** List view History (2026-11-25): the rubric grader's note rides grader_note; databases and rows from before it read as no note. */
+test("a rubric answer's grader note survives the trip to a row and back", () => {
+  const graded: AnswerEvent = { ...answer, id: "e20", response: "The top bit is copied.", errorType: "concept", graderNote: { feedback: "Close.", satisfied: ["copies the top bit"], misconception: "thinks zeros are added" } };
+  const row = { ...eventToRow(graded), owner_id: "u" };
+  assert.deepEqual(row.grader_note, graded.graderNote);
+  assert.equal(row.note, "The top bit is copied.");
+  assert.deepEqual(eventFromRow(row), graded);
+});
+
+test("an answer without a note writes null, and a row from a database without the column reads as no note", () => {
+  const row = { ...eventToRow(answer), owner_id: "u" };
+  assert.equal(row.grader_note, null);
+  const older: Partial<typeof row> = { ...row };
+  delete older.grader_note;
+  const read = eventFromRow(older as typeof row);
+  assert.equal("graderNote" in read, false);
+  assert.equal("response" in read, false, "an answer saved before answers kept their words has none");
+});
+
+test("a partial grader note reads with empty defaults; one without feedback is refused", () => {
+  const row = { ...eventToRow(answer), owner_id: "u" };
+  assert.deepEqual((eventFromRow({ ...row, grader_note: { feedback: "Right." } }) as AnswerEvent).graderNote, { feedback: "Right.", satisfied: [], misconception: null });
+  assert.deepEqual((eventFromRow({ ...row, grader_note: { feedback: "Right.", satisfied: ["a", 3], misconception: 7 } }) as AnswerEvent).graderNote, { feedback: "Right.", satisfied: ["a"], misconception: null });
+  assert.throws(() => eventFromRow({ ...row, grader_note: { satisfied: [] } }), /no feedback/);
+});

@@ -1,4 +1,6 @@
-import type { AnswerEvent } from "../src/lib/mastery/types";
+import type { QuizQuestion } from "../src/lib/data";
+import type { AnswerEvent, EvidenceEvent } from "../src/lib/mastery/types";
+import { fakeModel } from "./fake-model";
 import { F, FIXTURE_STATE, daysAgo, expect, pastMiss, seedState, stored, struggled, test } from "./fixture";
 
 /** List (owner, 2026-11-10): the topics with weak spots, each with its status and a dive. */
@@ -98,4 +100,102 @@ test("History: a row opens its topic's attempts, with the answer typed in a quiz
 
   await page.keyboard.press("Escape");
   await expect(modal).toHaveCount(0);
+});
+
+test("History: an essay answer in a quick review keeps the rubric grader's note, the kind of mistake and the words", async ({ page, student }) => {
+  const prose: QuizQuestion = {
+    id: crypto.randomUUID(), kind: "Short answer", tier: "mechanism", topic: "Two's Complement", prompt: "Why does sign extension copy the top bit?", options: [], answer: -1,
+    rubric: { requiredIdeas: ["The top bit is the sign"], acceptableAlternatives: [], knownMisconceptions: [] }, explanation: "The new bits' weights cancel.", anchor: { locator: "slide 9", excerpt: "fixture" }, objectiveId: F.signExtend,
+  };
+  const bank = FIXTURE_STATE.questionBank[F.course];
+  await seedState(student, {
+    ...FIXTURE_STATE,
+    questionBank: { [F.course]: { ...bank, [F.twosComplement]: [...bank[F.twosComplement].filter((q) => q.objectiveId !== F.signExtend), prose] } },
+    evidence: [struggled(F.course, F.twosComplement, F.signExtend, daysAgo(1))],
+  });
+  await fakeModel({ grade: { outcome: "partial", feedback: "Half there: say why the value stays the same.", satisfied: ["The top bit is the sign"], misconception: "thinks zeros are added", errorType: "concept" } });
+
+  await page.goto(`/session/${SLUG}?kind=quick`);
+  await page.getByPlaceholder(/One or two sentences/).fill("Because the top bit is the sign.");
+  await page.getByRole("button", { name: "Check" }).click();
+  await pastMiss(page);
+  await expect
+    .poll(async () => (await stored(page, student)).evidence.find((e) => e.kind === "answer" && e.questionId === prose.id))
+    .toMatchObject({
+      grader: "rubric",
+      outcome: "partial",
+      response: "Because the top bit is the sign.",
+      errorType: "concept",
+      graderNote: { feedback: "Half there: say why the value stays the same.", satisfied: ["The top bit is the sign"], misconception: "thinks zeros are added" },
+    });
+
+  await page.goto(`/course/${SLUG}/list`);
+  await page.locator("[data-part=weak-row-history]").first().click();
+  const attempt = page.locator("[data-part=history-attempt]").first();
+  await expect(attempt).toHaveAttribute("data-outcome", "partial");
+  await attempt.getByRole("button").click();
+  await expect(attempt.locator("[data-part=history-response]")).toHaveText("Because the top bit is the sign.");
+  await expect(attempt.locator("[data-part=history-key]")).toHaveText("The top bit is the sign");
+  const grader = attempt.locator("[data-part=history-grader]");
+  await expect(grader).toContainText("Half there: say why the value stays the same.");
+  await expect(grader).toContainText("Got: The top bit is the sign");
+  await expect(grader).toContainText("Mix-up: thinks zeros are added");
+  await expect(attempt).toContainText("Kind of mistake: The idea itself");
+});
+
+test("History: older answers, Claude's questions and problems, marks and signals each show as they should", async ({ page, student }) => {
+  const claudes: QuizQuestion = { ...FIXTURE_STATE.questionBank[F.course][F.twosComplement][3], id: crypto.randomUUID(), prompt: "Sign-extend 0110 to 8 bits.", exact: ["00000110"], source: "claude" };
+  const bank = FIXTURE_STATE.questionBank[F.course];
+  const base = { courseId: F.course, topicId: F.twosComplement, objectiveId: F.signExtend, tier: null, sessionId: "earlier" } as const;
+  const chat = { courseId: F.course, topicId: F.twosComplement, objectiveId: F.signExtend, source: "connector", sessionId: "chat" } as const;
+  const evidence: EvidenceEvent[] = [
+    struggled(F.course, F.twosComplement, F.signExtend, daysAgo(6)),
+    // Saved before answers kept their words: none.
+    { ...base, kind: "answer", id: crypto.randomUUID(), at: daysAgo(5), questionId: F.tc4, outcome: "incorrect", grader: "exact", source: "quick-review" },
+    // "Don't know": self-marked, nothing typed.
+    { ...base, kind: "answer", id: crypto.randomUUID(), at: daysAgo(4, Date.now() - 3_600_000), questionId: F.tc4, outcome: "incorrect", grader: "self", source: "quiz" },
+    { ...chat, kind: "answer", id: crypto.randomUUID(), at: daysAgo(4), questionId: claudes.id, tier: null, outcome: "correct", grader: "exact", response: "00000110", help: "hint" },
+    { ...chat, kind: "work", id: crypto.randomUUID(), at: daysAgo(3), problem: "Sign-extend 1001 to 6 bits.", response: "111001", basis: "known-answer", outcome: "correct" },
+    { ...chat, kind: "signal", id: crypto.randomUUID(), at: daysAgo(3, Date.now() - 3_600_000), signal: "asked-harder", note: null },
+    { ...chat, kind: "signal", id: crypto.randomUUID(), at: daysAgo(2), signal: "lost", note: null },
+    { kind: "mark", id: crypto.randomUUID(), at: daysAgo(1), courseId: F.course, topicId: F.twosComplement, objectiveId: F.signExtend },
+  ];
+  await seedState(student, { ...FIXTURE_STATE, questionBank: { [F.course]: { ...bank, [F.twosComplement]: [...bank[F.twosComplement], claudes] } }, evidence });
+
+  await page.goto(`/course/${SLUG}/list`);
+  await page.locator('[data-part=list-tab][data-tab="all"]').click();
+  await page.locator("[data-part=weak-row-history]").first().click();
+  const section = page.locator(`[data-part=history-objective][data-objective="${F.signExtend}"]`);
+  // Newest first: the mark, the signal, Claude's problem, Claude's question, "Don't know", the old answer, the flag.
+  const markers = section.locator("[data-part=history-marker]");
+  await expect(markers).toHaveCount(3);
+  await expect(markers.nth(0)).toHaveAttribute("data-kind", "mark");
+  await expect(markers.nth(0)).toContainText("You marked it mastered");
+  await expect(markers.nth(1)).toContainText("You told Claude you were lost");
+  await expect(markers.nth(2)).toContainText("Flagged as hard: you flagged it");
+  // Asking for something harder changes nothing, so it isn't listed.
+  await expect(section).not.toContainText("harder");
+
+  const attempts = section.locator("[data-part=history-attempt]");
+  await expect(attempts).toHaveCount(4);
+  await expect(attempts.nth(0)).toContainText("Claude's problem");
+  await expect(attempts.nth(0)).toContainText("Sign-extend 1001 to 6 bits.");
+  await expect(attempts.nth(1)).toContainText("Claude's question · with a hint");
+  await expect(attempts.nth(2)).toContainText("Topic quiz · marked by you");
+  await expect(attempts.nth(3)).toContainText("Quick review");
+
+  await attempts.nth(0).getByRole("button").click();
+  await expect(attempts.nth(0).locator("[data-part=history-response]")).toHaveText("111001");
+  await expect(attempts.nth(0)).toContainText("Checked against a known answer");
+  await expect(attempts.nth(0).locator("[data-part=history-key]")).toHaveCount(0);
+  await attempts.nth(2).getByRole("button").click();
+  await expect(attempts.nth(2).locator("[data-part=history-response]")).toHaveText("Don't know, or not saved");
+  await attempts.nth(3).getByRole("button").click();
+  await expect(attempts.nth(3).locator("[data-part=history-response]")).toHaveText("Not saved");
+  await expect(attempts.nth(3).locator("[data-part=history-key]")).toHaveText("11111010");
+  await expect(attempts.nth(3).locator("[data-part=history-grader]")).toHaveCount(0);
+
+  // Closing by the button too.
+  await page.locator("[data-part=history-modal]").getByRole("button", { name: "Close" }).click();
+  await expect(page.locator("[data-part=history-modal]")).toHaveCount(0);
 });

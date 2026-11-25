@@ -100,6 +100,11 @@ test("Settings mints the connector link once; Claude can read the course, ask a 
   // A prose answer goes through Orca's own grader (here the fake API, which says correct).
   const graded = toolText(await call(page, url, "check_answer", { courseId: F.course, questionId: id.prose, response: "Because the top bit is the sign bit." }));
   expect(graded).toMatchObject({ outcome: "correct", grader: "rubric", feedback: "The fake API graded it.", answer: "The top bit is the sign", objectiveId: F.signExtend, status: "verified" });
+  // The List view's History (2026-11-25): the answer keeps the student's words and what the grader said.
+  expect((await stored(page, student)).evidence.find((e) => e.kind === "answer" && e.questionId === id.prose)).toMatchObject({
+    response: "Because the top bit is the sign bit.",
+    graderNote: { feedback: "The fake API graded it.", satisfied: [], misconception: null },
+  });
   // When the grader can't run, the key is handed over and Claude's own grade is recorded self-marked, with the student's words.
   await fakeModel({ fail: { step: "grade", message: "The fake API is having a bad day." } });
   const held = toolText(await call(page, url, "check_answer", { courseId: F.course, questionId: id.prose, response: "copy it" })) as { needsSelfGrade: boolean; reason: string; rubric?: { requiredIdeas: string[] } };
