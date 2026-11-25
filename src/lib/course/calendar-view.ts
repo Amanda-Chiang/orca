@@ -1,0 +1,101 @@
+/**
+ * The calendar's views and filters (pure): which days a month or week view shows, the four kinds of
+ * entry a student filters by, and the filter kept in the page's URL. Dates are local ISO days.
+ */
+import type { CalendarEvent, EventKind } from "../data.ts";
+
+export type CalendarView = "month" | "week";
+
+/** What the filter calls each kind of entry ("lab" is homework's old twin). */
+export type EntryType = "exam" | "hw" | "rev" | "dive";
+export const ENTRY_TYPES: readonly EntryType[] = ["exam", "hw", "rev", "dive"];
+export const ENTRY_TYPE_LABELS: Record<EntryType, string> = { exam: "Exams", hw: "Homework", rev: "Quick reviews", dive: "Dives" };
+
+export function entryType(kind: EventKind): EntryType {
+  return kind === "lab" ? "hw" : kind;
+}
+
+/** null = every course (or every type): nothing filtered. An empty set hides them all. */
+export interface CalendarFilter {
+  courses: ReadonlySet<string> | null;
+  types: ReadonlySet<EntryType> | null;
+}
+
+export const NO_FILTER: CalendarFilter = { courses: null, types: null };
+
+/** Entries whose course and type both pass. An entry without a course passes the course filter only when it's off. */
+export function filterEntries<E extends CalendarEvent>(events: readonly E[], f: CalendarFilter): E[] {
+  return events.filter(
+    (e) => (f.courses === null || (e.courseId !== undefined && f.courses.has(e.courseId))) && (f.types === null || f.types.has(entryType(e.kind))),
+  );
+}
+
+/** How many of the two filters are on (for the button's count). */
+export function activeFilters(f: CalendarFilter): number {
+  return (f.courses === null ? 0 : 1) + (f.types === null ? 0 : 1);
+}
+
+/**
+ * The filter from the URL: `courses` and `types` are comma lists; absent means all. Unknown types and
+ * courses that no longer exist are dropped; a list left empty that way means all again, so a stale link
+ * never hides everything.
+ */
+export function readFilter(params: { get(name: string): string | null }, courseIds: readonly string[]): CalendarFilter {
+  const list = (name: string) => {
+    const raw = params.get(name);
+    return raw === null ? null : raw.split(",").filter(Boolean);
+  };
+  const courses = list("courses")?.filter((id) => courseIds.includes(id));
+  const types = list("types")?.filter((t): t is EntryType => (ENTRY_TYPES as readonly string[]).includes(t));
+  return {
+    courses: courses && courses.length > 0 ? new Set(courses) : null,
+    types: types && types.length > 0 ? new Set(types) : null,
+  };
+}
+
+/** The filter as URL params (only the parts that are on). */
+export function writeFilter(f: CalendarFilter, params: URLSearchParams): URLSearchParams {
+  const out = new URLSearchParams(params);
+  out.delete("courses");
+  out.delete("types");
+  if (f.courses !== null) out.set("courses", [...f.courses].join(","));
+  if (f.types !== null) out.set("types", [...f.types].join(","));
+  return out;
+}
+
+/**
+ * Tick or untick one course (or type) in the filter. Unticking from "all" leaves every other one; ticking
+ * the last missing one, or unticking the last one left, goes back to all (an empty filter shows nothing
+ * and isn't a state worth keeping).
+ */
+export function toggle<T extends string>(current: ReadonlySet<T> | null, value: T, all: readonly T[]): ReadonlySet<T> | null {
+  const next = new Set(current ?? all);
+  if (next.has(value)) next.delete(value);
+  else next.add(value);
+  return next.size === all.length || next.size === 0 ? null : next;
+}
+
+const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const parse = (day: string) => {
+  const [y, m, d] = day.split("-").map(Number);
+  return new Date(y, m - 1, d);
+};
+
+/** The 42 days (6 weeks from Sunday) of the month grid around `anchor`'s month. */
+export function monthDays(anchor: string): string[] {
+  const a = parse(anchor);
+  const first = new Date(a.getFullYear(), a.getMonth(), 1);
+  return Array.from({ length: 42 }, (_, i) => iso(new Date(first.getFullYear(), first.getMonth(), 1 - first.getDay() + i)));
+}
+
+/** The 7 days, Sunday first, of the week containing `anchor`. */
+export function weekDays(anchor: string): string[] {
+  const a = parse(anchor);
+  return Array.from({ length: 7 }, (_, i) => iso(new Date(a.getFullYear(), a.getMonth(), a.getDate() - a.getDay() + i)));
+}
+
+/** The anchor one page on: a month (to its 1st) or a week. */
+export function shiftAnchor(anchor: string, view: CalendarView, n: number): string {
+  const a = parse(anchor);
+  return iso(view === "month" ? new Date(a.getFullYear(), a.getMonth() + n, 1) : new Date(a.getFullYear(), a.getMonth(), a.getDate() + 7 * n));
+}

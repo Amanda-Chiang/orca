@@ -98,7 +98,8 @@ export interface CourseSchedule {
 
 export const NO_SCHEDULE: CourseSchedule = { meetings: [], quickDays: null, deepDays: null };
 
-export type EventKind = "hw" | "lab" | "rev" | "exam";
+/** "dive" is only ever derived (a course's Dive in day), never stored. */
+export type EventKind = "hw" | "lab" | "rev" | "dive" | "exam";
 
 /** One of a course's exams: its date and, optionally, the topics it covers (ids; ones no longer live are ignored). */
 export interface Exam {

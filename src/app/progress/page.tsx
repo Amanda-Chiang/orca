@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import Link from "next/link";
 import { motion } from "motion/react";
 import { addDays } from "@/lib/mastery/agenda";
+import { courseColors } from "@/lib/course/colors";
 import { examMinutes, hoursMinutes, minutesOf, type StudyDay } from "@/lib/course/study-time";
 import { fadeUp, stagger } from "@/lib/motion";
 import { useDayKey, useOrca, useStreak } from "@/lib/store";
@@ -16,8 +17,6 @@ import { useStudyTime } from "@/components/study/StudyTime";
 import { useStudyDays } from "@/components/study/useStudyDays";
 import { SourcesCard, StatTile, TILE_ACCENTS } from "@/components/study/StudyParts";
 
-/** A course's color in the charts, by its order on the map. */
-const COURSE_COLORS = ["bg-study-sky", "bg-study-gold", "bg-study-rose", "bg-study-mint", "bg-study-coral", "bg-study-violet"] as const;
 const CHART_DAYS = 14;
 
 /** "Tue 11" for a YYYY-MM-DD day (pure date arithmetic, so the zone can't shift it). */
@@ -41,7 +40,8 @@ export default function ProgressPage() {
   const dayKey = useDayKey();
   const nowMs = useNow();
   const today = nowMs ? dayKey(new Date(nowMs).toISOString()) : "";
-  const colorOf = useMemo(() => new Map(courses.map((c, i) => [c.id, COURSE_COLORS[i % COURSE_COLORS.length]])), [courses]);
+  // A course's color in the charts, by its order on the map (shared with the calendar).
+  const colorOf = useMemo(() => new Map([...courseColors(courses)].map(([id, c]) => [id, c.bg])), [courses]);
 
   return (
     <Screen bg="alice" className="overflow-auto">
