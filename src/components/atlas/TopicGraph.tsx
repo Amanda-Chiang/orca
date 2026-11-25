@@ -22,11 +22,12 @@ const EDGE: Record<RelationType, { stroke: string; dash?: string; width: number;
   related: { stroke: "var(--color-link-related)", width: 1.5 },
 };
 
-const NODE: Record<TopicStrength, { fill: string; stroke: string; dash?: string; glyph: string }> = {
+const NODE: Record<TopicStrength, { fill: string; stroke: string; glyph: string }> = {
   strong: { fill: "var(--color-good-tint)", stroke: "var(--color-good)", glyph: "var(--color-good-deep)" },
   developing: { fill: "var(--color-warn-tint)", stroke: "var(--color-warn)", glyph: "var(--color-warn-deep)" },
   fragile: { fill: "var(--color-bad-tint)", stroke: "var(--color-bad)", glyph: "var(--color-bad-deep)" },
-  unverified: { fill: "var(--color-parchment)", stroke: "var(--color-periwinkle-deep)", dash: "4 4", glyph: "none" },
+  // Nothing answered or flagged: a calm solid disc, neither good nor bad (owner, 2026-11-24).
+  unverified: { fill: "var(--color-alice)", stroke: "var(--color-periwinkle-deep)", glyph: "none" },
 };
 
 const LABEL_T = [0.75, 0.58, 0.9, 0.42, 0.26, 0.98, 0.1] as const;
@@ -355,7 +356,7 @@ function TopicNode({ node: n, active, dim, faint, offExam, onHover, onOpen, onDr
       <g id={`topic-art-${id}`} transform={`translate(${n.x} ${n.y})`} opacity={faint ? 0.25 : 1} style={{ transition: "opacity 150ms" }}>
         {n.usedIn > 0 && <circle r={n.r + 5} fill={style.fill} opacity={0.6} />}
         {active && <circle r={n.r + 4} fill="none" stroke="var(--color-wisteria-deep)" strokeWidth={2} data-part="topic-ring" />}
-        <circle r={n.r} fill={style.fill} stroke={style.stroke} strokeWidth={2.5} strokeDasharray={style.dash} />
+        <circle r={n.r} fill={style.fill} stroke={style.stroke} strokeWidth={2.5} />
         <Glyph strength={n.strength} r={n.r} />
         <text textAnchor="middle" fontSize={11} fontWeight={n.usedIn > 0 ? 700 : 600} fill="var(--color-prussian)">
           {n.lines.map((line, i) => (
