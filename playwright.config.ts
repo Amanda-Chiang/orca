@@ -13,7 +13,7 @@ const PORT = 3100;
 
 /**
  * Tests never spend money on a model: the app's model calls go to a fake Messages API on this
- * machine (`e2e/fake-anthropic.ts`, started below) with a fake key, model keys from `.env.local`
+ * machine (`e2e/fake-anthropic.ts`, started below) with a fake key, model keys and settings from `.env` and `.env.local`
  * are overridden, and `e2e/global-setup.ts` refuses to run against a server whose model calls
  * aren't local (e.g. a reused dev server started with a real key). Jobs run inline.
  */
@@ -23,9 +23,14 @@ const FAKE_MODEL = {
   // The fake speaks Anthropic's API only: OpenAI settings from `.env` must not win.
   ORCA_MODEL_PROVIDER: "anthropic",
   ORCA_MODEL: "",
+  ORCA_READ_MODEL: "",
+  ORCA_GRADE_MODEL: "",
   OPENAI_API_KEY: "",
   OPENAI_BASE_URL: "",
   ORCA_JOBS: "inline",
+  // The legacy upload queue and no service-wide budget, whatever `.env` says (as scripts/support/http-check.ts).
+  ORCA_UPLOAD_PIPELINE: "",
+  ORCA_DAILY_BUDGET_USD: "",
   // Emailed links point here (src/lib/auth/site.ts); the local stack allows this address.
   SITE_URL: `http://localhost:${PORT}`,
 };
