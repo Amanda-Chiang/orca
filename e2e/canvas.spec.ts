@@ -1,4 +1,4 @@
-import { expect, test, F } from "./fixture";
+import { expect, test, F, FIXTURE_STATE, seedState } from "./fixture";
 
 /**
  * Canvas import, browser side. The server's own checks run for real (the site must be https and
@@ -81,7 +81,7 @@ test("connected, Settings says who, and offers the import; the import page lists
     { canvasCourseId: "77", fileIds: ["501", "502"], importSessionId: sessionId, resumeExpired: true },
     { canvasCourseId: "77", fileIds: ["501", "502"], importSessionId: sessionId, resumeExpired: false },
   ]);
-  expect(await page.evaluate(() => sessionStorage.getItem("orca-canvas-import:77:501,502"))).toBeNull();
+  expect(await page.evaluate(() => sessionStorage.getItem("orca-canvas-import:77:new:501,502"))).toBeNull();
   await expect(courses.first().locator('[data-part="canvas-import"]')).toHaveText("Update");
 });
 
@@ -96,4 +96,30 @@ test("New course offers the Canvas import", async ({ page }) => {
   await page.goto("/new-course");
   await page.locator('[data-part="import-from-canvas"]').click();
   await expect(page).toHaveURL(/\/import\/canvas$/);
+});
+
+test("a Canvas course not imported yet can go into an existing Orca course", async ({ page, student }) => {
+  await seedState(student, FIXTURE_STATE);
+  await page.route("**/api/canvas/courses", (route) => route.fulfill({ json: { courses: [{ id: "78", name: "Signals", code: null, term: null, linkedCourseId: null }, { id: "79", name: "Logic lab", code: null, term: null, linkedCourseId: F.course }] } }));
+  await page.route("**/api/canvas/courses/*/files", (route) => route.fulfill({ json: { files: [] } }));
+  const imports: Array<{ canvasCourseId: string; intoCourseId?: string }> = [];
+  await page.route("**/api/canvas/import", (route) => {
+    imports.push(route.request().postDataJSON());
+    return route.fulfill({ json: { course: { id: F.course, slug: "logic-e2e", name: "Logic Fixture", created: false }, exams: 0, events: 0, syllabus: false, files: { added: 0, duplicates: 0, failed: 0, skipped: 0, remaining: 0, skippedNames: [], total: 0 } } });
+  });
+
+  await page.goto("/import/canvas");
+  const courses = page.locator('[data-part="canvas-course"]');
+  // Already linked: no choice, the import goes where it went before.
+  await courses.nth(1).locator('[data-part="canvas-import"]').click();
+  await expect(courses.nth(1).locator('[data-part="canvas-files"]')).toBeVisible();
+  await expect(courses.nth(1).locator('[data-part="canvas-into"]')).toHaveCount(0);
+
+  await courses.first().locator('[data-part="canvas-import"]').click();
+  const into = courses.first().locator('[data-part="canvas-into"]');
+  await expect(into).toHaveValue("new");
+  await into.selectOption(F.course);
+  await courses.first().locator('[data-part="canvas-import-chosen"]').click();
+  await expect(courses.first().locator('[data-part="canvas-summary"]')).toContainText("Updated Logic Fixture");
+  expect(imports).toEqual([expect.objectContaining({ canvasCourseId: "78", intoCourseId: F.course })]);
 });
