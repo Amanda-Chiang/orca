@@ -18,7 +18,7 @@ export function AppShell({ bg = "parchment", cram = false, className, children }
       {cram ? <NavBar className="absolute bottom-[24px] right-[24px] z-20" /> : <Sidebar />}
     </div>
     {/* Outside the page's data-cram, so the curtain's own look is the old one (it's fixed, so where it sits doesn't matter). */}
-    <CramCurtain cram={cram} />
+    <CramCurtain cram={cram} arrive />
     </>
   );
 }

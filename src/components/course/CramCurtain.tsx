@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import { cramDive, cramDiveFade } from "@/lib/motion";
 import { playCramSound } from "@/lib/cram-sound";
+import { takeCramSurface } from "@/lib/cram-exit";
 
 /** Bubbles in the strip: across (%), down the strip (%), size (px). Fixed, so every dive looks the same. */
 const BUBBLES: ReadonlyArray<readonly [number, number, number]> = [
@@ -17,9 +18,10 @@ const BUBBLES: ReadonlyArray<readonly [number, number, number]> = [
  * (`cramDive`). At the switch a strip of water covers the page, light at the top (the ocean) and dark
  * at the bottom (the abyss, cram mode's sea), and scrolls past with bubbles in it, down into cram and
  * back up out of it, then fades. Nothing on first render or on navigation, nor with reduced motion.
- * Render it outside the page's `data-cram`, so `ocean` is the light sea.
+ * Render it outside the page's `data-cram`, so `ocean` is the light sea. `arrive`: also dive back up
+ * when this page opens right after the cram's results closed (src/lib/cram-exit.ts).
  */
-export function CramCurtain({ cram }: { cram: boolean }) {
+export function CramCurtain({ cram, arrive = false }: { cram: boolean; arrive?: boolean }) {
   const reduced = useReducedMotion();
   const [prev, setPrev] = useState(cram);
   const [run, setRun] = useState<{ into: boolean; n: number } | null>(null);
@@ -27,10 +29,21 @@ export function CramCurtain({ cram }: { cram: boolean }) {
     setPrev(cram);
     setRun({ into: cram, n: (run?.n ?? 0) + 1 });
   }
-  // The bubbles' sound, for as long as the dive (src/lib/cram-sound.ts); played with reduced motion too.
+  // Before the first paint, so the light page doesn't flash under it; a layout effect runs after the closing results page's
+  // cleanup (which a state initializer wouldn't: the new page renders before the old one unmounts).
+  useLayoutEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (arrive && !cram && takeCramSurface()) setRun((r) => ({ into: false, n: (r?.n ?? 0) + 1 }));
+    // Only on mount: arriving is a navigation.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // The bubbles' sound, for as long as the dive (src/lib/cram-sound.ts); played with reduced motion too. Once per dive, however often effects re-run.
   const runN = run?.n;
+  const played = useRef<number | undefined>(undefined);
   useEffect(() => {
-    if (runN !== undefined) playCramSound();
+    if (runN === undefined || played.current === runN) return;
+    played.current = runN;
+    playCramSound();
   }, [runN]);
   if (!run || reduced) return null;
   return (
