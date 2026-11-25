@@ -12,12 +12,12 @@ import { lookup as dnsLookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import { type CanvasAssignment, type CanvasCourse, type CanvasFile, type CanvasModule, type CanvasUser, type PickedFile, classifyAssignment, dayOf, htmlToText, pickFiles } from "@/lib/canvas/api";
 import { type CanvasClient, CanvasError, canvasClient } from "@/lib/canvas/client";
-import { placeIslands } from "@/lib/course/islands";
-import { COURSE_NAME_MAX, type IslandVariant, type MaterialType, shortName, slugify } from "@/lib/data";
+import type { MaterialType } from "@/lib/data";
 import { LIMITS } from "@/lib/limits";
 import { startUploadJob } from "@/lib/server/jobs/start";
 import { heldBackByDefault } from "@/lib/material/hold-back";
 import { UPLOAD_MIMES, uploadKind } from "@/lib/material/kind";
+import { cleanCourseName, createCourse } from "@/lib/server/courses";
 import { BUCKET, processUpload, startUpload } from "@/lib/server/materials";
 import { isPublicAddress, publicHop } from "@/lib/server/public-page";
 import { serverSupabaseEnv } from "@/lib/supabase/env";
@@ -26,7 +26,6 @@ import { sanitize } from "@/lib/untrusted/sanitize";
 
 /* ── The token at rest ── */
 
-const VARIANT_CYCLE: IslandVariant[] = ["ald", "circuit", "signals", "linear", "stats"];
 
 function tokenKey(): Buffer {
   // Derived from the server's own secret, so no extra setting is needed; a different secret means stored tokens can't be read (reconnect).
@@ -236,18 +235,8 @@ async function orcaCourseFor(db: OrcaSupabase, ownerId: string, course: CanvasCo
     await link(db, ownerId, "course", String(course.id), data.id);
     return { ...data, created: false, fresh: true };
   }
-  const { data: mine, error } = await db.from("courses").select("id, slug").eq("owner_id", ownerId).is("deleted_at", null).order("created_at");
-  if (error) throw new Error(`Couldn't read the courses: ${error.message}`);
-  const name = sanitize(course.name, COURSE_NAME_MAX).text.trim().slice(0, COURSE_NAME_MAX) || "Canvas course";
-  const taken = mine.map((c) => c.slug);
-  const base = slugify(name) || "course";
-  let slug = base;
-  for (let n = 2; taken.includes(slug); n++) slug = `${base}-${n}`;
-  const id = crypto.randomUUID();
-  const pos = placeIslands([...mine.map((c) => c.id), id])[mine.length];
-  const row = { id, owner_id: ownerId, slug, name, short: shortName(name), variant: VARIANT_CYCLE[mine.length % VARIANT_CYCLE.length], pos_x: pos.x, pos_y: pos.y, trail: null, review_config: null, schedule: null };
-  const inserted = await db.from("courses").insert(row);
-  if (inserted.error) throw new Error(`Couldn't create the course: ${inserted.error.message}`);
+  const created = await createCourse(db, ownerId, cleanCourseName(course.name) || "Canvas course");
+  const { id, slug, name } = created;
   await link(db, ownerId, "course", String(course.id), id);
   return { id, slug, name, created: true, fresh: true };
 }
