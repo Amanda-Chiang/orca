@@ -64,13 +64,16 @@ export function CalendarFilter({
             className="absolute left-0 top-[50px] z-30 flex w-[280px] flex-col gap-[14px] rounded-[18px] border border-line bg-card p-[16px] shadow-[0_12px_32px_-6px_rgb(21_29_58/0.3)]"
           >
             <Group title="Courses" all={filter.courses === null} none={filter.courses?.size === 0} onAll={() => onChange({ ...filter, courses: null })} onNone={() => onChange({ ...filter, courses: new Set() })}>
-              {courses.map((c) => (
-                <Check key={c.id} checked={filter.courses?.has(c.id) ?? true} onChange={() => onChange({ ...filter, courses: toggle(filter.courses, c.id, courseIds) })}>
-                  <span aria-hidden className={cn("h-[10px] w-[10px] shrink-0 rounded-full", colors.get(c.id)?.bg)} />
-                  <span className="min-w-0 truncate" title={c.name}>{c.name}</span>
-                  {cramming.has(c.id) && <span className="shrink-0 text-[12px] font-bold text-cram">· cramming</span>}
-                </Check>
-              ))}
+              {/* Five rows (27 px each, 6 px apart) show at once; more scroll. */}
+              <div className="-mr-[6px] flex max-h-[159px] flex-col gap-[6px] overflow-y-auto pr-[6px]" data-part="filter-courses">
+                {courses.map((c) => (
+                  <Check key={c.id} checked={filter.courses?.has(c.id) ?? true} onChange={() => onChange({ ...filter, courses: toggle(filter.courses, c.id, courseIds) })}>
+                    <span aria-hidden className={cn("h-[10px] w-[10px] shrink-0 rounded-full", colors.get(c.id)?.bg)} />
+                    <span className="min-w-0 truncate" title={c.name}>{c.name}</span>
+                    {cramming.has(c.id) && <span className="shrink-0 text-[12px] font-bold text-cram">· cramming</span>}
+                  </Check>
+                ))}
+              </div>
             </Group>
             <Group title="Types" all={filter.types === null} none={filter.types?.size === 0} onAll={() => onChange({ ...filter, types: null })} onNone={() => onChange({ ...filter, types: new Set() })}>
               {ENTRY_TYPES.map((t) => (
