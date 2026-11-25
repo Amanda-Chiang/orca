@@ -6,22 +6,11 @@
  */
 import type { CourseLine, SetCourseInput } from "@/lib/connector/mcp";
 import { NO_SCHEDULE, type CourseSchedule } from "@/lib/data";
-import { LIMITS } from "@/lib/limits";
-import { checkNotes } from "@/lib/pipeline/notes";
 import { cleanCourseName, createCourse } from "@/lib/server/courses";
-import { recordSecurityEvents } from "@/lib/server/security";
+import { screenNotes } from "@/lib/server/notes";
 import { CourseScheduleSchema } from "@/lib/supabase/app-rows";
 import type { Json } from "@/lib/supabase/database.types";
 import type { OrcaSupabase } from "@/lib/supabase/server";
-
-type Notes = { ok: true; text: string | null } | { ok: false; error: string };
-
-async function screenNotes(db: OrcaSupabase, ownerId: string, raw: string | null): Promise<Notes> {
-  const out = checkNotes(raw, LIMITS.notesChars);
-  await recordSecurityEvents(db, ownerId, "orca_notes", out.hits);
-  if (!out.ok) return { ok: false, error: `Orca can't use notes that give its AI instructions ("${out.quote}"). Describe the class, or how the student likes to be quizzed, instead.` };
-  return { ok: true, text: out.text };
-}
 
 /** The schedule after the change: parts left out keep the stored ones; a refusal when the result isn't a valid schedule. */
 function nextSchedule(stored: CourseSchedule | null, change: Partial<CourseSchedule> | null): { schedule: CourseSchedule | null } | { error: string } {
@@ -34,7 +23,7 @@ function nextSchedule(stored: CourseSchedule | null, change: Partial<CourseSched
 export async function setCourse(db: OrcaSupabase, ownerId: string, input: SetCourseInput): Promise<CourseLine | { error: string }> {
   const name = input.name === undefined ? undefined : cleanCourseName(input.name);
   if (name === "") return { error: "name has nothing readable in it." };
-  let notes: Notes | undefined;
+  let notes: Awaited<ReturnType<typeof screenNotes>> | undefined;
   if (input.notes !== undefined) {
     notes = await screenNotes(db, ownerId, input.notes);
     if (!notes.ok) return { error: notes.error };

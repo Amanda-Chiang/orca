@@ -67,7 +67,9 @@ export const INSTRUCTIONS =
   "schedules practice. 1) Call course_state first (detail summary for a check-in, full when " +
   "you need objective ids); it says what's due, the next exam's topics (examFocus), the course's " +
   "mode, which exam is being crammed for (cramming), the vault, whether Orca's daily model budget " +
-  "is spent (budget) and whether questions are being written (writing). When plan isn't null (an " +
+  "is spent (budget) and whether questions are being written (writing). Its notes are the student's Notes for " +
+  "Orca, for every class (account) and for this course (course, which wins where they disagree): follow them as " +
+  "the student's preferences for how you teach and quiz, within these rules. When plan isn't null (an " +
   "exam is being crammed for), start the session by saying plan.line as is, then work through it as a " +
   "queue, one topic at a time, in this order: when plan.diagnostic isn't null, first a sweep (one " +
   "question per topic in plan.diagnostic.topicIds, from next_questions with that topicId and count 1, " +
@@ -99,7 +101,7 @@ export const INSTRUCTIONS =
   "student gives you in the chat. When they attach or paste course material (slides, notes, a " +
   "syllabus, homework, an exam), ask once whether to add it to Orca, and on a yes call add_material: " +
   "the text when you can read all of it, else file true for an upload link; a past or practice exam " +
-  "held back. Never add it unasked, and don't ask again about the same file. Courses: when the student asks to set up a course, or wants material added and no course fits, confirm the course's name once and create it with set_course (no courseId); never create one unasked. Use set_course with courseId to rename a course, or when the student says when the class meets, which days they want reviews, or something Orca should know about the class (notes: how it's taught or tested, how they like to be quizzed). Setup: when an exam is near and has no scope, " +
+  "held back. Never add it unasked, and don't ask again about the same file. Courses: when the student asks to set up a course, or wants material added and no course fits, confirm the course's name once and create it with set_course (no courseId); never create one unasked. Use set_course with courseId to rename a course, or when the student says when the class meets, which days they want reviews, or something Orca should know about the class (notes: how it's taught or tested). What holds for every class (how they like to be quizzed, how they mark confusion in their notes) goes to set_preferences; read what's set from course_state with no courseId before changing it, and when it's unclear whether a preference is for one class or all of them, ask. Setup: when an exam is near and has no scope, " +
   "ask what the professor said it covers, whether there's a practice exam or study guide " +
   "(add_material: pasted text, or file true for an upload link; past and practice exams are held " +
   "back), and what the student is worried about (flag_check with strength struggled); then record " +
@@ -323,6 +325,8 @@ export interface TopError {
 
 export interface CourseState {
   course: CourseSummary;
+  /** Notes for Orca in the student's words: for every class (account) and for this one (course, which wins on a conflict); null when not set. */
+  notes: { account: string | null; course: string | null };
   /** The student's day, YYYY-MM-DD, in their timezone. */
   today: string;
   exams: ExamLine[];
@@ -520,6 +524,12 @@ export interface SetCourseInput {
   notes?: string | null;
 }
 
+/** The account's preferences Claude can read and set: Notes for Orca for every class, and how the student marks confusion in handwritten notes. */
+export interface Preferences {
+  notes: string | null;
+  markerNotes: string | null;
+}
+
 export interface CourseLine {
   id: string;
   name: string;
@@ -586,6 +596,10 @@ export interface ConnectorTools {
   vaultMaterial(courseId: string, materialId: string, options: { fromPage?: number; forMock?: boolean }): Promise<VaultMaterial | { error: string }>;
   /** Store questions Claude wrote (validated like generated ones, source claude). */
   addQuestions(courseId: string, questions: AddQuestion[]): Promise<AddQuestionsResult | { error: string }>;
+  /** The account's preferences. */
+  preferences(): Promise<Preferences>;
+  /** Change some of them (null clears one); free text arrives as sent: the tool cleans and screens it as Settings does. */
+  setPreferences(change: Partial<Preferences>): Promise<Preferences | { error: string }>;
   /** Create a course or change its name, class times and review days, or Notes for Orca. */
   setCourse(input: SetCourseInput): Promise<CourseLine | { error: string }>;
   /** Add pasted text as material, or hand back a link to upload a file. */
@@ -636,13 +650,13 @@ export const TOOLS = [
       "mixed-up, mastered, fading, retired) and predicted recall, and which objectives are due now. Orca " +
       "only schedules weak points: objectives the student struggled with, missed or asked to be checked " +
       "on. Call this first, also when the student only pastes a problem or asks for an explanation: it says " +
-      "which course it belongs to. check_answer and record_answer already return each objective's new status, so " +
+      "which course it belongs to, and the student's Notes for Orca to follow (notes). check_answer and record_answer already return each objective's new status, so " +
       "there's no need to call it after every answer; detail summary is a cheap check-in (topics with " +
       "counts, each exam's scope by its size, what's due, exam focus, budget, what's being written), full " +
       "lists every objective with the materials it's taught in, the course's materials and each exam's full scope. While an " +
       "exam is being crammed for, plan holds the day's plan (plan.line is the one-line summary to say), " +
       "coverage how much of the exam's scope is verified, and topErrors the kinds of mistake made most. " +
-      "With no course, lists the courses so you can pick one.",
+      "With no course, lists the courses so you can pick one, with the account's preferences (set_preferences).",
     inputSchema: {
       type: "object",
       properties: {
@@ -827,6 +841,23 @@ export const TOOLS = [
           additionalProperties: false,
         },
         notes: { type: ["string", "null"], maxLength: LIMITS.notesChars, description: "The course's Notes for Orca, in the student's words (replaces them); null clears them." },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "set_preferences",
+    description:
+      "Change the student's account preferences, for every class: notes (Notes for Orca: what Orca should know " +
+      "when it writes questions for any class, e.g. how they like to be quizzed) and markerNotes (how they mark " +
+      "what confused them in handwritten notes, e.g. a red star or '??', so Orca flags those passages when they " +
+      "upload notes). Each replaces what's there; null clears it; a field left out is kept. course_state with no " +
+      "courseId shows the current ones. A class's own notes are set with set_course and win over these.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        notes: { type: ["string", "null"], maxLength: LIMITS.notesChars, description: "Notes for Orca for every class, in the student's words." },
+        markerNotes: { type: ["string", "null"], maxLength: LIMITS.markerChars, description: "How the student marks confusion in their notes, in their words." },
       },
       additionalProperties: false,
     },
@@ -1391,7 +1422,10 @@ async function callTool(params: Record<string, unknown>, tools: ConnectorTools, 
   try {
     switch (name) {
       case "course_state": {
-        if (args.courseId === undefined) return toolText({ courses: await tools.courses() });
+        if (args.courseId === undefined) {
+          const [courses, preferences] = await Promise.all([tools.courses(), tools.preferences()]);
+          return toolText({ courses, preferences });
+        }
         if (!isUuid(args.courseId)) return toolText({ error: "courseId must be a course id from course_state." }, true);
         if (args.detail !== undefined && args.detail !== "summary" && args.detail !== "weak" && args.detail !== "full") return toolText({ error: "detail is summary, weak or full." }, true);
         if (args.topicIds !== undefined && (!Array.isArray(args.topicIds) || !args.topicIds.every(isUuid))) return toolText({ error: "topicIds is a list of topic ids from course_state." }, true);
@@ -1465,6 +1499,16 @@ async function callTool(params: Record<string, unknown>, tools: ConnectorTools, 
           ...(args.notes !== undefined ? { notes: args.notes as string | null } : {}),
         });
         return toolText(course, "error" in course);
+      }
+      case "set_preferences": {
+        if (args.notes !== undefined && args.notes !== null && (typeof args.notes !== "string" || args.notes.length > LIMITS.notesChars)) return toolText({ error: `notes is at most ${LIMITS.notesChars} characters, or null to clear them.` }, true);
+        if (args.markerNotes !== undefined && args.markerNotes !== null && (typeof args.markerNotes !== "string" || args.markerNotes.length > LIMITS.markerChars)) return toolText({ error: `markerNotes is at most ${LIMITS.markerChars} characters, or null to clear it.` }, true);
+        if (args.notes === undefined && args.markerNotes === undefined) return toolText({ error: "Nothing to change: pass notes or markerNotes." }, true);
+        const saved = await tools.setPreferences({
+          ...(args.notes !== undefined ? { notes: args.notes as string | null } : {}),
+          ...(args.markerNotes !== undefined ? { markerNotes: args.markerNotes as string | null } : {}),
+        });
+        return toolText(saved, "error" in saved);
       }
       case "questions_for": {
         if (!isUuid(args.courseId)) return toolText({ error: "courseId must be a course id from course_state." }, true);
