@@ -41,7 +41,7 @@ test("a busy day opens in a pop-up, Week shows it in full, and the filter combin
     await expect(page.locator("[data-today] [data-part=event]")).toHaveCount(5);
   });
 
-  await test.step("filter: one course, then exams only on top; Show all clears it", async () => {
+  await test.step("filter: one course, then exams only on top; Select all and Deselect all per group", async () => {
     await page.locator("[data-part=calendar-filter]").click();
     const panel = page.locator("[data-part=filter-panel]");
     await panel.getByLabel("Signals and Systems").uncheck();
@@ -52,8 +52,16 @@ test("a busy day opens in a pop-up, Week shows it in full, and the filter combin
     await expect(today.locator("[data-part=event]")).toHaveCount(2);
     await expect(today.locator("[data-part=event]")).toContainText(["Logic quiz 1", "Logic quiz 2"]);
     await expect(page.locator("[data-part=calendar-filter]")).toContainText("2");
-    await panel.getByRole("button", { name: "Show all" }).first().click();
-    await panel.getByRole("button", { name: "Show all" }).click();
+    const button = (group: string, part: string) => panel.locator(`[data-group=${group}] [data-part=${part}]`);
+    await button("courses", "select-all").click();
+    await button("types", "select-all").click();
     await expect(today.locator("[data-part=event]")).toHaveCount(5);
+    await expect(button("types", "select-all")).toBeDisabled();
+    // Deselect all types: nothing shows, and the empty state offers to clear.
+    await button("types", "deselect-all").click();
+    await expect(page.locator("[data-part=event]")).toHaveCount(0);
+    await expect(page.locator("[data-part=filter-empty]")).toBeVisible();
+    await panel.getByLabel("Exams").check();
+    await expect(today.locator("[data-part=event]")).toHaveCount(3);
   });
 });

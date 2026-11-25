@@ -40,12 +40,15 @@ export function CalendarFilter({
         onClick={() => setOpen((o) => !o)}
         data-part="calendar-filter"
         className={cn(
-          "pressable inline-flex h-[40px] items-center gap-[8px] rounded-[12px] border-2 px-[14px] text-[15px] font-bold text-prussian lip-3",
+          "pressable inline-flex h-[40px] w-[128px] items-center justify-between rounded-[12px] border-2 px-[14px] text-[15px] font-bold text-prussian lip-3",
           count > 0 ? "border-wisteria-deep bg-alice lip-wisteria" : "border-periwinkle-deep bg-parchment lip-periwinkle",
         )}
       >
         Filter
-        {count > 0 && <span className="rounded-pill bg-wisteria-deep px-[7px] py-[1px] text-[12px] text-parchment">{count}</span>}
+        {/* Room for a two-digit count kept whether or not it shows, so the button never changes width. */}
+        <span className="flex min-w-[26px] justify-center">
+          {count > 0 && <span className="rounded-pill bg-wisteria-deep px-[7px] py-[1px] text-[12px] text-parchment">{count}</span>}
+        </span>
         <IconDown size={16} />
       </button>
       <AnimatePresence>
@@ -60,7 +63,7 @@ export function CalendarFilter({
             data-part="filter-panel"
             className="absolute left-0 top-[50px] z-30 flex w-[280px] flex-col gap-[14px] rounded-[18px] border border-line bg-card p-[16px] shadow-[0_12px_32px_-6px_rgb(21_29_58/0.3)]"
           >
-            <Group title="Courses" onAll={() => onChange({ ...filter, courses: null })} all={filter.courses === null}>
+            <Group title="Courses" all={filter.courses === null} none={filter.courses?.size === 0} onAll={() => onChange({ ...filter, courses: null })} onNone={() => onChange({ ...filter, courses: new Set() })}>
               {courses.map((c) => (
                 <Check key={c.id} checked={filter.courses?.has(c.id) ?? true} onChange={() => onChange({ ...filter, courses: toggle(filter.courses, c.id, courseIds) })}>
                   <span aria-hidden className={cn("h-[10px] w-[10px] shrink-0 rounded-full", colors.get(c.id)?.bg)} />
@@ -69,7 +72,7 @@ export function CalendarFilter({
                 </Check>
               ))}
             </Group>
-            <Group title="Types" onAll={() => onChange({ ...filter, types: null })} all={filter.types === null}>
+            <Group title="Types" all={filter.types === null} none={filter.types?.size === 0} onAll={() => onChange({ ...filter, types: null })} onNone={() => onChange({ ...filter, types: new Set() })}>
               {ENTRY_TYPES.map((t) => (
                 <Check key={t} checked={filter.types?.has(t) ?? true} onChange={() => onChange({ ...filter, types: toggle<EntryType>(filter.types, t, ENTRY_TYPES) })}>
                   <TypeMark type={t} />
@@ -95,16 +98,19 @@ export function TypeMark({ type }: { type: EntryType }) {
   );
 }
 
-function Group({ title, all, onAll, children }: { title: string; all: boolean; onAll: () => void; children: React.ReactNode }) {
+/** A group of checkboxes with Select all and Deselect all (each greyed out when it would change nothing). */
+function Group({ title, all, none, onAll, onNone, children }: { title: string; all: boolean; none: boolean; onAll: () => void; onNone: () => void; children: React.ReactNode }) {
+  const action = "text-[12px] font-bold text-wisteria-deep hover:underline disabled:cursor-default disabled:text-muted/60 disabled:no-underline";
   return (
-    <fieldset className="flex min-w-0 flex-col gap-[6px]">
-      <div className="flex items-center justify-between">
-        <legend className="eyebrow text-[12px] text-wisteria-deep">{title}</legend>
-        {!all && (
-          <button type="button" onClick={onAll} className="text-[12px] font-bold text-wisteria-deep hover:underline">
-            Show all
-          </button>
-        )}
+    <fieldset className="flex min-w-0 flex-col gap-[6px]" data-group={title.toLowerCase()}>
+      <div className="flex items-center gap-[10px]">
+        <legend className="eyebrow mr-auto text-[12px] text-wisteria-deep">{title}</legend>
+        <button type="button" onClick={onAll} disabled={all} data-part="select-all" className={action}>
+          Select all
+        </button>
+        <button type="button" onClick={onNone} disabled={none} data-part="deselect-all" className={action}>
+          Deselect all
+        </button>
       </div>
       {children}
     </fieldset>

@@ -36,20 +36,25 @@ export function activeFilters(f: CalendarFilter): number {
 }
 
 /**
- * The filter from the URL: `courses` and `types` are comma lists; absent means all. Unknown types and
- * courses that no longer exist are dropped; a list left empty that way means all again, so a stale link
- * never hides everything.
+ * The filter from the URL: `courses` and `types` are comma lists; absent means all, empty means none.
+ * Unknown types and courses that no longer exist are dropped; a list left empty that way means all
+ * again, so a stale link never hides everything.
  */
 export function readFilter(params: { get(name: string): string | null }, courseIds: readonly string[]): CalendarFilter {
   const list = (name: string) => {
     const raw = params.get(name);
     return raw === null ? null : raw.split(",").filter(Boolean);
   };
-  const courses = list("courses")?.filter((id) => courseIds.includes(id));
-  const types = list("types")?.filter((t): t is EntryType => (ENTRY_TYPES as readonly string[]).includes(t));
+  // An empty list is "none" (Deselect all); a list whose every item is gone is "all".
+  const pick = <T extends string>(raw: string[] | null, valid: (v: string) => v is T): ReadonlySet<T> | null => {
+    if (raw === null) return null;
+    if (raw.length === 0) return new Set();
+    const kept = raw.filter(valid);
+    return kept.length > 0 ? new Set(kept) : null;
+  };
   return {
-    courses: courses && courses.length > 0 ? new Set(courses) : null,
-    types: types && types.length > 0 ? new Set(types) : null,
+    courses: pick(list("courses"), (id): id is string => courseIds.includes(id)),
+    types: pick(list("types"), (t): t is EntryType => (ENTRY_TYPES as readonly string[]).includes(t)),
   };
 }
 
@@ -64,15 +69,14 @@ export function writeFilter(f: CalendarFilter, params: URLSearchParams): URLSear
 }
 
 /**
- * Tick or untick one course (or type) in the filter. Unticking from "all" leaves every other one; ticking
- * the last missing one, or unticking the last one left, goes back to all (an empty filter shows nothing
- * and isn't a state worth keeping).
+ * Tick or untick one course (or type) in the filter. Unticking from "all" leaves every other one;
+ * ticking the last missing one goes back to all; unticking the last one left is none.
  */
 export function toggle<T extends string>(current: ReadonlySet<T> | null, value: T, all: readonly T[]): ReadonlySet<T> | null {
   const next = new Set(current ?? all);
   if (next.has(value)) next.delete(value);
   else next.add(value);
-  return next.size === all.length || next.size === 0 ? null : next;
+  return next.size === all.length ? null : next;
 }
 
 const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;

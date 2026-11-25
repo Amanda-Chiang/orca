@@ -22,14 +22,19 @@ test("the URL round-trips the filter, and a stale link (a deleted course, a made
   assert.deepEqual(readFilter(params, ["ds", "cs"]), f);
   assert.deepEqual(readFilter(new URLSearchParams("courses=gone&types=nope"), ["ds"]), NO_FILTER);
   assert.equal(writeFilter(NO_FILTER, params).toString(), "view=week");
+  // Deselect all: an empty list is none, and it survives the URL.
+  const none = { courses: new Set<string>(), types: null };
+  assert.deepEqual(readFilter(writeFilter(none, new URLSearchParams()), ["ds"]), none);
+  assert.deepEqual(filterEntries(events, none), []);
 });
 
-test("toggling from all unticks one; unticking the last or ticking the last missing one returns to all", () => {
+test("toggling from all unticks one; ticking the last missing one returns to all; unticking the last one left is none", () => {
   const all = ["a", "b", "c"];
   const one = toggle(null, "a", all);
   assert.deepEqual(one, new Set(["b", "c"]));
   assert.equal(toggle(one, "a", all), null);
-  assert.equal(toggle(new Set(["b"]), "b", all), null);
+  assert.deepEqual(toggle(new Set(["b"]), "b", all), new Set());
+  assert.deepEqual(toggle(new Set<string>(), "c", all), new Set(["c"]));
 });
 
 test("month and week days start on Sunday, and paging moves a month (to the 1st) or a week", () => {
