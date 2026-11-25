@@ -1,20 +1,21 @@
 import { z } from "zod";
 import { CanvasError } from "@/lib/canvas/client";
-import { clientFor, importCanvasCourse } from "@/lib/server/canvas";
+import { ImportTargetError, clientFor, importCanvasCourse } from "@/lib/server/canvas";
 import { rateLimit, tooManyRequests } from "@/lib/server/rate-limit";
 import { timezoneOf } from "@/lib/server/usage";
 import { forStudent, reply } from "@/lib/server/student";
 
 /**
- * POST { canvasCourseId } → import (or update) one Canvas course: 200 ImportSummary
+ * POST { canvasCourseId, intoCourseId? } → import (or update) one Canvas course, into a new Orca course or the
+ * one picked (`intoCourseId`, only while the Canvas course isn't linked yet): 200 ImportSummary
  * (`src/lib/server/canvas.ts`). Files are pulled until the time budget is used; `files.remaining`
  * says how many are left, and the same request again picks them up. 409 when Canvas isn't
- * connected or refuses the token; 429 past LIMITS.rate.canvasImport.
+ * connected or refuses the token, or `intoCourseId` can't be used; 429 past LIMITS.rate.canvasImport.
  */
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-const Body = z.object({ importSessionId: z.uuid().optional(), resumeExpired: z.boolean().optional(), canvasCourseId: z.string().regex(/^\d{1,12}$/), fileIds: z.array(z.string().regex(/^\d{1,12}$/)).max(1000).optional() });
+const Body = z.object({ importSessionId: z.uuid().optional(), resumeExpired: z.boolean().optional(), canvasCourseId: z.string().regex(/^\d{1,12}$/), fileIds: z.array(z.string().regex(/^\d{1,12}$/)).max(1000).optional(), intoCourseId: z.uuid().optional() });
 
 export async function POST(request: Request) {
   return forStudent(request, async (student, db) => {
@@ -25,8 +26,9 @@ export async function POST(request: Request) {
     const rate = await rateLimit(db, student.id, "canvasImport");
     if (!rate.ok) return tooManyRequests(rate);
     try {
-      return reply(200, await importCanvasCourse(db, student.id, client, parsed.data.canvasCourseId, { budgetMs: 200_000, importSessionId: parsed.data.importSessionId, resumeExpired: parsed.data.resumeExpired, timeZone: await timezoneOf(db, student.id), ...(parsed.data.fileIds ? { fileIds: new Set(parsed.data.fileIds) } : {}) }));
+      return reply(200, await importCanvasCourse(db, student.id, client, parsed.data.canvasCourseId, { budgetMs: 200_000, importSessionId: parsed.data.importSessionId, resumeExpired: parsed.data.resumeExpired, timeZone: await timezoneOf(db, student.id), ...(parsed.data.fileIds ? { fileIds: new Set(parsed.data.fileIds) } : {}), ...(parsed.data.intoCourseId ? { intoCourseId: parsed.data.intoCourseId } : {}) }));
     } catch (e) {
+      if (e instanceof ImportTargetError) return reply(409, { error: e.message });
       if (e instanceof CanvasError) {
         if (e.status === 401) return reply(409, { error: "Canvas no longer accepts the token. Reconnect in Settings." });
         if (e.status === 403 || e.status === 404) return reply(404, { error: "Canvas wouldn't show that course." });
