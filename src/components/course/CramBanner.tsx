@@ -5,7 +5,8 @@ import { motion } from "motion/react";
 import type { Course, Exam } from "@/lib/data";
 import { daysLeftText, daysUntil } from "@/lib/course/exam-card";
 import { useConnectorStatus } from "@/components/course/useCram";
-import { useOrca } from "@/lib/store";
+import { useRouter } from "next/navigation";
+import { cramResultsHref, requestCramStop } from "@/lib/cram-exit";
 import { useToday } from "@/hooks/useToday";
 import { fadeUp } from "@/lib/motion";
 import { setCramSoundOn, useCramSoundOn } from "@/lib/cram-sound";
@@ -23,7 +24,7 @@ const PILL = "pressable rounded-pill bg-parchment px-[12px] py-[5px] text-[13px]
  * and Stop cramming.
  */
 export function CramBanner({ course, exam }: { course: Pick<Course, "slug">; exam: Exam }) {
-  const { updateExam } = useOrca();
+  const router = useRouter();
   const today = useToday();
   const connected = useConnectorStatus(true);
   const soundOn = useCramSoundOn();
@@ -62,7 +63,16 @@ export function CramBanner({ course, exam }: { course: Pick<Course, "slug">; exa
             Study with Claude
           </Link>
         )}
-        <button type="button" onClick={() => updateExam(exam.id, { cramming: false })} data-part="cram-stop" className={PILL}>
+        {/* To the cram's results, which end the cram (src/lib/cram-exit.ts); the dive back up plays when they close. */}
+        <button
+          type="button"
+          onClick={() => {
+            requestCramStop(exam.id);
+            router.push(cramResultsHref(course.slug, exam.id));
+          }}
+          data-part="cram-stop"
+          className={PILL}
+        >
           Stop cramming
         </button>
       </div>

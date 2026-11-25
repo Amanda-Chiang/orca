@@ -7,7 +7,9 @@ import type { Course, Exam } from "@/lib/data";
 import { planTopics, touchedObjectives } from "@/lib/course/cram-page";
 import { useStudyDays } from "@/components/study/useStudyDays";
 import { cramPlan, type CramPlan, type CramPlanInput, type SpentMinutes } from "@/lib/mastery/cram-plan";
-import type { CourseMastery } from "@/lib/mastery/course-mastery";
+import { courseMastery, type CourseMastery } from "@/lib/mastery/course-mastery";
+import { perDayOf } from "@/lib/mastery/cram-budget";
+import { trailTopics } from "@/lib/data";
 import { useDayKey, useOrca } from "@/lib/store";
 import { useNow } from "@/hooks/useNow";
 
@@ -113,4 +115,88 @@ export function useStudyLog(courseId: string | undefined, examId?: string): Stud
     };
   }, [courseId, examId]);
   return log;
+}
+
+/** One topic (or kind of problem) at the cram's start and at its end: in-scope objectives verified or mastered (or ready). */
+export interface CramTopicChange {
+  id: string;
+  name: string;
+  total: number;
+  before: number;
+  after: number;
+}
+
+/** What a finished cram did, from its start (`budget.since`) to Stop (`endedAt`), and nothing after. */
+export interface CramResultsData {
+  since: string;
+  endedAt: string;
+  /** The student's day the cram ended on. */
+  lastDay: string;
+  /** Minutes studied in the cram, and by source. */
+  minutes: number;
+  sources: { app: number; claude: number; timer: number };
+  split: StudySplit;
+  /** Minutes the plan asked for, from the cram's first day through the day it ended. */
+  goalMinutes: number;
+  /** Share ready at the start and at the end (objectives verified or mastered; kinds of problem ready once the exam is mapped). */
+  ready: { before: number; after: number; done: number; total: number; doneBefore: number };
+  topics: CramTopicChange[];
+  unit: CramPlan["unit"];
+  studyLoaded: boolean;
+}
+
+/**
+ * The cram's results (owner, 2026-11-25): the whole cram, from its start to Stop. Mastery is
+ * recomputed from the evidence log at both ends (the store has all of it), readiness from the
+ * problem attempts before each; time is `useStudyDays` bounded at both ends.
+ */
+export function useCramResults(course: Course | undefined, exam: Exam | null, log: StudyLog | null, endedAt: string): CramResultsData | null {
+  const { objectives, relations, evidence, questionBank } = useOrca();
+  const dayKey = useDayKey();
+  const budget = exam?.scope?.budget;
+  const days = useStudyDays(course && budget ? { courseId: course.id, since: budget.since, until: endedAt } : { courseId: "", since: "", until: endedAt });
+  return useMemo(() => {
+    if (!course || !exam || !budget) return null;
+    const catalogue = objectives[course.id] ?? {};
+    const types = exam.scope?.problemTypes ?? [];
+    const topicsAt = (at: string): CramPlanInput["topics"] => {
+      if (types.length) return typePlanTopics(examReadiness(types, (log?.attempts ?? []).filter((a) => a.at < at)));
+      const m = courseMastery({ courseId: course.id, topicIds: trailTopics(course).map((t) => t.id), bank: questionBank[course.id] ?? {}, catalogue, evidence: evidence.filter((e) => e.at < at), now: new Date(at), dayKey });
+      return planTopics(exam, course.topics, catalogue, relations[course.id] ?? [], (id) => m.objectives.get(id)?.status ?? "unseen");
+    };
+    const count = (ts: CramPlanInput["topics"]) =>
+      new Map(ts.map((t) => {
+        const inScope = t.objectives.filter((o) => o.weight > 0);
+        return [t.id, { name: t.name, total: inScope.length, done: inScope.filter((o) => o.status === "verified" || o.status === "mastered").length }] as const;
+      }));
+    const start = count(topicsAt(budget.since));
+    const end = count(topicsAt(endedAt));
+    const topics = [...end].map(([id, e]) => ({ id, name: e.name, total: e.total, before: start.get(id)?.done ?? 0, after: e.done }));
+    const total = topics.reduce((s, t) => s + t.total, 0);
+    const doneBefore = topics.reduce((s, t) => s + t.before, 0);
+    const done = topics.reduce((s, t) => s + t.after, 0);
+    const split: StudySplit = {};
+    const sources = { app: 0, claude: 0, timer: 0 };
+    for (const d of days ?? []) {
+      split[d.day] = { app: d.app, claude: d.claude, timer: d.timer };
+      sources.app += d.app;
+      sources.claude += d.claude;
+      sources.timer += d.timer;
+    }
+    const lastDay = dayKey(endedAt);
+    const goalMinutes = Object.entries(perDayOf(budget, exam.date, dayKey)).reduce((s, [day, h]) => (day >= dayKey(budget.since) && day <= lastDay ? s + h * 60 : s), 0);
+    return {
+      since: budget.since,
+      endedAt,
+      lastDay,
+      minutes: sources.app + sources.claude + sources.timer,
+      sources,
+      split,
+      goalMinutes,
+      ready: { before: total ? doneBefore / total : 0, after: total ? done / total : 0, done, total, doneBefore },
+      topics,
+      unit: types.length ? "problem-type" : "topic",
+      studyLoaded: days !== null,
+    };
+  }, [course, exam, budget, log, objectives, relations, evidence, questionBank, dayKey, days, endedAt]);
 }

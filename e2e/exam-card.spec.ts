@@ -87,13 +87,25 @@ test("Enter cram mode opens the next exam's setup; Confirm stores cramming, the 
   await expect(hoursOn(inDays(3))).toHaveValue("0");
 
   await page.goto(`/course/${SLUG}`);
+  // Stop cramming opens the cram's results, still dark, and ends the cram at once (owner, 2026-11-25).
   await banner.locator("[data-part=cram-stop]").click();
-  await expect(banner).toHaveCount(0);
-  await expect(page.locator("[data-part=enter-cram]")).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`/course/${SLUG}/cram\\?ended=${examId}&at=`));
+  const results = page.locator("[data-part=cram-results]");
+  await expect(results.locator("[data-part=cram-results-report]")).toBeVisible();
+  await expect(results.locator("[data-part=cram-exam-map]")).toBeVisible();
+  await expect(page.locator("[data-part=top-bar]")).toHaveAttribute("data-cram", "1");
+  await expect.poll(async () => (await stored(page, student)).exams.find((e) => e.id === examId)!.cramming).toBe(false);
   state = await stored(page, student);
   exam = state.exams.find((e) => e.id === examId)!;
-  expect(exam.cramming).toBe(false);
   expect(exam.scope?.sources).toEqual(["professor"]);
+  // Back: the course page, light, with the dive back up over it.
+  await page.locator("[data-part=cram-results-back]").click();
+  await expect(page).toHaveURL(`/course/${SLUG}`);
+  await expect(page.locator("[data-part=cram-curtain]")).toHaveAttribute("data-direction", "out");
+  await expect(page.locator("[data-part=cram-curtain]")).toHaveCount(0);
+  await expect(banner).toHaveCount(0);
+  await expect(page.locator("[data-part=enter-cram]")).toBeVisible();
+  await expect(page.locator("[data-part=top-bar]")).not.toHaveAttribute("data-cram", "1");
 
   // Edit Exams has no Cramming switch (owner, 2026-11-22): cram mode is entered from the course page.
   await page.locator("[data-part=edit-exams]").click();

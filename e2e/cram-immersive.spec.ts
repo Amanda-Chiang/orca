@@ -118,8 +118,11 @@ test("cram mode's sound: bubbles when it starts or stops, unless the banner's sp
   await expect(sound).toHaveAttribute("aria-pressed", "true");
   expect(await plays()).toEqual([]);
 
-  // Stop cramming: the bubbles play once, with the dive back up.
+  // Stop cramming opens the results in silence; Back from them plays the bubbles once, with the dive back up.
   await page.locator("[data-part=cram-banner] [data-part=cram-stop]").click();
+  await expect(page.locator("[data-part=cram-results]")).toBeVisible();
+  expect(await plays()).toEqual([]);
+  await page.locator("[data-part=cram-results-back]").click();
   await expect.poll(plays).toHaveLength(1);
   expect((await plays())[0]).toContain("/sounds/cram-bubbles.mp3");
 
@@ -131,6 +134,7 @@ test("cram mode's sound: bubbles when it starts or stops, unless the banner's sp
   await page.reload();
   await expect(sound).toHaveAttribute("aria-pressed", "false");
   await page.locator("[data-part=cram-banner] [data-part=cram-stop]").click();
+  await page.locator("[data-part=cram-results-back]").click();
   await expect(page.locator("[data-part=cram-banner]")).toHaveCount(0);
   await page.waitForTimeout(300);
   expect(await plays()).toEqual([]);
@@ -208,8 +212,7 @@ test("a cram started from Claude: the app goes dark, a dive into an exam topic c
   await test.step("Stop cramming in the app ends the cram for Claude too", async () => {
     await page.goto(`/course/${SLUG}`);
     await page.locator("[data-part=cram-banner] [data-part=cram-stop]").click();
-    await expect(page.locator("[data-part=cram-banner]")).toHaveCount(0);
-    await expect(page.locator("[data-part=top-bar]")).not.toHaveAttribute("data-cram", "1");
+    await expect(page.locator("[data-part=cram-results]")).toBeVisible();
     await expect.poll(async () => ((await tool(page, url, "course_state", { courseId: F.course, detail: "summary" })) as { cramming: string | null }).cramming).toBeNull();
   });
 });

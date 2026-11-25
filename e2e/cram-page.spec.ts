@@ -166,12 +166,17 @@ test("setup picks the files and the hours for each day, one at 0; the page then 
   exam = state.exams.find((e) => e.id === examId)!;
   expect(exam.scope?.budget).toEqual({ hours: 15, daysOut: [], since, perDay: Object.fromEntries([0, 1, 2, 3, 4].map((n) => [inDays(n), 3])) });
 
-  // Stop cramming: the exam is no longer cramming, and the page is back at setup.
+  // Stop cramming: the exam is no longer cramming, and the page shows the cram's results in its place.
   await cram.locator("[data-part=cram-stop]").click();
+  await expect(page).toHaveURL(new RegExp(`/course/${SLUG}/cram\\?ended=${examId}&at=`));
+  await expect(page.locator("[data-part=cram-results] [data-part=cram-results-report]")).toBeVisible();
+  await expect(setup).toHaveCount(0);
+  await expect.poll(async () => (await stored(page, student)).exams.find((e) => e.id === examId)!.cramming).toBe(false);
+  // Reloaded, the results stay (the cram is over); the plan's own URL is back at setup.
+  await page.reload();
+  await expect(page.locator("[data-part=cram-results]")).toBeVisible();
+  await page.goto(`/course/${SLUG}/cram`);
   await expect(setup).toBeVisible();
-  await expect(cram).not.toHaveAttribute("data-cramming", "1");
-  state = await stored(page, student);
-  expect(state.exams.find((e) => e.id === examId)!.cramming).toBe(false);
 });
 
 test("the schedule shows a column per day of the cram with its hours and topics, today highlighted, a past day marked met; a topic answered since the cram started is in progress", async ({ page, student }) => {
@@ -229,4 +234,77 @@ test("the schedule shows a column per day of the cram with its hours and topics,
   await expect(tc).toHaveAttribute("data-covered", "untouched");
   await expect(tc.locator("[data-part=cram-topic-covered]")).toHaveText("Not started");
   await expect(cols.nth(1).locator(`[data-part=cram-day-topic][data-topic="${F.booleanAlgebra}"]`)).toHaveAttribute("data-covered", "in-progress");
+});
+
+test("Stop cramming's results cover only the cram: time against the hours planned so far, % ready from the start, what moved per topic", async ({ page, student }) => {
+  // A cram that started yesterday (an hour yesterday, two today); a right answer since then, and a session before it that doesn't count.
+  const since = new Date(Date.now() - 86_400_000 - 60_000).toISOString();
+  const perDay = { [inDays(-1)]: 1, [inDays(0)]: 2, [inDays(1)]: 1 };
+  const right: AnswerEvent = { kind: "answer", id: crypto.randomUUID(), at: new Date(Date.now() - 20 * 60_000).toISOString(), courseId: F.course, topicId: F.booleanAlgebra, objectiveId: F.simplify, questionId: F.ba1, tier: "retrieval", outcome: "correct", grader: "exact", source: "quiz", sessionId: "cram-1" };
+  await seedState(student, {
+    ...FIXTURE_STATE,
+    results: [{ courseId: F.course, topicId: F.booleanAlgebra, mode: "topic", sessionId: "before", correct: 1, total: 1, seconds: 3600, finishedAt: daysAgo(3) }],
+    evidence: [right],
+  });
+  const examId = crypto.randomUUID();
+  const seeded = await admin()
+    .from("exams")
+    .insert({ id: examId, owner_id: student.id, course_id: F.course, title: "Quiz 3", date: inDays(2), topic_ids: [], cramming: true, scope: { objectives: [], sources: [], budget: { hours: 4, daysOut: [], since, perDay } } });
+  if (seeded.error) throw new Error(`Couldn't seed the exam: ${seeded.error.message}`);
+
+  await page.goto(`/course/${SLUG}`);
+  await page.locator("[data-part=cram-banner] [data-part=cram-stop]").click();
+  const report = page.locator("[data-part=cram-results-report]");
+  await expect(report).toBeVisible();
+  // Planned through today: yesterday's hour and today's two; the session three days ago isn't in it.
+  await expect(report.locator("[data-part=cram-results-time-tile]")).toContainText("of 3h 00m planned");
+  await expect(report.locator("[data-part=cram-results-time-tile]")).not.toContainText("1h 00m");
+  // One objective verified during the cram: ready from 0%, Boolean Algebra moved by one, Two's Complement not.
+  await expect(report.locator("[data-part=cram-results-ready-tile]")).toContainText("from 0%");
+  await expect(report.locator("[data-part=cram-results-verified-tile]")).toContainText("+1");
+  await expect(report.locator(`[data-part=cram-results-topic][data-topic="${F.booleanAlgebra}"]`)).toHaveAttribute("data-delta", "1");
+  await expect(report.locator(`[data-part=cram-results-topic][data-topic="${F.twosComplement}"]`)).toHaveAttribute("data-delta", "0");
+  await expect(report.locator("[data-part=progress-sources]")).toContainText("Since the cram started");
+});
+
+test.describe("the day's welcome", () => {
+  test.use({ cramWelcome: true });
+
+  test("the first visit of a cram day opens on the welcome: today's focus, then the schedule; See the full plan opens the tabs, and the next visit that day goes straight to them", async ({ page, student }) => {
+    // A cram that started yesterday: today is day 2 of 3, so it's "Welcome back".
+    const since = new Date(Date.now() - 86_400_000 - 60_000).toISOString();
+    const perDay = { [inDays(-1)]: 1, [inDays(0)]: 2, [inDays(1)]: 1 };
+    await seedState(student, FIXTURE_STATE);
+    const seeded = await admin()
+      .from("exams")
+      .insert({ id: crypto.randomUUID(), owner_id: student.id, course_id: F.course, title: "Quiz 3", date: inDays(2), topic_ids: [], cramming: true, scope: { objectives: [], sources: [], budget: { hours: 4, daysOut: [], since, perDay } } });
+    if (seeded.error) throw new Error(`Couldn't seed the exam: ${seeded.error.message}`);
+
+    await page.goto(`/course/${SLUG}/cram`);
+    const welcome = page.locator("[data-part=cram-welcome]");
+    await expect(welcome).toBeVisible();
+    await expect(welcome).not.toHaveAttribute("data-first", "1");
+    await expect(welcome).toContainText("Day 2 of 3");
+    await expect(welcome).toContainText("Welcome back");
+    await expect(welcome.locator("[data-part=cram-welcome-line]")).not.toBeEmpty();
+    await expect(welcome.locator("[data-part=cram-today]")).toContainText("Today's focus");
+    await expect(welcome.locator("[data-part=cram-schedule] [data-part=cram-day-col]")).toHaveCount(3);
+    await expect(page.locator("[data-part=cram-tab-today]")).toHaveCount(0);
+    // Cram with Claude, track it here; no connector yet, so Connect Claude.
+    await expect(welcome.locator("[data-part=cram-welcome-claude]")).toContainText("Cram with Claude, track it here");
+    await expect(welcome.locator("[data-part=cram-welcome-connect]")).toHaveAttribute("href", "/settings#connector");
+    // Start study timer beside the welcome: it runs for this course.
+    await welcome.locator("[data-part=cram-welcome-timer]").click();
+    await expect(welcome.locator("[data-part=cram-welcome-timer]")).toHaveAttribute("data-running", "1");
+    await expect.poll(async () => (await admin().from("study_timers").select("course_id").eq("owner_id", student.id)).data?.map((r) => r.course_id)).toEqual([F.course]);
+
+    await welcome.locator("[data-part=cram-welcome-go]").click();
+    await expect(welcome).toHaveCount(0);
+    await expect(page.locator("[data-part=cram-tab-today]")).toHaveAttribute("aria-selected", "true");
+
+    // Seen today: the next visit goes straight to the tabs.
+    await page.reload();
+    await expect(page.locator("[data-part=cram-tab-today]")).toBeVisible();
+    await expect(welcome).toHaveCount(0);
+  });
 });

@@ -587,6 +587,17 @@ faithful); or ask students to upload decks as PDFs (File → Save as PDF) when t
 - **Watch for:** a bad extraction filling due lists and dragging islands down before the student
   reviews it.
 
+### Leaving cram mode and the day's welcome (2026-11-25): assumed
+- **Assumed:** the results page shows only after Stop cramming in the app. A cram ended from
+  Claude (`set_exam`) or one that ends by itself the day after the exam goes straight back to the
+  normal look, with no results page.
+- **Assumed:** leaving the results any way (Back, "Back to [course]", the browser's back, the
+  logo) plays the dive up on the next page that has the course shell (Path, List, Atlas, the home
+  map) if it opens within 5 seconds. A page without it (Settings, the calendar) just opens light.
+- **Assumed:** "seen for the day" is kept in this browser, so another device shows the welcome
+  again that day. Starting a quick review or Study with Claude from the welcome also counts as
+  seen. Opening the plan with `?tab=` skips it.
+
 ### Onboarding tips (2026-11-10): assumed
 - **Assumed:** the X dismisses that one tip for good, and the next tip on the page follows (the
   same as Next). "Skip all tips" is the way out of all of them.
