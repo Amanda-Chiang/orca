@@ -2,7 +2,7 @@
 -- with a string feedback; satisfied an array and misconception a string or null when present.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(9);
+select plan(10);
 
 \set A aaaaaaaa-0000-4000-8000-000000000271
 \set course c0000000-0000-4000-8000-000000000271
@@ -43,6 +43,8 @@ select throws_ok(pg_temp.answer('b7000000-0000-4000-8000-000000000271', 'rubric'
   '23514', null, 'feedback is a string');
 select throws_ok(pg_temp.answer('b8000000-0000-4000-8000-000000000271', 'rubric', '{"feedback": "Close.", "satisfied": "the sign bit"}'),
   '23514', null, 'satisfied is an array');
+select throws_ok(pg_temp.answer('ba000000-0000-4000-8000-000000000271', 'rubric', '"Close."'),
+  '23514', null, 'a note is an object');
 select throws_ok(format($$insert into public.evidence_events (id, owner_id, kind, at, course_id, topic_id, objective_id, grader_note)
   values ('b9000000-0000-4000-8000-000000000271', %L, 'mark', now(), %L, %L, %L, '{"feedback": "x"}')$$, :'A', :'course', :'topic', :'obj'),
   '23514', null, 'only answers carry a grader note');
