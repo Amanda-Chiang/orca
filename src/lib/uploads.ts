@@ -64,6 +64,11 @@ export async function importWebsite(url: string, meta: UploadMeta): Promise<Uplo
   return importOutcome(await post<Imported>("/api/materials/web", { ...meta, url }));
 }
 
+/** A Google Docs, Slides, Sheets or Drive share link: Orca fetches the file and reads it like an upload (2026-11-25). */
+export async function importGoogle(url: string, meta: UploadMeta): Promise<UploadOutcome> {
+  return importOutcome(await post<Imported>("/api/materials/google", { ...meta, url }));
+}
+
 /**
  * Save pasted text as material (read as the type in `meta`), or a public AI-chat link (always an
  * "AI chat"), or recognise it as one already in the course.
