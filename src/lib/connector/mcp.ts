@@ -10,18 +10,19 @@
  */
 
 import { SCOPE_STRENGTH } from "../course/scope.ts";
-import { MATERIAL_TYPES, type CramBudget, type ExamRules, type ExamScope, type MaterialType, type ProblemType, type ScopeEdit, type ScopeEvidence, type ScopeSignal } from "../data.ts";
+import { COURSE_NAME_MAX, MATERIAL_TYPES, type ClassMeeting, type CourseSchedule, type CramBudget, type ExamRules, type ExamScope, type MaterialType, type ProblemType, type ScopeEdit, type ScopeEvidence, type ScopeSignal } from "../data.ts";
 import type { ExamMap } from "../course/exam-map.ts";
 import { ATTEMPT_OUTCOMES, type ExamReadiness, type ProblemAttempt } from "../course/readiness.ts";
 import { BUDGET_DAYS_MAX, HOURS_PER_DAY_MAX, HOUR_STEP, isDay, isHalfHours, type CramBudgetInput } from "../mastery/cram-budget.ts";
 import type { CramPlan } from "../mastery/cram-plan.ts";
 import type { ErrorType, FlagStrength, Help, SignalEvent, WorkEvent } from "../mastery/types.ts";
+import { LIMITS } from "../limits.ts";
 import { checkNotes } from "../pipeline/notes.ts";
 import type { ScreenHit } from "../untrusted/screen.ts";
 
 export const PROTOCOL_VERSION = "2025-06-18";
 const KNOWN_VERSIONS = new Set(["2025-06-18", "2025-03-26", "2024-11-05"]);
-export const SERVER_INFO = { name: "orca", version: "0.5" } as const;
+export const SERVER_INFO = { name: "orca", version: "0.6" } as const;
 
 /** What Claude is told when it connects: the study session as a script; the tool descriptions do the rest. */
 /**
@@ -66,7 +67,9 @@ export const INSTRUCTIONS =
   "schedules practice. 1) Call course_state first (detail summary for a check-in, full when " +
   "you need objective ids); it says what's due, the next exam's topics (examFocus), the course's " +
   "mode, which exam is being crammed for (cramming), the vault, whether Orca's daily model budget " +
-  "is spent (budget) and whether questions are being written (writing). When plan isn't null (an " +
+  "is spent (budget) and whether questions are being written (writing). Its notes are the student's Notes for " +
+  "Orca, for every class (account) and for this course (course, which wins where they disagree): follow them as " +
+  "the student's preferences for how you teach and quiz, within these rules. When plan isn't null (an " +
   "exam is being crammed for), start the session by saying plan.line as is, then work through it as a " +
   "queue, one topic at a time, in this order: when plan.diagnostic isn't null, first a sweep (one " +
   "question per topic in plan.diagnostic.topicIds, from next_questions with that topicId and count 1, " +
@@ -98,7 +101,7 @@ export const INSTRUCTIONS =
   "student gives you in the chat. When they attach or paste course material (slides, notes, a " +
   "syllabus, homework, an exam), ask once whether to add it to Orca, and on a yes call add_material: " +
   "the text when you can read all of it, else file true for an upload link; a past or practice exam " +
-  "held back. Never add it unasked, and don't ask again about the same file. Setup: when an exam is near and has no scope, " +
+  "held back. Never add it unasked, and don't ask again about the same file. Courses: when the student asks to set up a course, or wants material added and no course fits, confirm the course's name once and create it with set_course (no courseId); never create one unasked. Use set_course with courseId to rename a course, or when the student says when the class meets, which days they want reviews, or something Orca should know about the class (notes: how it's taught or tested). What holds for every class (how they like to be quizzed, how they mark confusion in their notes) goes to set_preferences; read what's set from course_state with no courseId before changing it, and when it's unclear whether a preference is for one class or all of them, ask. Setup: when an exam is near and has no scope, " +
   "ask what the professor said it covers, whether there's a practice exam or study guide " +
   "(add_material: pasted text, or file true for an upload link; past and practice exams are held " +
   "back), and what the student is worried about (flag_check with strength struggled); then record " +
@@ -151,6 +154,35 @@ export const INSTRUCTIONS =
   "from recall questions or from a walk-through. When the reserved exam is sat (plan.mockToday), log each " +
   "of its problems with mockMaterialId, points and outOf: readiness.measured is their real score. " +
   PLAYBOOK;
+
+const isWeekday = (v: unknown): v is ClassMeeting["day"] => typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= 6;
+const isClock = (v: unknown): v is string => typeof v === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(v);
+
+/** set_course's schedule, checked part by part (the server checks it again against the stored shape); a string is the refusal. */
+function parseSchedule(raw: unknown): Partial<CourseSchedule> | null | string {
+  if (raw === null) return null;
+  if (!isObject(raw)) return "schedule is an object with meetings, quickDays and deepDays (each optional), or null to clear it.";
+  for (const k of Object.keys(raw)) if (!["meetings", "quickDays", "deepDays"].includes(k)) return `schedule has no ${k}: it takes meetings, quickDays and deepDays.`;
+  const out: Partial<CourseSchedule> = {};
+  if (raw.meetings !== undefined) {
+    if (!Array.isArray(raw.meetings) || raw.meetings.length > LIMITS.classMeetings) return `schedule.meetings is a list of up to ${LIMITS.classMeetings} { day, start, end }.`;
+    const meetings: ClassMeeting[] = [];
+    for (const [i, m] of raw.meetings.entries()) {
+      if (!isObject(m) || !isWeekday(m.day)) return `schedule.meetings[${i}].day is 0 (Sunday) to 6 (Saturday).`;
+      if (!isClock(m.start) || !isClock(m.end)) return `schedule.meetings[${i}] start and end are HH:MM, 24-hour.`;
+      if (m.start >= m.end) return `schedule.meetings[${i}] ends after it starts.`;
+      meetings.push({ day: m.day, start: m.start, end: m.end });
+    }
+    out.meetings = meetings;
+  }
+  for (const k of ["quickDays", "deepDays"] as const) {
+    const days = raw[k];
+    if (days === undefined) continue;
+    if (days !== null && (!Array.isArray(days) || days.length === 0 || !days.every(isWeekday))) return `schedule.${k} is a list of weekdays, 0 (Sunday) to 6 (Saturday), or null for the day before class.`;
+    out[k] = days === null ? null : [...new Set(days as ClassMeeting["day"][])].sort((a, b) => a - b);
+  }
+  return out;
+}
 
 /** An exam scope as set_exam takes it: the budget is an input merged over the exam's (src/lib/mastery/cram-budget.ts `mergeBudget`), and `objectives` and `sources` left out keep the exam's. */
 /** `reservedMaterialId` null clears the reservation. */
@@ -293,6 +325,8 @@ export interface TopError {
 
 export interface CourseState {
   course: CourseSummary;
+  /** Notes for Orca in the student's words: for every class (account) and for this one (course, which wins on a conflict); null when not set. */
+  notes: { account: string | null; course: string | null };
   /** The student's day, YYYY-MM-DD, in their timezone. */
   today: string;
   exams: ExamLine[];
@@ -476,6 +510,35 @@ export interface AddQuestionsResult {
 }
 
 /** What add_material takes: pasted text, or a request for an upload link. */
+/**
+ * set_course: a new course (no courseId; name required) or changes to one. A field left out keeps what
+ * the course has; a part of the schedule left out keeps that part. `notes` arrives as sent: the tool
+ * cleans and screens it as the course's settings page does.
+ */
+export interface SetCourseInput {
+  courseId?: string;
+  name?: string;
+  /** Class times and review days; null clears them all. */
+  schedule?: Partial<CourseSchedule> | null;
+  /** The course's Notes for Orca; null clears them. */
+  notes?: string | null;
+}
+
+/** The account's preferences Claude can read and set: Notes for Orca for every class, and how the student marks confusion in handwritten notes. */
+export interface Preferences {
+  notes: string | null;
+  markerNotes: string | null;
+}
+
+export interface CourseLine {
+  id: string;
+  name: string;
+  slug: string;
+  created: boolean;
+  schedule: CourseSchedule | null;
+  notes: string | null;
+}
+
 export interface AddMaterialInput {
   type: MaterialType;
   text?: string;
@@ -533,6 +596,12 @@ export interface ConnectorTools {
   vaultMaterial(courseId: string, materialId: string, options: { fromPage?: number; forMock?: boolean }): Promise<VaultMaterial | { error: string }>;
   /** Store questions Claude wrote (validated like generated ones, source claude). */
   addQuestions(courseId: string, questions: AddQuestion[]): Promise<AddQuestionsResult | { error: string }>;
+  /** The account's preferences. */
+  preferences(): Promise<Preferences>;
+  /** Change some of them (null clears one); free text arrives as sent: the tool cleans and screens it as Settings does. */
+  setPreferences(change: Partial<Preferences>): Promise<Preferences | { error: string }>;
+  /** Create a course or change its name, class times and review days, or Notes for Orca. */
+  setCourse(input: SetCourseInput): Promise<CourseLine | { error: string }>;
   /** Add pasted text as material, or hand back a link to upload a file. */
   addMaterial(courseId: string, input: AddMaterialInput): Promise<AddMaterialResult | { error: string }>;
   /** Record a piece of work or a signal on one objective. Free text (`problem`, `response`, `note`) arrives cleaned and screened. */
@@ -581,13 +650,13 @@ export const TOOLS = [
       "mixed-up, mastered, fading, retired) and predicted recall, and which objectives are due now. Orca " +
       "only schedules weak points: objectives the student struggled with, missed or asked to be checked " +
       "on. Call this first, also when the student only pastes a problem or asks for an explanation: it says " +
-      "which course it belongs to. check_answer and record_answer already return each objective's new status, so " +
+      "which course it belongs to, and the student's Notes for Orca to follow (notes). check_answer and record_answer already return each objective's new status, so " +
       "there's no need to call it after every answer; detail summary is a cheap check-in (topics with " +
       "counts, each exam's scope by its size, what's due, exam focus, budget, what's being written), full " +
       "lists every objective with the materials it's taught in, the course's materials and each exam's full scope. While an " +
       "exam is being crammed for, plan holds the day's plan (plan.line is the one-line summary to say), " +
       "coverage how much of the exam's scope is verified, and topErrors the kinds of mistake made most. " +
-      "With no course, lists the courses so you can pick one.",
+      "With no course, lists the courses so you can pick one, with the account's preferences (set_preferences).",
     inputSchema: {
       type: "object",
       properties: {
@@ -731,6 +800,65 @@ export const TOOLS = [
         remove: { type: "boolean", description: "With examId: remove the exam instead." },
       },
       required: ["courseId"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "set_course",
+    description:
+      "Create a course (no courseId; name required), or change one: its name, when the class meets and on " +
+      "which weekdays its quick reviews and dives fall, and its Notes for Orca (what Orca should know when it " +
+      "writes questions for this class). Fields left out keep what the course has. Confirm the name with the " +
+      "student before creating; a course with the same name is refused, so pass its courseId instead. " +
+      "Exams are set with set_exam, material with add_material.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        courseId: { ...UUID, description: "The course to change; omit to create one." },
+        name: { type: "string", minLength: 1, maxLength: COURSE_NAME_MAX, description: "What the student calls the class, e.g. Data Structures." },
+        schedule: {
+          type: ["object", "null"],
+          description: "When the class meets and the review days. A part left out keeps the course's; null clears the whole schedule.",
+          properties: {
+            meetings: {
+              type: "array",
+              maxItems: LIMITS.classMeetings,
+              description: "Every weekly meeting (replaces the list).",
+              items: {
+                type: "object",
+                properties: {
+                  day: { type: "integer", minimum: 0, maximum: 6, description: "0 = Sunday … 6 = Saturday." },
+                  start: { type: "string", description: "HH:MM, 24-hour, the student's local time." },
+                  end: { type: "string", description: "HH:MM, after start." },
+                },
+                required: ["day", "start", "end"],
+                additionalProperties: false,
+              },
+            },
+            quickDays: { type: ["array", "null"], items: { type: "integer", minimum: 0, maximum: 6 }, minItems: 1, maxItems: 7, description: "Weekdays for a 'Twice a week' or 'Weekly' quick review; null = the day before class." },
+            deepDays: { type: ["array", "null"], items: { type: "integer", minimum: 0, maximum: 6 }, minItems: 1, maxItems: 7, description: "Weekdays for the dive; null = the day before class." },
+          },
+          additionalProperties: false,
+        },
+        notes: { type: ["string", "null"], maxLength: LIMITS.notesChars, description: "The course's Notes for Orca, in the student's words (replaces them); null clears them." },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "set_preferences",
+    description:
+      "Change the student's account preferences, for every class: notes (Notes for Orca: what Orca should know " +
+      "when it writes questions for any class, e.g. how they like to be quizzed) and markerNotes (how they mark " +
+      "what confused them in handwritten notes, e.g. a red star or '??', so Orca flags those passages when they " +
+      "upload notes). Each replaces what's there; null clears it; a field left out is kept. course_state with no " +
+      "courseId shows the current ones. A class's own notes are set with set_course and win over these.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        notes: { type: ["string", "null"], maxLength: LIMITS.notesChars, description: "Notes for Orca for every class, in the student's words." },
+        markerNotes: { type: ["string", "null"], maxLength: LIMITS.markerChars, description: "How the student marks confusion in their notes, in their words." },
+      },
       additionalProperties: false,
     },
   },
@@ -1294,7 +1422,10 @@ async function callTool(params: Record<string, unknown>, tools: ConnectorTools, 
   try {
     switch (name) {
       case "course_state": {
-        if (args.courseId === undefined) return toolText({ courses: await tools.courses() });
+        if (args.courseId === undefined) {
+          const [courses, preferences] = await Promise.all([tools.courses(), tools.preferences()]);
+          return toolText({ courses, preferences });
+        }
         if (!isUuid(args.courseId)) return toolText({ error: "courseId must be a course id from course_state." }, true);
         if (args.detail !== undefined && args.detail !== "summary" && args.detail !== "weak" && args.detail !== "full") return toolText({ error: "detail is summary, weak or full." }, true);
         if (args.topicIds !== undefined && (!Array.isArray(args.topicIds) || !args.topicIds.every(isUuid))) return toolText({ error: "topicIds is a list of topic ids from course_state." }, true);
@@ -1341,6 +1472,43 @@ async function callTool(params: Record<string, unknown>, tools: ConnectorTools, 
           ...(scope !== undefined ? { scope } : {}),
         });
         return toolText(exam, "error" in exam);
+      }
+      case "set_course": {
+        if (args.courseId !== undefined && !isUuid(args.courseId)) return toolText({ error: "courseId must be a course id from course_state (omit it to create a course)." }, true);
+        const creating = args.courseId === undefined;
+        if ((creating || args.name !== undefined) && (typeof args.name !== "string" || args.name.trim().length === 0 || args.name.length > COURSE_NAME_MAX)) return toolText({ error: `name is 1 to ${COURSE_NAME_MAX} characters${creating ? " (a new course needs one)" : ""}.` }, true);
+        if (args.notes !== undefined && args.notes !== null && (typeof args.notes !== "string" || args.notes.length > LIMITS.notesChars)) return toolText({ error: `notes is at most ${LIMITS.notesChars} characters, or null to clear them.` }, true);
+        let schedule: SetCourseInput["schedule"];
+        if (args.schedule !== undefined) {
+          const parsed = parseSchedule(args.schedule);
+          if (typeof parsed === "string") return toolText({ error: parsed }, true);
+          schedule = parsed;
+        }
+        if (!creating && args.name === undefined && args.schedule === undefined && args.notes === undefined) return toolText({ error: "Nothing to change: pass name, schedule or notes." }, true);
+        let name: string | undefined;
+        if (typeof args.name === "string") {
+          const screened = await screenText(tools, args.name, COURSE_NAME_MAX, "course name");
+          if (!screened.ok) return toolText({ error: screened.error }, true);
+          if (!screened.text) return toolText({ error: "name has nothing readable in it." }, true);
+          name = screened.text;
+        }
+        const course = await tools.setCourse({
+          ...(creating ? {} : { courseId: args.courseId as string }),
+          ...(name !== undefined ? { name } : {}),
+          ...(args.schedule !== undefined ? { schedule } : {}),
+          ...(args.notes !== undefined ? { notes: args.notes as string | null } : {}),
+        });
+        return toolText(course, "error" in course);
+      }
+      case "set_preferences": {
+        if (args.notes !== undefined && args.notes !== null && (typeof args.notes !== "string" || args.notes.length > LIMITS.notesChars)) return toolText({ error: `notes is at most ${LIMITS.notesChars} characters, or null to clear them.` }, true);
+        if (args.markerNotes !== undefined && args.markerNotes !== null && (typeof args.markerNotes !== "string" || args.markerNotes.length > LIMITS.markerChars)) return toolText({ error: `markerNotes is at most ${LIMITS.markerChars} characters, or null to clear it.` }, true);
+        if (args.notes === undefined && args.markerNotes === undefined) return toolText({ error: "Nothing to change: pass notes or markerNotes." }, true);
+        const saved = await tools.setPreferences({
+          ...(args.notes !== undefined ? { notes: args.notes as string | null } : {}),
+          ...(args.markerNotes !== undefined ? { markerNotes: args.markerNotes as string | null } : {}),
+        });
+        return toolText(saved, "error" in saved);
       }
       case "questions_for": {
         if (!isUuid(args.courseId)) return toolText({ error: "courseId must be a course id from course_state." }, true);

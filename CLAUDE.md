@@ -152,6 +152,17 @@ own courses (Data Structures, Fundamentals of Computer Systems) on the hosted pr
   value and unit (`quantityOf`), "I don't know" as a miss on choice and exact questions (`isDontKnow`),
   `course_state` `detail: "weak"`, and `scope.history` (who changed the scope or budget, and what;
   `src/lib/course/scope-history.ts`). The plan lists what wasn't built and why.
+- **Since 2026-11-25: courses and preferences from the chat** (owner; connector v0.6, sixteen tools, no migration):
+  `set_course` creates a course (no `courseId`; same slug, island look and map spot as the app, review settings
+  inherited; a live course with the same name is refused with its id) or changes its name (the slug stays), schedule
+  (class times and review days; a part left out keeps the stored one, null clears) and Notes for Orca. No delete from
+  the chat. Claude confirms the name before creating and never creates one unasked. `set_preferences` sets the
+  account's Notes for Orca and marker description (`profiles.orca_notes`, `marker_notes`); `course_state` with no
+  course returns them as `preferences`. `course_state` for a course always carries `notes` (account and course, the
+  course's winning), which the instructions tell Claude to follow. Every note is screened as Settings screens it
+  (`screenNotes` in `src/lib/server/notes.ts`, shared with the routes) and again when read. Server code
+  `src/lib/server/connector/set-course.ts`, `preferences.ts`; `createCourse` in `src/lib/server/courses.ts` is
+  shared with the Canvas import.
 - **Since 2026-11-22: cram mode you enter** (plan `docs/superpowers/plans/2026-11-22-cram-mode-immersive.md`; owner):
   while a course crams for an exam (`crammingExam` in `src/lib/course/exam-card.ts`: `cramming` and the date not past,
   so it ends by itself the day after; `useCramming(courseId)` in the store gives the exam and `examTopicIds`), its
@@ -176,6 +187,12 @@ own courses (Data Structures, Fundamentals of Computer Systems) on the hosted pr
   beside the heading, the Today card as "Today's focus" beside "Cram with Claude, track it here"
   (`cram-welcome-claude`: Connect Claude until a token exists, See your progress), then the schedule); seen-for-the-day is kept in this browser (`orca.cramWelcome.<courseId>`). e2e students have it off unless
   `test.use({ cramWelcome: true })`. Assumptions in `docs/TO-DISCUSS.md`.
+- **List view History** (2026-11-25, owner; branch `list-history`): each List row's History opens `TopicHistory`, the
+  topic's attempts per objective, newest first (Orca questions, connector answers, Claude's work), with result, date,
+  the display percent before → after (`objectiveHistory` in `src/lib/mastery/history.ts`, replayed from the evidence),
+  and flags, marks and signals as marker rows; a row opens to the question, the student's answer, the key and the
+  rubric grader's note. App answers now send `response` (and for rubric answers `graderNote` and `errorType`) to
+  `POST /api/evidence`; `evidence_events.grader_note` (migration `20261125090000`) holds the note, never folded.
 - **After a wrong answer** (2026-11-22, owner; `src/lib/quiz/after-miss.ts`, `src/components/quiz/AfterMiss.tsx`): the
   miss is recorded at once, then the solution waits: a second try (practice only, nothing recorded; `retry-prompt`,
   `show-solution`), then "What went wrong?" chips beside the key (shown against the grader's `errorType`, not saved;

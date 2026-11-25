@@ -6,7 +6,7 @@ import { attribution } from "../mastery/attribution.ts";
 import { type QuestionRef, fileQuestions, withCurrentTopics } from "../mastery/catalogue.ts";
 import { type ObjectiveAccumulator, dayKeyIn } from "../mastery/objective-state.ts";
 import type { CourseView, Snapshot } from "../mastery/snapshots.ts";
-import type { AnswerEvent, EvidenceEvent, FlagSource, ObjectiveInfo, SignalEvent, WorkEvent } from "../mastery/types.ts";
+import type { AnswerEvent, EvidenceEvent, FlagSource, GraderNote, ObjectiveInfo, SignalEvent, WorkEvent } from "../mastery/types.ts";
 import type { Database } from "./database.types.ts";
 
 type Tables = Database["public"]["Tables"];
@@ -61,6 +61,18 @@ export function eventFromRow(r: EvidenceRow): EvidenceEvent {
     sessionId: r.session_id,
     ...(r.note !== null ? { response: r.note } : {}),
     ...reported,
+    // Loose check: a database without migration 20261125090000 has no grader_note at all (undefined).
+    ...(r.grader_note != null ? { graderNote: graderNoteFromJson(r.grader_note) } : {}),
+  };
+}
+
+/** The grader_note column as the type (its CHECK constraint holds the shape; a part we don't have is left out). */
+function graderNoteFromJson(j: EvidenceRow["grader_note"]): GraderNote {
+  const o = (j && typeof j === "object" && !Array.isArray(j) ? j : {}) as Record<string, unknown>;
+  return {
+    ...(typeof o.feedback === "string" ? { feedback: o.feedback } : {}),
+    satisfied: Array.isArray(o.satisfied) ? o.satisfied.filter((x): x is string => typeof x === "string") : [],
+    misconception: typeof o.misconception === "string" ? o.misconception : null,
   };
 }
 
@@ -68,10 +80,10 @@ export function eventFromRow(r: EvidenceRow): EvidenceEvent {
 export function eventToRow(e: EvidenceEvent): Omit<EvidenceRow, "owner_id"> {
   const common = { id: e.id, kind: e.kind, at: e.at, course_id: e.courseId, topic_id: e.topicId, objective_id: e.objectiveId };
   // Every column null unless the kind fills it.
-  const empty = { question_id: null, tier: null, outcome: null, grader: null, source: null, session_id: null, material_id: null, note: null, flag_source: null, page: null, help: null, confidence: null, error_type: null, problem: null, basis: null, signal: null };
+  const empty = { question_id: null, tier: null, outcome: null, grader: null, source: null, session_id: null, material_id: null, note: null, flag_source: null, page: null, help: null, confidence: null, error_type: null, problem: null, basis: null, signal: null, grader_note: null };
   switch (e.kind) {
     case "answer":
-      return { ...common, ...empty, question_id: e.questionId, tier: e.tier, outcome: e.outcome, grader: e.grader, source: e.source, session_id: e.sessionId, note: e.response ?? null, help: e.help ?? null, confidence: e.confidence ?? null, error_type: e.errorType ?? null };
+      return { ...common, ...empty, question_id: e.questionId, tier: e.tier, outcome: e.outcome, grader: e.grader, source: e.source, session_id: e.sessionId, note: e.response ?? null, help: e.help ?? null, confidence: e.confidence ?? null, error_type: e.errorType ?? null, grader_note: e.graderNote ? { ...e.graderNote } : null };
     case "confusion":
       return { ...common, ...empty, material_id: e.materialId, note: e.note, flag_source: e.flagSource, page: e.page };
     case "work":

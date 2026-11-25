@@ -6,6 +6,11 @@
  * spot from load to load and adding a course never moves the others. Pure.
  */
 
+import type { IslandVariant } from "../data.ts";
+
+/** The island looks new courses take in turn (the nth course gets the nth, wrapping). */
+export const VARIANT_CYCLE: readonly IslandVariant[] = ["ald", "circuit", "signals", "linear", "stats"];
+
 export const ISLAND = { w: 280, h: 230 } as const;
 
 export const ISLAND_LAYOUT = {

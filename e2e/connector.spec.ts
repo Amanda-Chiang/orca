@@ -42,7 +42,7 @@ test("Settings mints the connector link once; Claude can read the course, ask a 
   const note = await page.request.post(url, { data: { jsonrpc: "2.0", method: "notifications/initialized" } });
   expect(note.status()).toBe(202);
   const tools = await rpc(page, url, "tools/list");
-  expect(tools.body!.result!.tools!.map((t) => t.name)).toEqual(["course_state", "next_questions", "set_exam", "questions_for", "check_answer", "record_answer", "flag_check", "material_for", "vault_material", "add_questions", "add_material", "log_problem", "log_session", "log_evidence"]);
+  expect(tools.body!.result!.tools!.map((t) => t.name)).toEqual(["course_state", "next_questions", "set_exam", "set_course", "set_preferences", "questions_for", "check_answer", "record_answer", "flag_check", "material_for", "vault_material", "add_questions", "add_material", "log_problem", "log_session", "log_evidence"]);
 
   // The courses, then one course: every objective unseen (not flagged), each with its questions counted; weak points first, so none is due.
   const courses = toolText(await call(page, url, "course_state", {}));
@@ -100,6 +100,11 @@ test("Settings mints the connector link once; Claude can read the course, ask a 
   // A prose answer goes through Orca's own grader (here the fake API, which says correct).
   const graded = toolText(await call(page, url, "check_answer", { courseId: F.course, questionId: id.prose, response: "Because the top bit is the sign bit." }));
   expect(graded).toMatchObject({ outcome: "correct", grader: "rubric", feedback: "The fake API graded it.", answer: "The top bit is the sign", objectiveId: F.signExtend, status: "verified" });
+  // The List view's History (2026-11-25): the answer keeps the student's words and what the grader said.
+  expect((await stored(page, student)).evidence.find((e) => e.kind === "answer" && e.questionId === id.prose)).toMatchObject({
+    response: "Because the top bit is the sign bit.",
+    graderNote: { feedback: "The fake API graded it.", satisfied: [], misconception: null },
+  });
   // When the grader can't run, the key is handed over and Claude's own grade is recorded self-marked, with the student's words.
   await fakeModel({ fail: { step: "grade", message: "The fake API is having a bad day." } });
   const held = toolText(await call(page, url, "check_answer", { courseId: F.course, questionId: id.prose, response: "copy it" })) as { needsSelfGrade: boolean; reason: string; rubric?: { requiredIdeas: string[] } };

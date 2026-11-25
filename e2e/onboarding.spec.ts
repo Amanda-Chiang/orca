@@ -1,5 +1,6 @@
 import type { Page } from "@playwright/test";
-import { expect, test, FIXTURE_STATE, seedState, stored } from "./fixture";
+import { randomUUID } from "node:crypto";
+import { admin, expect, test, FIXTURE_STATE, seedState, stored } from "./fixture";
 
 /** Onboarding tips: the orca points at what to do next; arrows move through them; skipped or seen, they stay gone. */
 test.use({ tips: true });
@@ -86,4 +87,33 @@ test("Skip all tips asks first, then no tip shows again", async ({ page, student
   await expect(page.getByRole("heading", { name: /What are you/ })).toBeVisible();
   await page.waitForTimeout(WOULD_HAVE_SHOWN_MS);
   await expect(tip(page)).toHaveCount(0);
+});
+
+test("a tip dismissed while a finished upload is being read in stays seen (no page reload)", async ({ page, student }) => {
+  const runId = randomUUID();
+  const run = { id: runId, kind: "upload" as const, courseId: FIXTURE_STATE.courses[0].id, materialId: FIXTURE_STATE.materials![0].id, at: new Date().toISOString(), model: "claude-opus-5-5", status: "running" as const, topicsCreated: [], objectivesCreated: [], objectivesAttached: [], questionsAdded: 0, dropped: [] };
+  await seedState(student, { ...FIXTURE_STATE, runs: [run] });
+  await page.goto(`/course/${SLUG}`);
+  await expect(tip(page)).toHaveAttribute("data-tip", "course-settings");
+
+  // The app's own re-read after the upload finishes, held back so the dismissal lands while it's out.
+  let release!: () => void;
+  const held = new Promise<void>((r) => (release = r));
+  await page.route("**/rest/v1/rpc/my_data", async (route) => {
+    await held;
+    await route.continue();
+  });
+  const reading = page.waitForRequest("**/rest/v1/rpc/my_data");
+  expect((await admin().from("pipeline_runs").update({ status: "done" }).eq("owner_id", student.id).eq("id", runId)).error).toBeNull();
+  await reading;
+  await page.keyboard.press("ArrowRight");
+  await expect(tip(page)).toHaveAttribute("data-tip", "weak-count");
+  release();
+  await page.waitForResponse("**/rest/v1/rpc/my_data");
+  await page.unroute("**/rest/v1/rpc/my_data");
+  // The next tip's dismissal is saved too: it must not carry the read's older list.
+  await page.keyboard.press("ArrowRight");
+  await expect.poll(async () => (await stored(page, student)).onboarding.seen).toEqual(expect.arrayContaining(["course-settings", "weak-count"]));
+  await page.waitForTimeout(WOULD_HAVE_SHOWN_MS);
+  await expect(tip(page)).not.toHaveAttribute("data-tip", "course-settings");
 });

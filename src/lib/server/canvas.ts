@@ -12,12 +12,12 @@ import { lookup as dnsLookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import { type CanvasAssignment, type CanvasCourse, type CanvasFile, type CanvasModule, type CanvasUser, type PickedFile, classifyAssignment, dayOf, htmlToText, pickFiles } from "@/lib/canvas/api";
 import { type CanvasClient, CanvasError, canvasClient } from "@/lib/canvas/client";
-import { placeIslands } from "@/lib/course/islands";
-import { COURSE_NAME_MAX, type IslandVariant, type MaterialType, shortName, slugify } from "@/lib/data";
+import type { MaterialType } from "@/lib/data";
 import { LIMITS } from "@/lib/limits";
 import { startUploadJob } from "@/lib/server/jobs/start";
 import { heldBackByDefault } from "@/lib/material/hold-back";
 import { UPLOAD_MIMES, uploadKind } from "@/lib/material/kind";
+import { cleanCourseName, createCourse } from "@/lib/server/courses";
 import { BUCKET, processUpload, startUpload } from "@/lib/server/materials";
 import { isPublicAddress, publicHop } from "@/lib/server/public-page";
 import { serverSupabaseEnv } from "@/lib/supabase/env";
@@ -26,7 +26,6 @@ import { sanitize } from "@/lib/untrusted/sanitize";
 
 /* ── The token at rest ── */
 
-const VARIANT_CYCLE: IslandVariant[] = ["ald", "circuit", "signals", "linear", "stats"];
 
 function tokenKey(): Buffer {
   // Derived from the server's own secret, so no extra setting is needed; a different secret means stored tokens can't be read (reconnect).
@@ -201,29 +200,45 @@ export interface ImportOptions {
   /** The student's IANA timezone for due, unlock and posting dates; UTC when absent. */
   timeZone?: string;  /** Only these Canvas file ids are pulled (the picker's choice); unset means every readable file. */
   fileIds?: ReadonlySet<string>;
+  /**
+   * An existing Orca course to import into instead of creating one. Honoured only while the Canvas
+   * course isn't linked to a live course; once linked, every import goes to that course.
+   */
+  intoCourseId?: string;
 }
 
-async function orcaCourseFor(db: OrcaSupabase, ownerId: string, course: CanvasCourse, linked: Map<string, string>): Promise<{ id: string; slug: string; name: string; created: boolean }> {
+/** The import names a course it can't use: not the student's, deleted, or the Canvas course already goes elsewhere. */
+export class ImportTargetError extends Error {}
+
+/**
+ * The Orca course a Canvas course imports into: the one it's linked to, else the course the student
+ * picked (`intoCourseId`), else a new one. `fresh` is true when the link is new, so links left from
+ * an earlier import into a course since deleted don't count.
+ */
+async function orcaCourseFor(db: OrcaSupabase, ownerId: string, course: CanvasCourse, linked: Map<string, string>, intoCourseId?: string): Promise<{ id: string; slug: string; name: string; created: boolean; fresh: boolean }> {
+  const liveCourse = async (id: string) => {
+    const { data, error } = await db.from("courses").select("id, slug, name").eq("owner_id", ownerId).eq("id", id).is("deleted_at", null).maybeSingle();
+    if (error) throw new Error(`Couldn't read the course: ${error.message}`);
+    return data;
+  };
   const existingId = linked.get(`course:${course.id}`);
   if (existingId) {
-    const { data, error } = await db.from("courses").select("id, slug, name").eq("owner_id", ownerId).eq("id", existingId).is("deleted_at", null).maybeSingle();
-    if (error) throw new Error(`Couldn't read the course: ${error.message}`);
-    if (data) return { ...data, created: false };
+    const data = await liveCourse(existingId);
+    if (data) {
+      if (intoCourseId && intoCourseId !== data.id) throw new ImportTargetError(`This Canvas course already imports into ${data.name}.`);
+      return { ...data, created: false, fresh: false };
+    }
   }
-  const { data: mine, error } = await db.from("courses").select("id, slug").eq("owner_id", ownerId).is("deleted_at", null).order("created_at");
-  if (error) throw new Error(`Couldn't read the courses: ${error.message}`);
-  const name = sanitize(course.name, COURSE_NAME_MAX).text.trim().slice(0, COURSE_NAME_MAX) || "Canvas course";
-  const taken = mine.map((c) => c.slug);
-  const base = slugify(name) || "course";
-  let slug = base;
-  for (let n = 2; taken.includes(slug); n++) slug = `${base}-${n}`;
-  const id = crypto.randomUUID();
-  const pos = placeIslands([...mine.map((c) => c.id), id])[mine.length];
-  const row = { id, owner_id: ownerId, slug, name, short: shortName(name), variant: VARIANT_CYCLE[mine.length % VARIANT_CYCLE.length], pos_x: pos.x, pos_y: pos.y, trail: null, review_config: null, schedule: null };
-  const inserted = await db.from("courses").insert(row);
-  if (inserted.error) throw new Error(`Couldn't create the course: ${inserted.error.message}`);
+  if (intoCourseId) {
+    const data = await liveCourse(intoCourseId);
+    if (!data) throw new ImportTargetError("That Orca course doesn't exist any more.");
+    await link(db, ownerId, "course", String(course.id), data.id);
+    return { ...data, created: false, fresh: true };
+  }
+  const created = await createCourse(db, ownerId, cleanCourseName(course.name) || "Canvas course");
+  const { id, slug, name } = created;
   await link(db, ownerId, "course", String(course.id), id);
-  return { id, slug, name, created: true };
+  return { id, slug, name, created: true, fresh: true };
 }
 
 async function importAssignments(db: OrcaSupabase, ownerId: string, courseId: string, assignments: CanvasAssignment[], linked: Map<string, string>, timeZone?: string): Promise<{ exams: number; events: number }> {
@@ -328,9 +343,9 @@ export async function importCanvasCourse(db: OrcaSupabase, ownerId: string, clie
   const budgetMs = options.budgetMs ?? 200_000;
   const known = await links(db, ownerId);
   const course = await client.get<CanvasCourse>(`/courses/${encodeURIComponent(canvasCourseId)}`, { "include[]": ["syllabus_body", "term"] });
-  const orca = await orcaCourseFor(db, ownerId, course, known);
-  // A new Orca course starts with nothing imported: links left from an earlier import went to a course since deleted.
-  const linked = orca.created ? new Map<string, string>() : known;
+  const { fresh, ...orca } = await orcaCourseFor(db, ownerId, course, known, options.intoCourseId);
+  // A newly linked course starts with nothing imported: links left from an earlier import went to a course since deleted.
+  const linked = fresh ? new Map<string, string>() : known;
 
   const [assignments, modules, files] = await Promise.all([
     optional(client.getAll<CanvasAssignment>(`/courses/${course.id}/assignments`)),

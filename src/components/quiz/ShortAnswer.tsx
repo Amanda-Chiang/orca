@@ -27,7 +27,8 @@ export interface ShortAnswerProps {
   /** Hide the local Check button when the quiz footer supplies it. */
   hideCheck?: boolean;
   onSubmit: (response: string) => void;
-  onSelfReport: (correct: boolean) => void;
+  /** The student's mark, with what they had typed. */
+  onSelfReport: (correct: boolean, response: string) => void;
   /** "Don't know", beside Check: the quiz counts it as a miss. */
   onDontKnow?: () => void;
 }
@@ -129,10 +130,10 @@ export function ShortAnswer({ question, grading, result, noModel, selfMarkNow = 
               ))}
             </ul>
             <div className="flex gap-[10px]">
-              <Button size="sm" onClick={() => onSelfReport(true)}>
+              <Button size="sm" onClick={() => onSelfReport(true, value)}>
                 I had it
               </Button>
-              <Button size="sm" variant="ghost" onClick={() => onSelfReport(false)}>
+              <Button size="sm" variant="ghost" onClick={() => onSelfReport(false, value)}>
                 I missed it
               </Button>
             </div>
