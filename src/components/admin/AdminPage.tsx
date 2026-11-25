@@ -10,6 +10,7 @@ const SECTIONS = [
   { href: "/admin", label: "Overview" },
   { href: "/admin/users", label: "Users" },
   { href: "/admin/questions", label: "Questions" },
+  { href: "/admin/feedback", label: "Feedback" },
   { href: "/admin/spend", label: "Spend" },
 ] as const;
 

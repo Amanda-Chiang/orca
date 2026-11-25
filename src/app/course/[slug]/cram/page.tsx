@@ -14,6 +14,7 @@ import type { CramCovered, CramPlan, CramPlanDay, CramPlanInput, SpentMinutes } 
 import type { ObjectiveStatus } from "@/lib/mastery/types";
 import { useCourse, useDayKey, useMasteryByCourse, useOrca } from "@/lib/store";
 import { useNow } from "@/hooks/useNow";
+import { FeedbackPrompt } from "@/components/feedback/FeedbackPrompt";
 import { Screen } from "@/components/layout/Screen";
 import { IconUpload } from "@/components/icons";
 import { BackButton } from "@/components/layout/BackButton";
@@ -764,6 +765,9 @@ function ExamMapCard({ scope, readiness, vaultNames, hasVault }: { scope: ExamSc
               Timed score: {readiness.measured.points} / {readiness.measured.outOf}
               <span className="font-medium text-wisteria-deep"> · {vaultNames.get(readiness.measured.materialId) ?? "the reserved exam"}</span>
             </p>
+          )}
+          {readiness?.measured && (
+            <FeedbackPrompt spot="practice-test" question="Was the practice test worth it?" />
           )}
           {map.uncertain && (
             <p className="text-[12px] font-medium text-wisteria-deep" data-part="cram-map-uncertain">

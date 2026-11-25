@@ -66,7 +66,12 @@ export const LIMITS = {
     timer: { max: 30, windowSeconds: 3600 },
     /** Asking the server to check runs (POST /api/runs/check): pages following a staged run ask once a minute per browser; a few tabs fit, a loop doesn't. */
     runsCheck: { max: 20, windowSeconds: 300 },
+    /** A feedback answer or dismissal (POST /api/feedback, 2026-11-25): a few prompts a day; a loop doesn't. */
+    feedback: { max: 30, windowSeconds: 3600 },
   },
+
+  /** A feedback prompt stops asking at a spot after this many dismissals (2026-11-25). */
+  feedbackDismissals: 2,
 
   /** One model call: the longest it may take, and how often a transient failure is retried. */
   modelTimeoutMs: 10 * 60_000,

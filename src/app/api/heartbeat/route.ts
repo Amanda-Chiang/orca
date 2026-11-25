@@ -4,7 +4,9 @@ import { forStudent, reply } from "@/lib/server/student";
 /**
  * POST → 204: the browser's "still here", sent at most once every 5 minutes while a signed-in tab
  * is open (src/components/layout/Heartbeat.tsx). Sets `profiles.last_active_at` for the verified
- * user, which the admin view shows as "last active". Nothing waits on it; a 429 is harmless.
+ * user, which the admin view shows as "last active", and marks today in `activity_days`
+ * (`touch_activity`, 2026-11-25), from which the admin view sees who dropped off and who came back.
+ * Nothing waits on it; a 429 is harmless.
  */
 export const runtime = "nodejs";
 
@@ -14,6 +16,9 @@ export async function POST(request: Request) {
     if (!verdict.ok) return tooManyRequests(verdict);
     const { error } = await db.from("profiles").update({ last_active_at: new Date().toISOString() }).eq("owner_id", student.id);
     if (error) return reply(500, { error: "Orca couldn't record the heartbeat." });
+    // The function's shape isn't in database.types.ts yet (no local stack to regenerate it); the migration's SQL is the contract.
+    const marked = await db.rpc("touch_activity" as never, { p_owner: student.id } as never);
+    if (marked.error) return reply(500, { error: "Orca couldn't record the heartbeat." });
     return new Response(null, { status: 204, headers: { "cache-control": "no-store" } });
   });
 }

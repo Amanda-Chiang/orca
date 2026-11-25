@@ -241,6 +241,18 @@ own courses (Data Structures, Fundamentals of Computer Systems) on the hosted pr
   unless a spec says `test.use({ tips: true })`. A new feature worth pointing out gets a tip there. Built from
   reusable pieces: `ui/AnchoredBubble` (a popover pointing at an element, placed by `src/lib/anchor-geometry.ts`),
   `ui/Spotlight`, `ui/Kbd`, `ui/InlineConfirm`, `Button size="xs"`, `useElementBox`.
+- **Feedback and activity** (2026-11-25, owner: before Orca goes public): a small inline prompt
+  (`src/components/feedback/FeedbackPrompt.tsx`: one line, a thumb, an optional note, X) after a
+  session (QuizEnd), on the built upload card opened from a toast, under a practice test's timed score,
+  and always in Settings → Feedback (`FeedbackCard`). Answers and dismissals go to `app_feedback`
+  (migration `20261125110000`, server-only; `POST /api/feedback`, `GET /api/feedback` says where each
+  spot stands; a spot stops asking once answered or dismissed `LIMITS.feedbackDismissals` times).
+  The heartbeat also marks the UTC day in `activity_days` (`touch_activity`, backfilled from older
+  rows); `/admin/feedback` lists what students said with active / came back / dropped off counts
+  (`admin_activity_summary`), and each account's admin page shows its 90-day strip and gaps
+  (`src/lib/admin/activity.ts`). The three new functions are called through `rpc(fn as never)`:
+  `database.types.ts` wasn't regenerated (no local stack on the machine that built it); run
+  `npm run locked -- npm run db:types` when one is at hand.
 - **Two hosted Supabase projects.** Production is `fbbimuspcsytjhbqlzzc` (the live site's; its
   keys are Vercel's Production env vars). `mtztzsxgcopohlokragm` is a second hosted project Amanda
   uses for development. `.env` may point at either (it has pointed at each at different times):
