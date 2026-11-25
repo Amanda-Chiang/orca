@@ -97,6 +97,14 @@ export async function removeMaterial(materialId: string): Promise<void> {
   if (!res.ok) throw new Error(out?.error ?? "Couldn't remove the material. Try again in a moment.");
 }
 
+/** Rename an upload: `name` replaces the part before the extension (which stays). The saved full name. */
+export async function renameMaterial(materialId: string, name: string): Promise<string> {
+  const res = await fetch(`/api/materials/${materialId}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ name }) });
+  const out = (await res.json().catch(() => null)) as { filename?: string; error?: string } | null;
+  if (!res.ok || !out?.filename) throw new Error(out?.error ?? "Couldn't rename the file. Try again in a moment.");
+  return out.filename;
+}
+
 /** Pause queued uploads (one run, or a whole course's) or resume paused ones; how many changed. */
 export async function pauseUploads(target: { runId: string } | { courseId: string }, paused: boolean): Promise<number> {
   const out = await post<{ changed: number }>("/api/runs/pause", { ...target, paused });

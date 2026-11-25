@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { use, useEffect, useRef } from "react";
+import { use, useEffect, useRef, useState } from "react";
 import { motion } from "motion/react";
-import type { Objective, Topic } from "@/lib/data";
+import type { Objective, PipelineRun, Topic } from "@/lib/data";
+import { runFromRow } from "@/lib/supabase/app-rows";
+import { browserSupabase } from "@/lib/supabase/browser";
 import { useCourse, useCramming, useOrca } from "@/lib/store";
 import { courseUploads, pendingReview, uploadsInProgress } from "@/lib/course/review";
 import { isFinished, useRun } from "@/hooks/useRun";
@@ -23,12 +25,26 @@ import { fadeUp, stagger } from "@/lib/motion";
 /**
  * A course's uploads and what they need reviewed, as two tabs. Uploads: every upload, newest first,
  * building ones with live progress. Review: confirm, rename or reject new topics, and settle possible
- * duplicates. Opened for one upload (`?run=`, after uploading), that upload is pinned on top.
+ * duplicates. Opened for one upload (`?run=`, after uploading), that upload is pinned on top; a batch's
+ * other uploads (`&also=id,id`) are pinned right below it, in the order they were added.
  */
 export default function ReviewPage({ params, searchParams }: PageProps<"/course/[slug]/review">) {
   const { slug } = use(params);
   const sp = use(searchParams);
   const runId = typeof sp.run === "string" ? sp.run : undefined;
+  const alsoIds = typeof sp.also === "string" ? sp.also.split(",").filter(Boolean) : [];
+  const alsoKey = alsoIds.join(",");
+  // The batch's other uploads, read straight from the database in one request (as useRun reads the
+  // first), so the whole batch shows at once instead of waiting for the store's full reload.
+  const [alsoFetched, setAlsoFetched] = useState<{ key: string; runs: PipelineRun[] } | null>(null);
+  useEffect(() => {
+    if (!alsoKey) return;
+    let alive = true;
+    void browserSupabase().from("pipeline_runs").select().in("id", alsoKey.split(",")).then(({ data }) => {
+      if (alive) setAlsoFetched({ key: alsoKey, runs: (data ?? []).map(runFromRow) });
+    });
+    return () => { alive = false; };
+  }, [alsoKey]);
   const { hydrated, objectives, materials, runs, editStructure, refresh } = useOrca();
   const course = useCourse(slug);
   // Cram mode: every page of a cramming course is dark (owner, 2026-11-22).
@@ -74,6 +90,12 @@ export default function ReviewPage({ params, searchParams }: PageProps<"/course/
   const unbuilt = materials.filter((m) => m.courseId === course.id && !runs.some((r) => r.materialId === m.id));
   const tab: ReviewTab = sp.tab === "uploads" || sp.tab === "review" ? sp.tab : uploads.some((u) => !isFinished(u)) && !runId ? "uploads" : "review";
   const material = run ? materials.find((m) => m.id === run.materialId) : undefined;
+  // The batch's other uploads, once the store has them (the reload above brings in the whole batch).
+  const fetchedAlso = alsoFetched?.key === alsoKey ? alsoFetched.runs : null;
+  const alsoRuns = alsoIds.flatMap((id) => (id === runId ? [] : runs.find((r) => r.id === id) ?? fetchedAlso?.find((r) => r.id === id) ?? []));
+  // The pinned batch appears together: the first card waits until the others are known too.
+  const batchReady = alsoIds.length === 0 || fetchedAlso !== null || alsoIds.every((id) => id === runId || runs.some((r) => r.id === id));
+  const pinned = new Set([runId, ...alsoIds]);
   const working = run && !isFinished(run);
   const topicName = (id: string) => course.topics.find((t) => t.id === id)?.name ?? "a topic";
   const objectivesIn = (topicId: string) => Object.values(catalogue).filter((o) => o.topicId === topicId && o.review !== "archived");
@@ -88,7 +110,6 @@ export default function ReviewPage({ params, searchParams }: PageProps<"/course/
           <header className="flex flex-col pt-[2px]">
             <div className="flex flex-col gap-[4px]">
               <h1 className="text-[40px] font-bold leading-none text-prussian">{course.short}: uploads &amp; review</h1>
-              {tab === "uploads" && <p className="text-[15px] font-medium text-wisteria-deep">Every file you&apos;ve added and what it built.</p>}
             </div>
           </header>
 
@@ -101,10 +122,18 @@ export default function ReviewPage({ params, searchParams }: PageProps<"/course/
               </motion.div>
             )}
 
-            {run && (
+            {run && batchReady && (
               <motion.div variants={fadeUp}>
                 {/* From an upload's toast (`&slides=1`): "Which slides were hard?" opens with the card. */}
                 <UploadCard run={run} material={material} focused openSlides={sp.slides === "1"} />
+              </motion.div>
+            )}
+
+            {batchReady && alsoRuns.length > 0 && (
+              <motion.div variants={fadeUp} className="-mt-[10px] flex flex-col gap-[14px]" data-part="batch-runs">
+                {alsoRuns.map((r) => (
+                  <UploadCard key={r.id} run={r} material={materials.find((m) => m.id === r.materialId)} />
+                ))}
               </motion.div>
             )}
 
@@ -134,7 +163,7 @@ export default function ReviewPage({ params, searchParams }: PageProps<"/course/
                     </Link>
                   </p>
                 ) : (
-                  uploads.filter((u) => u.id !== runId).map((u) => <UploadCard key={u.id} run={u} material={materials.find((m) => m.id === u.materialId)} />)
+                  uploads.filter((u) => !pinned.has(u.id)).map((u) => <UploadCard key={u.id} run={u} material={materials.find((m) => m.id === u.materialId)} />)
                 )}
               </motion.section>
             ) : (

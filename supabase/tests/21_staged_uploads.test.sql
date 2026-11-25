@@ -51,14 +51,18 @@ select is((public.pipeline_reserve_call((select value from calls where name='bud
 select is((public.pipeline_reserve_call((select value from calls where name='budget')||jsonb_build_object('id','a1000000-0000-4000-8000-000000000212'))->>'ok')::boolean,true,'second provider attempt admitted');
 select is((public.pipeline_reserve_call((select value from calls where name='budget')||jsonb_build_object('id','a1000000-0000-4000-8000-000000000213'))->>'ok')::boolean,true,'third provider attempt admitted');
 select is((public.pipeline_reserve_call((select value from calls where name='budget')||jsonb_build_object('id','a1000000-0000-4000-8000-000000000214'))->>'ok')::boolean,true,'fourth provider attempt admitted');
-select is(public.pipeline_reserve_call((select value from calls where name='budget')||jsonb_build_object('id','a1000000-0000-4000-8000-000000000215'))->>'reason','capacity','fifth concurrent call deferred');
+select is(public.pipeline_reserve_call((select value from calls where name='budget')||jsonb_build_object('id','a1000000-0000-4000-8000-000000000215','providerSlots',4))->>'reason','capacity','the provider slots still cap calls running at once');
+-- Grading keeps the last 4 slots (2026-11-24): with 8 slots and 4 calls running, an upload call waits and a grading call goes ahead.
+select is(public.pipeline_reserve_call((select value from calls where name='budget')||jsonb_build_object('id','a1000000-0000-4000-8000-000000000230','providerSlots',8,'kind','upload'))->>'reason','capacity','an upload call stops 4 slots short of the limit');
+select is((public.pipeline_reserve_call((select value from calls where name='budget')||jsonb_build_object('id','a1000000-0000-4000-8000-000000000231','providerSlots',8,'kind','grade'))->>'ok')::boolean,true,'a grading call may use the slots kept for it');
+select public.pipeline_settle_call('{"ownerId":"aaaaaaaa-0000-4000-8000-000000000211","id":"a1000000-0000-4000-8000-000000000231","known":true}');
 select public.pipeline_settle_call('{"ownerId":"aaaaaaaa-0000-4000-8000-000000000211","id":"a1000000-0000-4000-8000-000000000211","known":false}');
 select is((select state from public.pipeline_call_reservations where id='a1000000-0000-4000-8000-000000000211'),'unknown','lost reply not refunded as free');
 select is(public.pipeline_reserve_call((select value from calls where name='budget')||jsonb_build_object('id','a1000000-0000-4000-8000-000000000216','tokens',2000000))->>'reason','daily-tokens','unknown and active reservations protect token ceiling');
-select is(public.pipeline_reserve_call((select value from calls where name='budget')||jsonb_build_object('id','a1000000-0000-4000-8000-000000000217','globalCap',0.02))->>'reason','global-budget','global ceiling includes held dollars');
-select is((public.pipeline_reserve_call((select value from calls where name='budget')||jsonb_build_object('id','a1000000-0000-4000-8000-000000000218'))->>'ok')::boolean,true,'a fourth active upload call fills the owner permits again');
-select is(public.pipeline_reserve_call((select value from calls where name='budget')||jsonb_build_object('id','a1000000-0000-4000-8000-000000000219'))->>'reason','capacity','a fifth upload call waits');
-select is((public.pipeline_reserve_call((select value from calls where name='budget')||jsonb_build_object('id','a1000000-0000-4000-8000-000000000220','kind','grade'))->>'ok')::boolean,true,'grading never waits behind the student''s own uploads');
+select is(public.pipeline_reserve_call((select value from calls where name='budget')||jsonb_build_object('id','a1000000-0000-4000-8000-000000000217','globalCap',0.02))->>'reason','held','global ceiling includes held dollars (said as held: calls still running, not used up)');
+select is((public.pipeline_reserve_call((select value from calls where name='budget')||jsonb_build_object('id','a1000000-0000-4000-8000-000000000218'))->>'ok')::boolean,true,'a fourth active upload call is admitted');
+select is((public.pipeline_reserve_call((select value from calls where name='budget')||jsonb_build_object('id','a1000000-0000-4000-8000-000000000219'))->>'ok')::boolean,true,'no per-student cap: a fifth upload call goes ahead');
+select is((public.pipeline_reserve_call((select value from calls where name='budget')||jsonb_build_object('id','a1000000-0000-4000-8000-000000000220','kind','grade'))->>'ok')::boolean,true,'grading goes ahead beside the student''s own uploads');
 -- An unknown hold whose cut-off reply was metered after all is released, not charged twice.
 insert into public.model_usage(owner_id,kind,model,input_tokens,output_tokens,cost_usd,attempt_id) values('aaaaaaaa-0000-4000-8000-000000000211','upload','gpt-6.1-sol',10,10,0.001,'a1000000-0000-4000-8000-000000000211');
 select public.pipeline_reserve_call((select value from calls where name='budget')||jsonb_build_object('id','a1000000-0000-4000-8000-000000000221','kind','grade'));
@@ -99,16 +103,12 @@ update public.pipeline_items set expires_at=now()+interval '1 minute' where id i
 select public.pipeline_canvas_claim('{"ownerId":"aaaaaaaa-0000-4000-8000-000000000211","sessionId":"a6000000-0000-4000-8000-000000000213"}');
 select ok((select count(*)>0 and bool_and(expires_at>now()+interval '10 minutes') from public.pipeline_items where batch_id='a6000000-0000-4000-8000-000000000213' and not metadata ? 'claimToken'),'a continuing Canvas import renews its waiting files');
 
--- Atomic rate receipts cover legacy clients and process-only fallback admissions too.
+-- No daily upload limit (owner, 2026-11-24): an admission records its receipt and is never refused.
 select public.pipeline_charge_item('{"ownerId":"aaaaaaaa-0000-4000-8000-000000000211","itemId":"e0000000-0000-4000-8000-000000000211"}');
-select is((select count from public.rate_limits where owner_id='aaaaaaaa-0000-4000-8000-000000000211' and action='upload'),2,'repeated admission does not charge the upload rate twice');
-select public.hit_rate_limit('aaaaaaaa-0000-4000-8000-000000000211','upload',86400,20) from generate_series(1,19);
-select public.pipeline_admit('{"ownerId":"aaaaaaaa-0000-4000-8000-000000000211","courseId":"c0000000-0000-4000-8000-000000000211","batchId":"d0000000-0000-4000-8000-000000000299","source":"browser","items":[{"id":"e0000000-0000-4000-8000-000000000299","name":"Over limit.pdf"}]}');
-select is(public.pipeline_charge_item('{"ownerId":"aaaaaaaa-0000-4000-8000-000000000211","itemId":"e0000000-0000-4000-8000-000000000299"}'),false,'rate denial is stored atomically with admission receipt');
-select throws_ok($$select public.pipeline_attach('{"ownerId":"aaaaaaaa-0000-4000-8000-000000000211","itemId":"e0000000-0000-4000-8000-000000000299","materialId":"f0000000-0000-4000-8000-000000000211","model":"stub"}')$$,'42501',null,'a denied admission cannot bypass the limit by attaching directly');
-
-select public.pipeline_ingestion('{"ownerId":"aaaaaaaa-0000-4000-8000-000000000211","itemId":"e0000000-0000-4000-8000-000000000299","action":"retry"}');
-select is((select rate_charged from public.pipeline_items where id='e0000000-0000-4000-8000-000000000299'),false,'retry after rate denial requires a new atomic rate check');
+select is((select count(*)::int from public.rate_limits where owner_id='aaaaaaaa-0000-4000-8000-000000000211' and action='upload'),0,'uploads are not counted against a daily limit');
+select public.pipeline_admit('{"ownerId":"aaaaaaaa-0000-4000-8000-000000000211","courseId":"c0000000-0000-4000-8000-000000000211","batchId":"d0000000-0000-4000-8000-000000000299","source":"browser","items":[{"id":"e0000000-0000-4000-8000-000000000299","name":"Twenty-first.pdf"}]}');
+select is(public.pipeline_charge_item('{"ownerId":"aaaaaaaa-0000-4000-8000-000000000211","itemId":"e0000000-0000-4000-8000-000000000299"}'),true,'any number of uploads is admitted');
+select is((select rate_charged from public.pipeline_items where id='e0000000-0000-4000-8000-000000000299'),true,'the admission still carries its receipt, which binding requires');
 
 select * from finish();
 rollback;

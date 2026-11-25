@@ -27,7 +27,7 @@ export async function forStudent(request: Request, handle: (student: { id: strin
   if (!student) return reply(401, { error: "Sign in to continue." });
   try { return await handle(student, db); }
   catch (error) {
-    if (error instanceof PipelineDeferred) return Response.json({ error: error.message, retryAfterSeconds: error.reason === "capacity" ? 5 : 60 }, { status: 429, headers: { ...NO_STORE, "retry-after": error.reason === "capacity" ? "5" : "60" } });
+    if (error instanceof PipelineDeferred) return Response.json({ error: error.message, retryAfterSeconds: error.reason === "capacity" || error.reason === "held" ? 5 : 60 }, { status: 429, headers: { ...NO_STORE, "retry-after": error.reason === "capacity" || error.reason === "held" ? "5" : "60" } });
     throw error;
   }
 }

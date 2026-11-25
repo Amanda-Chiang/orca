@@ -175,6 +175,20 @@ own courses (Data Structures, Fundamentals of Computer Systems) on the hosted pr
   (`useStudyDays` scoped to the course from the cram's start, a running timer included), and the cram page's Your
   Progress uses the same tiles, source colors and timer (`src/components/study/StudyParts.tsx`); the connector's
   `course_state` still counts only Orca and Claude time.
+- **Uploads, 2026-11-24 (owner; branch `upload-improvements`):** no daily upload limit (the 20 files a day of decision 10
+  is gone, migration `20261124140000`; pages and tokens a day still bound model work) and **no duplicate check for
+  files** (every file is a new copy: the add-material page sends `again: true`; pasted text, web and Canvas still
+  skip what's already there; the duplicate UI is commented out). Uploads can be renamed (the part before the
+  extension; `PATCH /api/materials/:id`, screened like notes, `src/lib/material/rename.ts`), deleted from any card
+  state behind one pop-up (`DeleteUploadDialog`), and each finished card lists what it added (`WhatItAdded`, reject
+  topics/objectives there). Card actions sit top right; Stop acts at once; Try again/Stop/Pause/Resume follow the run
+  live. Staged fixes: `pipeline_snapshot` is ordered (topic positions followed heap order; migration
+  `20261124120000`), waiting says "held by other calls" vs "used up" (`20261124130000`), a file uploaded again after
+  its copy was deleted gets its own run (`20261124150000`), one inline loop per student with back-off and workers
+  that stop on a stale lease (`src/lib/server/staged/schedule.ts`, `run.ts`), and a smaller per-image token
+  reservation (`IMAGE_TOKEN_BOUND`, `src/lib/llm-server.ts`); the last 4 provider slots are kept for grading
+  (other calls stop at `ORCA_MODEL_CONCURRENCY` - 4; migration `20261124160000`). The branch's `staged_upload_limits` migration was
+  renumbered `20261124105000` (it clashed with main's `.docx` one).
 - **Upload toasts** (2026-11-08, `src/components/layout/UploadToasts.tsx`, mounted in `providers.tsx`): an upload
   that finishes (done or failed) while the app is open, from any tab or device, pops a toast unless the student is on
   that course's uploads; uploads of one course finishing while its toast is up share it. One upload's toast opens
@@ -391,7 +405,8 @@ model), `docs/TO-DISCUSS.md` (open questions). In short:
   (`src/lib/store.tsx`): `supabase/` holds `config.toml`, the
   migrations (profiles, courses, materials and their pages, pipeline runs, topics, objectives,
   relations, questions, finished sessions, calendar entries, the evidence log, the `materials`
-  Storage bucket, `save_structure`, the `objective_state` snapshots with `record_evidence`,
+  Storage bucket, the `thumbnails` bucket (slide previews drawn while an upload is processed, read by
+  "Which slides were hard?"; `src/lib/server/thumbnails.ts`, 2026-11-24), `save_structure`, the `objective_state` snapshots with `record_evidence`,
   `save_snapshot` and their stale-mark triggers, and the consistent reads `course_structure` and
   `my_data`) and the pgTAP tests; generated types are in
   `src/lib/supabase/database.types.ts`; env variables are listed in `.env.example`. Every table is
@@ -602,10 +617,11 @@ All 11 Figma screens are built. Where things live:
 - `src/lib/jobs/` + `src/lib/server/jobs/` + `src/trigger/` — upload and top-up jobs (`ORCA_JOBS=inline|trigger`). A queued
   upload can be **paused** from the Uploads tab (`POST /api/runs/pause`, one run or a whole course's; run status `paused`,
   uploads only, migration `20261031100000`): it leaves the queue (nothing waits behind it, never taken for dead) and
-  Resume puts it back in line by upload time; re-uploading a paused file resumes its run instead of starting a second.
+  Resume puts it back in line by upload time. Since 2026-11-24 a file uploaded again from the add-material page is a
+  new copy with its own run (no duplicate check), even if an earlier copy is paused or failed.
   A running upload can be **stopped** (`POST /api/runs/stop`, `stopRun`: failed with `STOPPED_ERROR`, the queue moves
-  on; a job still alive can't revive it, its final save checks the run is still running). A retried upload (Try again,
-  or the file uploaded again after a failure) keeps the failed run's `at`, so it goes back to its place in line.
+  on; a job still alive can't revive it, its final save checks the run is still running). A retried upload (Try again)
+  keeps the failed run's `at`, so it goes back to its place in line.
   Settings' Disconnect buttons (Canvas, Claude connector) ask first (2026-11-07). Material can be **removed**
   from a course (`DELETE /api/materials/:id`, `removeMaterial`): file, pages and calendar entry go, the row stays with
   status `removed` (not loaded; hash cleared so the file can be uploaded again), the objectives only it taught and a

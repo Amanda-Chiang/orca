@@ -9,6 +9,7 @@ import { PipelineDeferred, PIPELINE_LIMITS, concurrent, type StageJob, type Stag
 import { supabaseJobStore } from "@/lib/server/job-store";
 import { adminClient } from "@/lib/supabase/server";
 import { pageRenderer, figureRenderer } from "@/lib/server/figures";
+import { makeThumbnails } from "@/lib/server/thumbnails";
 import { stepCaller } from "@/lib/server/model";
 import { describeFigures, transcribePages } from "@/lib/pipeline/transcribe";
 import { type CallStep, type RunInput, runUpload, uploadWritingTargets, writeQuestions } from "@/lib/pipeline/run";
@@ -27,14 +28,28 @@ import { pipelineSnapshot } from "./snapshot";
 import { coordinateWriting, questionRows, reclaimWriting, writingLease } from "./writing";
 
 interface QuestionCheckpoint { targets: Array<{ objectiveId: string; desired: number }>; written?: Record<string, QuizQuestion[]>; dropped?: PipelineRun["dropped"] }
+/** The database refused a call because this attempt no longer holds its task (`private.pipeline_task`). */
+const isStale = (error: unknown) => error instanceof Error && /Stale pipeline attempt/.test(error.message);
+
 export async function runPipelineStage(job: StageJob): Promise<void> {
   const db = adminClient();
   let task: StageTask;
   try { task = await pipelineRpc<StageTask>(db, "task", { ...job }); } catch { return; } // duplicate/stale delivery
   const store = supabaseJobStore(db, job.ownerId);
-  const checkpoint = (data: Record<string, unknown>) => pipelineRpc(db, "checkpoint", { ...job, ...data });
+  // Once the database says this attempt is stale (its lease expired or another worker took the task),
+  // stop: no more heartbeats, model calls or saves, and no `fail` (that would be refused too).
   let leaseLost = false;
-  const heartbeat = setInterval(() => { void checkpoint({}).catch(() => { leaseLost = true; }); }, 30_000);
+  const lost = (error: unknown) => {
+    if (isStale(error)) { leaseLost = true; clearInterval(heartbeat); }
+    return error;
+  };
+  const checkpoint = async (data: Record<string, unknown>) => {
+    if (leaseLost) throw new Error("Pipeline lease was revoked");
+    try { return await pipelineRpc(db, "checkpoint", { ...job, ...data }); } catch (error) { throw lost(error); }
+  };
+  // A failed check-in counts as a lost lease only when the database says so (`checkpoint` runs `lost`);
+  // a dropped request just waits for the next one, so a network blip doesn't silently end the attempt.
+  const heartbeat: ReturnType<typeof setInterval> = setInterval(() => { void checkpoint({}).catch(() => {}); }, 30_000);
   const base = stepCaller({ ownerId: job.ownerId, runId: task.runId, kind: "upload", task: job, phase: task.phase }, { guard: "none" });
   if (!base) { clearInterval(heartbeat); await pipelineRpc(db, "fail", { ...job, error: "No AI connected." }); return; }
   // Successful replies survive transaction conflicts and process restarts. Changed prompt inputs never reuse stale answers.
@@ -58,6 +73,8 @@ export async function runPipelineStage(job: StageJob): Promise<void> {
     const loaded = await store.course(task.courseId);
     if (!loaded) throw new Error("The course was deleted");
     if (task.phase === "prepare") {
+      // Slide previews are drawn beside the reading; they never fail it (makeThumbnails logs instead).
+      const previews = makeThumbnails(db, job.ownerId, material.id);
       const render = pageRenderer(db, job.ownerId);
       const warnings: Array<{ n: number; reason: string }> = [];
       for (const pass of [{ marked: "needs-vision", done: "vision", read: transcribePages }, { marked: "needs-figure", done: "figure", read: describeFigures }] as const) {
@@ -68,13 +85,14 @@ export async function runPipelineStage(job: StageJob): Promise<void> {
         const updated = new Map(result.read.map((p) => [p.n, p.text]));
         pages = pages.map((p) => updated.has(p.n) ? { ...p, text: updated.get(p.n)!, source: pass.done } : p);
       }
+      await previews;
       await pipelineRpc(db, "finish", { ...job, checkpoint: { warnings, markers: loaded.markers } });
     } else if (task.phase === "structure") {
       for (let attempt = 0; ; attempt++) {
         const snapshot = await pipelineSnapshot(db, job.ownerId, task.courseId);
         const prep = task.checkpoint as { warnings?: Array<{ n: number; reason: string }>; markers?: string | null } | null;
         const input: RunInput = { course: snapshot.course, ...snapshot.structure, material, materials, pages, notes: loaded.notes, markers: prep?.markers ?? loaded.markers, flagged: await store.flagged(task.courseId), runId: task.runId, model: (await store.run(task.runId))!.model, now: new Date().toISOString() };
-        const plan = await runUpload(input, { call, newId: () => crypto.randomUUID(), structureOnly: true, onProgress: (progress) => { void checkpoint({ progress }).catch(() => { leaseLost = true; }); } });
+        const plan = await runUpload(input, { call, newId: () => crypto.randomUUID(), structureOnly: true, onProgress: (progress) => { void checkpoint({ progress }).catch(() => {}); } });
         for (const w of prep?.warnings ?? []) plan.run.dropped.push({ prompt: `Page ${w.n}`, reason: `kept the file's text: ${w.reason}` });
         const { byTopic } = uploadWritingTargets(input, plan);
         const flagged = new Set(plan.flags.map((f) => f.objectiveId));
@@ -157,6 +175,8 @@ export async function runPipelineStage(job: StageJob): Promise<void> {
       await pipelineRpc(db, "finish", { ...job });
     }
   } catch (error) {
+    lost(error);
+    if (leaseLost) return; // another attempt owns the task now, or the sweep will requeue it
     const deferred = error instanceof PipelineDeferred || (error instanceof Error && "code" in error && error.code === "55P03");
     try { await pipelineRpc(db, "fail", { ...job, waiting: deferred, error: error instanceof Error ? error.message : String(error) }); } catch { /* stop/lease replacement won; never revive it */ }
   } finally { clearInterval(heartbeat); }
