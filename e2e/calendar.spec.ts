@@ -17,10 +17,11 @@ test("a busy day opens in a pop-up, Week shows it in full, and the filter combin
     evidence: fixtureFlags(),
   });
 
-  await test.step("month: two entries and +3 more; the pop-up lists all five, exams first", async () => {
+  await test.step("month: three entries and +2 more; the pop-up lists all five, exams first", async () => {
     await page.goto("/calendar");
     const today = page.locator("[data-today]");
-    await expect(today.locator("[data-part=event]")).toHaveCount(2);
+    await expect(today.locator("[data-part=event]")).toHaveCount(3);
+    await expect(today.locator("[data-part=more]")).toHaveText("+2 more");
     await today.locator("[data-part=more]").click();
     const popover = page.locator("[data-part=day-popover]");
     await expect(popover.locator("[data-part=event]")).toHaveCount(5);

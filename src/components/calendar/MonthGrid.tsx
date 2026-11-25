@@ -11,7 +11,7 @@ import { cn } from "@/lib/cn";
 export const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 /** Entries a day shows before "+n more". */
-const SHOWN = 3;
+const SHOWN = 4;
 
 /** "Wednesday, Nov 12" for a local ISO day. */
 export function dayTitle(iso: string) {
@@ -20,7 +20,7 @@ export function dayTitle(iso: string) {
 }
 
 /**
- * The month: 6 weeks of days on one hairline grid. A day shows its first few entries; "+n more", or a
+ * The month: its weeks on one hairline grid. A day shows its first few entries; "+n more", or a
  * click anywhere on the day, opens a pop-up with all of them, so rows never change height.
  */
 export function MonthGrid({
@@ -30,7 +30,7 @@ export function MonthGrid({
   byDate,
   entry,
 }: {
-  /** 42 local ISO days, Sunday first. */
+  /** Whole weeks of local ISO days, Sunday first. */
   days: readonly string[];
   /** "YYYY-MM" of the month shown; other days are faded. */
   month: string;
@@ -70,7 +70,7 @@ export function MonthGrid({
               className={cn(
                 "flex h-[132px] min-w-0 flex-col gap-[3px] border-line p-[6px]",
                 i % 7 !== 6 && "border-r",
-                i < 35 && "border-b",
+                i < days.length - 7 && "border-b",
                 !inMonth && "bg-page",
                 evs.length > 0 && "cursor-pointer hover:bg-alice/40",
               )}

@@ -34,8 +34,11 @@ test("toggling from all unticks one; unticking the last or ticking the last miss
 
 test("month and week days start on Sunday, and paging moves a month (to the 1st) or a week", () => {
   const month = monthDays("2026-11-24");
-  assert.equal(month.length, 42);
-  assert.equal(month[0], "2026-11-01"); // Nov 1 2026 is a Sunday
+  assert.equal(month.length, 35); // Nov 1 2026 is a Sunday: five weeks, none wholly in December
+  assert.equal(month[0], "2026-11-01");
+  assert.equal(month.at(-1), "2026-12-05");
+  assert.equal(monthDays("2026-08-10").length, 42); // starts on a Saturday, 31 days: six weeks
+  assert.equal(monthDays("2026-02-01").length, 28); // Feb 2026 starts on a Sunday: four weeks
   assert.deepEqual(weekDays("2026-11-24"), ["2026-11-22", "2026-11-23", "2026-11-24", "2026-11-25", "2026-11-26", "2026-11-27", "2026-11-28"]);
   assert.equal(shiftAnchor("2026-11-24", "month", 1), "2026-12-01");
   assert.equal(shiftAnchor("2026-01-15", "month", -1), "2025-12-01");

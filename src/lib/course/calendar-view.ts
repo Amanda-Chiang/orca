@@ -81,11 +81,13 @@ const parse = (day: string) => {
   return new Date(y, m - 1, d);
 };
 
-/** The 42 days (6 weeks from Sunday) of the month grid around `anchor`'s month. */
+/** The month grid around `anchor`'s month: whole weeks from Sunday, only those holding a day of the month (4 to 6). */
 export function monthDays(anchor: string): string[] {
   const a = parse(anchor);
   const first = new Date(a.getFullYear(), a.getMonth(), 1);
-  return Array.from({ length: 42 }, (_, i) => iso(new Date(first.getFullYear(), first.getMonth(), 1 - first.getDay() + i)));
+  const length = new Date(a.getFullYear(), a.getMonth() + 1, 0).getDate();
+  const weeks = Math.ceil((first.getDay() + length) / 7);
+  return Array.from({ length: weeks * 7 }, (_, i) => iso(new Date(first.getFullYear(), first.getMonth(), 1 - first.getDay() + i)));
 }
 
 /** The 7 days, Sunday first, of the week containing `anchor`. */
