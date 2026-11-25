@@ -56,6 +56,8 @@ test("POST /api/evidence refuses work and signal events, claude-graded answers a
       ["a connector flag", { kind: "confusion", id, courseId: course, objectiveId: objective, flagSource: "connector" }],
       ["a struggled connector flag", { kind: "confusion", id, courseId: course, objectiveId: objective, flagSource: "connector-struggled" }],
       ["a handwritten-marker flag", { kind: "confusion", id, courseId: course, objectiveId: objective, flagSource: "handwritten-marker" }],
+      ["a grader's note on a choice answer", { kind: "answer", id, courseId: course, questionId: question, outcome: "correct", grader: "choice", source: "quiz", sessionId: "s", graderNote: { feedback: "Right.", satisfied: [], misconception: null } }],
+      ["a kind of mistake on a self-marked answer", { kind: "answer", id, courseId: course, questionId: question, outcome: "incorrect", grader: "self", source: "quiz", sessionId: "s", errorType: "sign" }],
     ];
     for (const [what, body] of refused) {
       const r = await post(body);

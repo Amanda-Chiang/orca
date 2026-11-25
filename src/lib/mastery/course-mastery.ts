@@ -1,7 +1,7 @@
 /** Everything learner-facing about one course, derived in one pass. */
 import { attribution } from "./attribution.ts";
 import type { QuestionRef } from "./catalogue.ts";
-import { EMPTY_ACCUMULATOR, type ObjectiveAccumulator, computeObjectiveState, stateAt } from "./objective-state.ts";
+import { EMPTY_ACCUMULATOR, type ObjectiveAccumulator, type ObjectiveStateOptions, computeObjectiveState, stateAt } from "./objective-state.ts";
 import { masteredAt } from "./mastered-at.ts";
 import { type IslandLevel, type TopicProgress, islandLevel, topicProgress } from "./progress.ts";
 import type { EvidenceEvent, ObjectiveInfo, ObjectiveState } from "./types.ts";
@@ -16,6 +16,8 @@ export interface CourseMastery {
   events: EvidenceEvent[];
   /** When each mastered or retired objective last became mastered (ISO), from its evidence; null when the log doesn't show it. */
   masteredAt: Map<string, string | null>;
+  /** Each listed objective's fold options, to replay its evidence (the List view's History). */
+  foldOptions: Map<string, ObjectiveStateOptions>;
 }
 
 export interface CourseMasteryInput {
@@ -52,9 +54,11 @@ export function courseMastery({ courseId, topicIds, bank, catalogue, evidence, n
   const topicObjectives = new Map<string, string[]>();
   const topics = new Map<string, TopicProgress>();
   const mastered = new Map<string, string | null>();
+  const foldOptions = new Map<string, ObjectiveStateOptions>();
   for (const { topicId, list } of perTopic) {
     for (const o of list) {
       const options = { hasMechanismQuestions: o.hasMechanismQuestions, dayKey };
+      foldOptions.set(o.id, options);
       const state = snapshots ? stateAt(o.id, snapshots.get(o.id) ?? EMPTY_ACCUMULATOR, now) : computeObjectiveState(o.id, events, now, options);
       objectives.set(o.id, state);
       if (state.status === "mastered" || state.status === "retired") mastered.set(o.id, masteredAt(o.id, events, options));
@@ -63,5 +67,5 @@ export function courseMastery({ courseId, topicIds, bank, catalogue, evidence, n
     topicObjectives.set(topicId, ids);
     topics.set(topicId, topicProgress(ids, objectives));
   }
-  return { objectives, topicObjectives, topics, island: islandLevel([...objectives.values()]), events, masteredAt: mastered };
+  return { objectives, topicObjectives, topics, island: islandLevel([...objectives.values()]), events, masteredAt: mastered, foldOptions };
 }

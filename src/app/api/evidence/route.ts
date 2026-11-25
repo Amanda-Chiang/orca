@@ -1,5 +1,6 @@
 import { after } from "next/server";
 import { z } from "zod";
+import { ANSWER_MAX_CHARS, ERROR_TYPES } from "@/lib/grading";
 import { BROWSER_FLAG_SOURCES } from "@/lib/mastery/flags";
 import { NewerRulesError, VersionConflictError, recordEvent } from "@/lib/mastery/snapshots";
 import type { AnswerEvent, EvidenceEvent } from "@/lib/mastery/types";
@@ -11,7 +12,8 @@ import { forStudent, ownsCourse, reply } from "@/lib/server/student";
  * POST → record one evidence event for the signed-in student and keep its objective's snapshot in
  * step (the only way evidence is written; plan decision 3).
  *
- * An answer: { kind: "answer", id, courseId, questionId, outcome, grader, source, sessionId }. The
+ * An answer: { kind: "answer", id, courseId, questionId, outcome, grader, source, sessionId,
+ * response?, graderNote?, errorType? } (the last two for rubric-graded answers only). The
  * browser grades choice and exact answers and sends the outcome (decision 13: an edited request can
  * only inflate the student's own record). Prose grading moves server-side in Task 8.
  * A struggle flag (kind "confusion"): { kind, id, courseId, objectiveId, flagSource, materialId?,
@@ -36,7 +38,19 @@ const Answer = z.object({
   grader: z.enum(["choice", "exact", "rubric", "self"]),
   source: z.enum(["quiz", "quick-review", "deep-review", "requiz"]),
   sessionId: z.string().min(1).max(200),
-});
+  // For the List view's History (owner, 2026-11-25): the student's own answer (a typed answer, or the
+  // option picked), and for a rubric-graded answer what the grader said. Display only, never folded.
+  response: z.string().trim().min(1).max(ANSWER_MAX_CHARS * 5).optional(),
+  graderNote: z
+    .object({
+      feedback: z.string().max(2000),
+      satisfied: z.array(z.string().max(2000)).max(50),
+      misconception: z.string().max(2000).nullable(),
+    })
+    .strict()
+    .optional(),
+  errorType: z.enum(ERROR_TYPES).optional(),
+}).refine((b) => (b.graderNote === undefined && b.errorType === undefined) || b.grader === "rubric", "Only a rubric-graded answer carries the grader's note.");
 const Confusion = z
   .object({
     kind: z.literal("confusion"),
@@ -99,6 +113,9 @@ export async function POST(request: Request) {
         grader: body.grader,
         source: body.source,
         sessionId: body.sessionId,
+        ...(body.response ? { response: body.response } : {}),
+        ...(body.errorType ? { errorType: body.errorType } : {}),
+        ...(body.graderNote ? { graderNote: body.graderNote } : {}),
       };
     } else if (body.kind === "mark") {
       const { data: objective, error } = await db.from("objectives").select("topic_id").eq("owner_id", student.id).eq("course_id", body.courseId).eq("id", body.objectiveId).maybeSingle();

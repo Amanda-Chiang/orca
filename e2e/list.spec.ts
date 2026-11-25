@@ -1,4 +1,5 @@
-import { F, FIXTURE_STATE, daysAgo, expect, seedState, stored, struggled, test } from "./fixture";
+import type { AnswerEvent } from "../src/lib/mastery/types";
+import { F, FIXTURE_STATE, daysAgo, expect, pastMiss, seedState, stored, struggled, test } from "./fixture";
 
 /** List (owner, 2026-11-10): the topics with weak spots, each with its status and a dive. */
 const SLUG = FIXTURE_STATE.courses[0].slug;
@@ -57,4 +58,44 @@ test("the status slider: Discard leaves it; Mark mastered records a mark that su
   await page.locator("[data-part=status-confirm-yes]").click();
   await page.locator('[data-part=list-tab][data-tab="current"]').click();
   await expect(page.locator("[data-part=weak-row]").first()).toHaveAttribute("data-status", "needs-review");
+});
+
+test("History: a row opens its topic's attempts, with the answer typed in a quiz, the grader's note, the change in mastery and the flags", async ({ page, student }) => {
+  const flaggedAt = daysAgo(2);
+  const graded: AnswerEvent = {
+    kind: "answer", id: crypto.randomUUID(), at: daysAgo(1), courseId: F.course, topicId: F.twosComplement, objectiveId: F.signExtend, questionId: F.tc4, tier: null,
+    outcome: "partial", grader: "rubric", source: "quick-review", sessionId: "earlier", response: "Copy the sign bit to the left.",
+    graderNote: { feedback: "Right idea, but the result wasn't written out.", satisfied: ["copy the sign bit"], misconception: null },
+  };
+  await seedState(student, { ...FIXTURE_STATE, evidence: [struggled(F.course, F.twosComplement, F.signExtend, flaggedAt), graded] });
+
+  // A miss in a quick review keeps what was typed.
+  await page.goto(`/session/${SLUG}?kind=quick`);
+  await page.getByPlaceholder("Type your answer").fill("1010");
+  await page.getByRole("button", { name: "Check" }).click();
+  await pastMiss(page);
+  await expect.poll(async () => (await stored(page, student)).evidence.filter((e) => e.kind === "answer" && e.response === "1010").length).toBe(1);
+
+  await page.goto(`/course/${SLUG}/list`);
+  await page.locator("[data-part=weak-row-history]").first().click();
+  const modal = page.locator("[data-part=history-modal]");
+  await expect(modal).toContainText("Two's Complement");
+  const section = modal.locator(`[data-part=history-objective][data-objective="${F.signExtend}"]`);
+  const attempts = section.locator("[data-part=history-attempt]");
+  // Newest first: today's miss, then the graded answer; the flag is a marker row below them.
+  await expect(attempts).toHaveCount(2);
+  await expect(attempts.nth(0)).toHaveAttribute("data-outcome", "incorrect");
+  await expect(attempts.nth(1)).toHaveAttribute("data-outcome", "partial");
+  await expect(section.locator("[data-part=history-marker][data-kind=confusion]")).toContainText("Flagged as hard");
+  await expect(attempts.nth(0).locator("[data-part=history-change]")).toHaveText(/^\d+% → \d+%$/);
+
+  await attempts.nth(0).getByRole("button").click();
+  await expect(attempts.nth(0).locator("[data-part=history-response]")).toHaveText("1010");
+  await expect(attempts.nth(0).locator("[data-part=history-key]")).toHaveText("11111010");
+  await attempts.nth(1).getByRole("button").click();
+  await expect(attempts.nth(1).locator("[data-part=history-grader]")).toContainText("Right idea, but the result wasn't written out.");
+  await expect(attempts.nth(1).locator("[data-part=history-grader]")).toContainText("Got: copy the sign bit");
+
+  await page.keyboard.press("Escape");
+  await expect(modal).toHaveCount(0);
 });

@@ -736,6 +736,9 @@ export function OrcaProvider({ children }: { children: React.ReactNode }) {
             grader: e.grader,
             source: e.source,
             sessionId: e.sessionId,
+            ...(e.response ? { response: e.response } : {}),
+            ...(e.grader === "rubric" && e.graderNote ? { graderNote: e.graderNote } : {}),
+            ...(e.grader === "rubric" && e.errorType ? { errorType: e.errorType } : {}),
           }),
         { onFail: () => failedSessions.current.add(e.sessionId) },
       );

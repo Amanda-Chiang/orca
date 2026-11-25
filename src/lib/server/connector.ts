@@ -366,7 +366,7 @@ export function connectorTools(db: OrcaSupabase, ownerId: string, now: () => Dat
   };
 
   /** One answer event from the connector, recorded against the student's snapshot, with what Claude reported (help, confidence, the kind of mistake). */
-  const record = async (a: { courseId: string; topicId: string; objectiveId: string; questionId: string; tier: AnswerEvent["tier"]; outcome: AnswerEvent["outcome"]; grader: AnswerEvent["grader"]; sessionId: string; response?: string; help?: AnswerEvent["help"]; confidence?: AnswerEvent["confidence"]; errorType?: AnswerEvent["errorType"] }): Promise<RecordedAnswer | { error: string }> => {
+  const record = async (a: { courseId: string; topicId: string; objectiveId: string; questionId: string; tier: AnswerEvent["tier"]; outcome: AnswerEvent["outcome"]; grader: AnswerEvent["grader"]; sessionId: string; response?: string; help?: AnswerEvent["help"]; confidence?: AnswerEvent["confidence"]; errorType?: AnswerEvent["errorType"]; graderNote?: AnswerEvent["graderNote"] }): Promise<RecordedAnswer | { error: string }> => {
     const at = now();
     const event: AnswerEvent = {
       kind: "answer",
@@ -385,6 +385,7 @@ export function connectorTools(db: OrcaSupabase, ownerId: string, now: () => Dat
       ...(a.help ? { help: a.help } : {}),
       ...(a.confidence ? { confidence: a.confidence } : {}),
       ...(a.errorType ? { errorType: a.errorType } : {}),
+      ...(a.graderNote ? { graderNote: a.graderNote } : {}),
     };
     try {
       const r = await recordEvent(supabaseSnapshotStore(db, ownerId, a.courseId), event);
@@ -531,6 +532,8 @@ export function connectorTools(db: OrcaSupabase, ownerId: string, now: () => Dat
       let grader: CheckedAnswer["grader"];
       // The kind of mistake: only the rubric grader names one; choice and exact answers never have one.
       let errorType: CheckedAnswer["errorType"] = null;
+      // What the rubric grader said, kept for the List view's History.
+      let graderNote: AnswerEvent["graderNote"];
       if (q.kind !== "Short answer") {
         // "I don't know" is an answer: a miss with no guess.
         const gaveUp = isDontKnow(words);
@@ -554,10 +557,11 @@ export function connectorTools(db: OrcaSupabase, ownerId: string, now: () => Dat
         feedback = g.body.feedback;
         grader = "rubric";
         errorType = g.body.errorType ?? null;
+        graderNote = { feedback: g.body.feedback, satisfied: g.body.satisfied ?? [], misconception: g.body.misconception ?? null };
       } else {
         return { error: "This question has no key Orca can check against." };
       }
-      const recorded = await record({ courseId, topicId, objectiveId, questionId, tier, outcome, grader, sessionId, response: words, help: report.help, confidence: report.confidence, ...(errorType ? { errorType } : {}) });
+      const recorded = await record({ courseId, topicId, objectiveId, questionId, tier, outcome, grader, sessionId, response: words, help: report.help, confidence: report.confidence, ...(errorType ? { errorType } : {}), ...(graderNote ? { graderNote } : {}) });
       if ("error" in recorded) return recorded;
       return { recorded: true, outcome, grader, feedback, errorType, ...key, objectiveId: recorded.objectiveId, status: recorded.status, ...(recorded.note ? { note: recorded.note } : {}) };
     },

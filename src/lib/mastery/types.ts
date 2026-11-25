@@ -45,6 +45,15 @@ export interface AnswerEvent {
   confidence?: 1 | 2 | 3;
   /** The kind of mistake, when one was named. */
   errorType?: ErrorType;
+  /** What the rubric grader said about a prose answer (shown in the List view's History; never read by the fold). */
+  graderNote?: GraderNote;
+}
+
+/** The rubric grader's verdict as the student saw it: its sentence, the required ideas it found, a misconception it named. */
+export interface GraderNote {
+  feedback: string;
+  satisfied: string[];
+  misconception: string | null;
 }
 
 /**
