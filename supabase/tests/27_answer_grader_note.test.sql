@@ -16,8 +16,9 @@ insert into public.courses (id, owner_id, slug, name, short, variant, pos_x, pos
 insert into public.topics (id, owner_id, course_id, name, review, sort_order, pos_x, pos_y) values (:'topic', :'A', :'course', 'Adders', 'confirmed', 0, 0, 0);
 insert into public.objectives (id, owner_id, course_id, topic_id, name, description, origin, review)
   values (:'obj', :'A', :'course', :'topic', 'Explain carry-save', '', 'inferred', 'confirmed');
-insert into public.questions (id, owner_id, course_id, topic_id, objective_id, kind, topic_name, prompt, options, answer, explanation, sort_order)
-  values (:'q', :'A', :'course', :'topic', :'obj', 'Short answer', 'Adders', 'Why?', '{}', -1, 'Because.', 0);
+insert into public.questions (id, owner_id, course_id, topic_id, objective_id, kind, topic_name, prompt, options, answer, explanation, sort_order, rubric)
+  values (:'q', :'A', :'course', :'topic', :'obj', 'Short answer', 'Adders', 'Why?', '{}', -1, 'Because.', 0,
+    '{"requiredIdeas": ["carries are saved"], "acceptableAlternatives": [], "knownMisconceptions": []}');
 
 -- One answer row per case: grader and note vary.
 create function pg_temp.answer(id text, grader text, note jsonb) returns text language sql as $$
