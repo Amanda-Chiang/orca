@@ -5,6 +5,7 @@
  * small enough come straight from their tables. Evidence and feedback are read a page at a time.
  * Days are UTC, as the cost log counts them (docs/COST-LOG.md).
  */
+import type { ActivityDay } from "@/lib/admin/activity";
 import { type DayRow, type UserRow, type UserSort, fillDays, sortUsers } from "@/lib/admin/stats";
 import { LIMITS, type RateAction } from "@/lib/limits";
 import type { OrcaSupabase } from "@/lib/supabase/server";
@@ -140,6 +141,30 @@ export interface Page<T> {
   more: boolean;
 }
 
+/** What a student said at a feedback prompt (app_feedback, 2026-11-25); dismissals aren't listed. */
+export interface AppFeedbackRow {
+  id: string;
+  ownerId: string;
+  name: string | null;
+  email: string | null;
+  spot: string;
+  rating: "up" | "down" | null;
+  note: string | null;
+  page: string | null;
+  at: string;
+}
+
+/** Who is using Orca this week, from activity_days (2026-11-25). */
+export interface ActivitySummary {
+  activeToday: number;
+  active7d: number;
+  droppedOff: number;
+  gone30d: number;
+  cameBack7d: number;
+  feedback7d: number;
+  feedbackAll: number;
+}
+
 export interface UserDetail {
   profile: { id: string; name: string | null; email: string | null; joined: string; lastActive: string | null; timezone: string; isAdmin: boolean };
   courses: UserCourse[];
@@ -154,14 +179,16 @@ export interface UserDetail {
 
 export const EVIDENCE_PAGE = 200;
 export const FEEDBACK_PAGE = 100;
+export const APP_FEEDBACK_PAGE = 100;
 export const SPEND_DAYS = 30;
 export const FEEDBACK_REASONS = ["wrong-answer", "unclear", "too-easy", "too-hard", "not-my-course", "not-relevant"] as const;
 
 /* ── Reading ── */
 
-async function call<T>(db: OrcaSupabase, fn: "admin_overview" | "admin_users" | "admin_user_courses" | "admin_user_uploads" | "admin_spend" | "admin_user_evidence" | "admin_feedback" | "admin_feedback_counts", args: Record<string, unknown>, what: string): Promise<T> {
+async function call<T>(db: OrcaSupabase, fn: "admin_overview" | "admin_users" | "admin_user_courses" | "admin_user_uploads" | "admin_spend" | "admin_user_evidence" | "admin_feedback" | "admin_feedback_counts" | "admin_app_feedback" | "admin_activity_summary" | "admin_user_activity", args: Record<string, unknown>, what: string): Promise<T> {
   // The functions' argument shapes are in database.types.ts; each caller below passes what its function takes.
-  const { data, error } = await db.rpc(fn, args as never);
+  // The three functions of migration 20261125110000 aren't in database.types.ts yet (no local stack to regenerate it); the SQL is the contract.
+  const { data, error } = await db.rpc(fn as never, args as never);
   if (error) throw new Error(`Couldn't read ${what}: ${error.message}`);
   if (data === null || data === undefined) throw new Error(`Couldn't read ${what}: the database answered nothing`);
   return data as unknown as T;
@@ -245,6 +272,44 @@ export async function feedbackCounts(db: OrcaSupabase): Promise<FeedbackCount[]>
     student: (c.student as string | null) ?? null,
     ups: num(c.ups),
     downs: num(c.downs),
+  }));
+}
+
+export async function appFeedback(db: OrcaSupabase, offset = 0, limit = APP_FEEDBACK_PAGE): Promise<Page<AppFeedbackRow>> {
+  const rows = list<Record<string, unknown>>(await call(db, "admin_app_feedback", { p_offset: offset, p_limit: limit }, "the feedback"), "the feedback").map((f) => ({
+    id: String(f.id),
+    ownerId: String(f.owner_id),
+    name: (f.name as string | null) ?? null,
+    email: (f.email as string | null) ?? null,
+    spot: String(f.spot),
+    rating: f.rating === "up" ? ("up" as const) : f.rating === "down" ? ("down" as const) : null,
+    note: (f.note as string | null) ?? null,
+    page: (f.page as string | null) ?? null,
+    at: String(f.at),
+  }));
+  return { rows, offset, limit, more: rows.length === limit };
+}
+
+export async function activitySummary(db: OrcaSupabase): Promise<ActivitySummary> {
+  const a = await call<Record<string, unknown>>(db, "admin_activity_summary", {}, "the activity summary");
+  return {
+    activeToday: num(a.active_today),
+    active7d: num(a.active_7d),
+    droppedOff: num(a.dropped_off),
+    gone30d: num(a.gone_30d),
+    cameBack7d: num(a.came_back_7d),
+    feedback7d: num(a.feedback_7d),
+    feedbackAll: num(a.feedback_all),
+  };
+}
+
+/** One student's active UTC days, newest first (at most 180). */
+export async function userActivity(db: OrcaSupabase, owner: string): Promise<ActivityDay[]> {
+  return list<Record<string, unknown>>(await call(db, "admin_user_activity", { uid: owner }, "the user's activity"), "the user's activity").map((d) => ({
+    day: String(d.day),
+    firstAt: String(d.first_at),
+    lastAt: String(d.last_at),
+    beats: num(d.beats),
   }));
 }
 

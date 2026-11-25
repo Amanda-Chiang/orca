@@ -5,7 +5,8 @@ import { AdminPage, Bar, NotRecorded, Section, Table, Tiles } from "@/components
 import { day, duration, int, money, when, yesNo } from "@/components/admin/format";
 import { barWidths } from "@/lib/admin/stats";
 import { requireAdmin } from "@/lib/server/admin";
-import { EVIDENCE_PAGE, userDetail } from "@/lib/server/admin-queries";
+import { activityGaps, activityStrip } from "@/lib/admin/activity";
+import { EVIDENCE_PAGE, userActivity, userDetail } from "@/lib/server/admin-queries";
 
 /** /admin/users/[id]?evidence=offset: one account's courses, uploads, spend, sessions, evidence, feedback and events. Admins only. */
 export const dynamic = "force-dynamic";
@@ -18,8 +19,11 @@ export default async function AdminUserPage({ params, searchParams }: { params: 
   const offset = Number.isFinite(offsetRaw) ? Math.max(0, Math.floor(offsetRaw)) : 0;
   if (!id.success) notFound();
   const { db } = await requireAdmin(`/admin/users/${id.data}${offset ? `?evidence=${offset}` : ""}`);
-  const d = await userDetail(db, id.data, { evidenceOffset: offset });
+  const [d, activity] = await Promise.all([userDetail(db, id.data, { evidenceOffset: offset }), userActivity(db, id.data)]);
   if (!d) notFound();
+  const today = new Date().toISOString().slice(0, 10);
+  const strip = activityStrip(activity, today);
+  const gaps = activityGaps(activity, today);
   const widths = barWidths(d.spend.byDay);
   const spentDays = d.spend.byDay.filter((r) => r.calls > 0);
   const answers = d.evidence.rows.filter((e) => e.kind === "answer");
@@ -40,6 +44,25 @@ export default async function AdminUserPage({ params, searchParams }: { params: 
       <p className="text-[13px] text-wisteria-deep">
         <NotRecorded what="Page views and time on the app" /> · time in sessions is in the sessions table.
       </p>
+
+      <Section title="Activity" aside={`${int(activity.length)} active days · last 90 shown, UTC`}>
+        <div className="flex flex-wrap gap-[3px]" data-part="admin-activity-strip" aria-label="Active days, oldest to newest">
+          {strip.map((s) => (
+            <span key={s.day} title={`${s.day}${s.active ? ` · ${s.beats ? `${s.beats} heartbeats` : "inferred from older rows"}` : ""}`} className={`inline-block h-[14px] w-[14px] rounded-[3px] ${s.active ? "bg-wisteria" : "bg-alice"}`} />
+          ))}
+        </div>
+        {gaps.length === 0 ? (
+          <p className="text-[14px] text-wisteria-deep">{activity.length ? "No gap of 7 days or more." : "Never seen with the app open."}</p>
+        ) : (
+          <ul className="flex flex-col gap-[2px] text-[14px]" data-part="admin-activity-gaps">
+            {gaps.map((g) => (
+              <li key={g.from}>
+                {g.to ? `Away ${int(g.days)} days: last seen ${g.from}, came back ${g.to}.` : `Dropped off: last seen ${g.from}, ${int(g.days)} days ago.`}
+              </li>
+            ))}
+          </ul>
+        )}
+      </Section>
 
       <Section title="Courses" aside={`${int(d.courses.length)}`}>
         <Table

@@ -30,6 +30,7 @@ import { type TopUpStatus, useTopUp } from "@/hooks/useTopUp";
 import { goBack } from "@/lib/nav-history";
 import { RateAnswered, RateUnanswered } from "./RateQuestion";
 import { shuffleChoices } from "@/lib/shuffle-choices";
+import { FeedbackPrompt } from "@/components/feedback/FeedbackPrompt";
 import { QuizEnd } from "@/components/quiz/QuizEnd";
 import { Pill } from "@/components/review/parts";
 import { fadeUp, stagger } from "@/lib/motion";
@@ -523,7 +524,12 @@ export function QuizRunner({ course, items: firstItems, mode, title, backHref, a
     return (
       <QuizEnd
         topicName={title}
-        extra={<TopUpNote status={topUp.status} />}
+        extra={
+          <>
+            <TopUpNote status={topUp.status} />
+            <FeedbackPrompt spot="session-end" question="How was this session?" className="mt-[10px] w-full max-w-[520px] text-left" />
+          </>
+        }
         correct={correct}
         total={total - ungraded - skipped}
         skipped={skipped}

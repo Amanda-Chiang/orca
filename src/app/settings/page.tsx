@@ -17,6 +17,7 @@ import { NotesForOrca } from "@/components/config/NotesForOrca";
 import { AccountCard, SignOutButton, TimezoneRow } from "@/components/settings/Account";
 import { CanvasConnectionCard } from "@/components/settings/CanvasConnection";
 import { ClaudeConnectorCard } from "@/components/settings/ClaudeConnector";
+import { FeedbackCard } from "@/components/settings/FeedbackCard";
 import { fadeSwap, fadeUp, stagger } from "@/lib/motion";
 import { Button } from "@/components/ui/Button";
 
@@ -40,6 +41,7 @@ async function saveMarkerNotes(markers: string | null) {
 const SECTIONS = [
   { key: "preferences", label: "Preferences" },
   { key: "connections", label: "Connections" },
+  { key: "feedback", label: "Feedback" },
   { key: "account", label: "Account" },
 ] as const;
 
@@ -90,6 +92,7 @@ function SettingsBody() {
                       <CanvasConnectionCard />
                     </>
                   )}
+                  {section.key === "feedback" && <FeedbackCard />}
                   {section.key === "account" && <AccountCard />}
                 </div>
               )}

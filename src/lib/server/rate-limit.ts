@@ -24,6 +24,7 @@ const WHAT: Record<RateAction, string> = {
   heartbeat: "heartbeats",
   timer: "timer starts and stops",
   runsCheck: "run checks",
+  feedback: "feedback messages",
 };
 
 function spell(seconds: number): string {
