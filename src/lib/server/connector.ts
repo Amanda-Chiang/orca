@@ -25,7 +25,7 @@ import { dayStartIn } from "@/lib/jobs/budget";
 import { startFlagTopUpJob } from "@/lib/server/jobs/start";
 import { rateLimit } from "@/lib/server/rate-limit";
 import type { QuizQuestion } from "@/lib/data";
-import { cleanAnswer, gradeExact, isDontKnow, normaliseExact } from "@/lib/grading";
+import { cleanAnswer, gradeExact, graderNoteOf, isDontKnow, normaliseExact } from "@/lib/grading";
 import { gradeAnswer } from "@/lib/server/grade";
 import { dayKeyIn, stateAt } from "@/lib/mastery/objective-state";
 import { NewerRulesError, VersionConflictError, readCourseState, recordEvent } from "@/lib/mastery/snapshots";
@@ -557,7 +557,7 @@ export function connectorTools(db: OrcaSupabase, ownerId: string, now: () => Dat
         feedback = g.body.feedback;
         grader = "rubric";
         errorType = g.body.errorType ?? null;
-        graderNote = { feedback: g.body.feedback, satisfied: g.body.satisfied ?? [], misconception: g.body.misconception ?? null };
+        graderNote = graderNoteOf(g.body);
       } else {
         return { error: "This question has no key Orca can check against." };
       }

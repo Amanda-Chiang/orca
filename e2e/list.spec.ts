@@ -105,7 +105,7 @@ test("History: a row opens its topic's attempts, with the answer typed in a quiz
 test("History: an essay answer in a quick review keeps the rubric grader's note, the kind of mistake and the words", async ({ page, student }) => {
   const prose: QuizQuestion = {
     id: crypto.randomUUID(), kind: "Short answer", tier: "mechanism", topic: "Two's Complement", prompt: "Why does sign extension copy the top bit?", options: [], answer: -1,
-    rubric: { requiredIdeas: ["The top bit is the sign"], acceptableAlternatives: [], knownMisconceptions: [] }, explanation: "The new bits' weights cancel.", anchor: { locator: "slide 9", excerpt: "fixture" }, objectiveId: F.signExtend,
+    rubric: { requiredIdeas: ["The top bit is the sign"], acceptableAlternatives: [], knownMisconceptions: [{ description: "thinks zeros are added", indicativePhrasing: ["add zeros"] }] }, explanation: "The new bits' weights cancel.", anchor: { locator: "slide 9", excerpt: "fixture" }, objectiveId: F.signExtend,
   };
   const bank = FIXTURE_STATE.questionBank[F.course];
   await seedState(student, {

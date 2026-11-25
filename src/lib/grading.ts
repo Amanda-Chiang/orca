@@ -11,7 +11,7 @@
  */
 import { z } from "zod";
 import type { AnswerRubric } from "./data";
-import type { ErrorType } from "./mastery/types.ts";
+import type { ErrorType, GraderNote } from "./mastery/types.ts";
 import { UNTRUSTED_POLICY, untrustedBlock } from "./untrusted/encode.ts";
 import { sanitize } from "./untrusted/sanitize.ts";
 
@@ -251,6 +251,19 @@ export function validateGrade(result: GradeResult, rubric: AnswerRubric): GradeR
   const feedback = sanitize(result.feedback ?? "", 4000).text.replace(/\n+/g, " ").trim() || FALLBACK_FEEDBACK[result.outcome];
   const errorType = result.outcome !== "correct" && result.errorType && (ERROR_TYPES as readonly string[]).includes(result.errorType) ? result.errorType : null;
   return { outcome: result.outcome, satisfied, misconception, feedback, errorType };
+}
+
+/** The most of each grader-note field kept with an answer (evidence_events.grader_note's check). */
+export const GRADER_NOTE_MAX_CHARS = 2000;
+
+/**
+ * What the rubric grader said, as kept with the answer for the List view's History. Feedback can run
+ * to 4,000 characters (validateGrade), so each field is cut at GRADER_NOTE_MAX_CHARS with a visible
+ * "…": a long note must never make the answer itself fail to save.
+ */
+export function graderNoteOf(grade: Pick<GradeResult, "feedback" | "satisfied" | "misconception">): GraderNote {
+  const clip = (s: string) => (s.length > GRADER_NOTE_MAX_CHARS ? `${s.slice(0, GRADER_NOTE_MAX_CHARS - 1)}…` : s);
+  return { feedback: clip(grade.feedback), satisfied: (grade.satisfied ?? []).slice(0, 50).map(clip), misconception: grade.misconception ? clip(grade.misconception) : null };
 }
 
 const FALLBACK_FEEDBACK: Record<GradeOutcome, string> = {

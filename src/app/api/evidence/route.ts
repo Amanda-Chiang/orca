@@ -1,6 +1,6 @@
 import { after } from "next/server";
 import { z } from "zod";
-import { ANSWER_MAX_CHARS, ERROR_TYPES } from "@/lib/grading";
+import { ANSWER_MAX_CHARS, ERROR_TYPES, GRADER_NOTE_MAX_CHARS } from "@/lib/grading";
 import { BROWSER_FLAG_SOURCES } from "@/lib/mastery/flags";
 import { NewerRulesError, VersionConflictError, recordEvent } from "@/lib/mastery/snapshots";
 import type { AnswerEvent, EvidenceEvent } from "@/lib/mastery/types";
@@ -43,9 +43,9 @@ const Answer = z.object({
   response: z.string().trim().min(1).max(ANSWER_MAX_CHARS * 5).optional(),
   graderNote: z
     .object({
-      feedback: z.string().max(2000),
-      satisfied: z.array(z.string().max(2000)).max(50),
-      misconception: z.string().max(2000).nullable(),
+      feedback: z.string().max(GRADER_NOTE_MAX_CHARS),
+      satisfied: z.array(z.string().max(GRADER_NOTE_MAX_CHARS)).max(50),
+      misconception: z.string().max(GRADER_NOTE_MAX_CHARS).nullable(),
     })
     .strict()
     .optional(),

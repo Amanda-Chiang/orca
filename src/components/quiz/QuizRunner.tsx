@@ -24,7 +24,7 @@ import { ProgressBar } from "@/components/ui/ProgressBar";
 import { RoundButton } from "@/components/ui/RoundButton";
 import { TruthTable } from "@/components/quiz/TruthTable";
 import { ShortAnswer } from "@/components/quiz/ShortAnswer";
-import { type GradeResult, gradeExact, isDontKnow } from "@/lib/grading";
+import { type GradeResult, gradeExact, graderNoteOf, isDontKnow } from "@/lib/grading";
 import { useServerStatus } from "@/hooks/useServerModel";
 import { type TopUpStatus, useTopUp } from "@/hooks/useTopUp";
 import { goBack } from "@/lib/nav-history";
@@ -249,7 +249,7 @@ export function QuizRunner({ course, items: firstItems, mode, title, backHref, a
         ...(said?.response?.trim() ? { response: said.response.trim() } : {}),
         ...(grader === "rubric" && said?.grade
           ? {
-              graderNote: { feedback: said.grade.feedback, satisfied: said.grade.satisfied ?? [], misconception: said.grade.misconception ?? null },
+              graderNote: graderNoteOf(said.grade),
               ...(said.grade.errorType ? { errorType: said.grade.errorType } : {}),
             }
           : {}),
