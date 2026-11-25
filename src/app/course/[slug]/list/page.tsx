@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useCallback, useEffect, useState } from "react";
+import { use, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
 import { DiveModal } from "@/components/quiz/DiveModal";
@@ -8,6 +8,8 @@ import { durationSeconds } from "@/lib/mastery/session";
 import { weakSpotStatus, type WeakSpotStatus } from "@/lib/mastery/progress";
 import { isInRotation } from "@/lib/mastery/flags";
 import { StatusSlider } from "@/components/course/StatusSlider";
+import { TopicHistory } from "@/components/course/TopicHistory";
+import type { QuizQuestion } from "@/lib/data";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/cn";
 import { AtlasSwitch } from "@/components/atlas/AtlasSwitch";
@@ -27,13 +29,17 @@ import { fadeUp, popIn, stagger } from "@/lib/motion";
  * spots mastered (MarkEvent, rules v5), to Needs review flags them hard again; a pop-up confirms.
  * All, Current and Previous tabs (owner, 2026-11-22): mastered topics move to Previous, with the day
  * they were mastered; All lists the current ones first, then the mastered.
+ * History (owner, 2026-11-25): each row opens its topic's past attempts (TopicHistory).
  */
 export default function ListPage({ params }: PageProps<"/course/[slug]/list">) {
   const { slug } = use(params);
   const [diving, setDiving] = useState<{ id: string; name: string } | null>(null);
   const closeDive = useCallback(() => setDiving(null), []);
   const router = useRouter();
-  const { hydrated, configs, markMastered, flagObjectives } = useOrca();
+  const { hydrated, configs, markMastered, flagObjectives, objectives, questionBank } = useOrca();
+  // History (owner, 2026-11-25): a topic's past attempts, opened from its row.
+  const [history, setHistory] = useState<{ id: string; name: string } | null>(null);
+  const closeHistory = useCallback(() => setHistory(null), []);
   // A status the student dragged a topic to: waiting for the pop-up's answer, then (confirmed) held on
   // the slider until the server's snapshots say the same, since status is read from them, not from
   // the event the browser just sent.
@@ -45,6 +51,8 @@ export default function ListPage({ params }: PageProps<"/course/[slug]/list">) {
   const cram = useCramming(course?.id);
   const [showOthers, setShowOthers] = useState(false);
   const m = course ? mastery[course.id] : undefined;
+  const bank = course ? questionBank[course.id] : undefined;
+  const questionsById = useMemo(() => new Map<string, QuizQuestion>(Object.values(bank ?? {}).flat().map((q) => [q.id, q])), [bank]);
   const settled = pending?.confirmed && m ? weakSpotStatus(m.topicObjectives.get(pending.topicId) ?? [], m.objectives) === pending.to : false;
   useEffect(() => {
     if (!pending?.confirmed) return;
@@ -209,6 +217,14 @@ export default function ListPage({ params }: PageProps<"/course/[slug]/list">) {
                         })
                       }
                     />
+                    <button
+                      type="button"
+                      onClick={() => setHistory({ id: topic.id, name: topic.name })}
+                      data-part="weak-row-history"
+                      className="pressable shrink-0 rounded-pill bg-parchment px-[14px] py-[7px] text-[13px] font-bold text-prussian ring-2 ring-inset ring-alice-deep lip-2 lip-alice"
+                    >
+                      History
+                    </button>
                     {!offExam && <button
                       type="button"
                       onClick={() => setDiving({ id: topic.id, name: topic.name })}
@@ -277,6 +293,7 @@ export default function ListPage({ params }: PageProps<"/course/[slug]/list">) {
           </motion.div>
         )}
       </AnimatePresence>
+      <TopicHistory topic={history} mastery={m} catalogue={objectives[course.id] ?? {}} questions={questionsById} onClose={closeHistory} />
       <DiveModal
         topic={diving}
         initialMinutes={durationSeconds((configs[course.id] ?? DEFAULT_CONFIG).deep.duration) / 60}

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { ANSWER_MAX_CHARS, GRADE_SYSTEM, GradeSchema, RubricSchema, cleanAnswer, gradeExact, gradePrompt, isExpressionAnswer, normaliseExact, validateGrade } from "../src/lib/grading.ts";
+import { ANSWER_MAX_CHARS, GRADER_NOTE_MAX_CHARS, GRADE_SYSTEM, GradeSchema, RubricSchema, cleanAnswer, gradeExact, gradePrompt, graderNoteOf, isExpressionAnswer, normaliseExact, validateGrade } from "../src/lib/grading.ts";
 
 test("normaliseExact ignores case, spacing and a trailing period, and unifies multiplication signs", () => {
   assert.equal(normaliseExact(" X1 · X2' . "), "x1*x2'");
@@ -123,4 +123,14 @@ test("the rubric grader names the kind of mistake from the fixed list, or null; 
   assert.equal(validateGrade({ outcome: "incorrect", feedback: "No." }, rubric).errorType, null);
   assert.match(GRADE_SYSTEM, /errorType \(arithmetic, units, sign, misread, notation or concept\)/);
   assert.match(gradePrompt("Q?", rubric, "a"), /"errorType": "arithmetic" \| "units" \| "sign" \| "misread" \| "notation" \| "concept" \| null/);
+});
+
+test("graderNoteOf keeps the grader's words, cut with a visible … where the database's check would refuse them", () => {
+  assert.deepEqual(graderNoteOf({ feedback: "Close.", satisfied: ["the sign bit"], misconception: null }), { feedback: "Close.", satisfied: ["the sign bit"], misconception: null });
+  assert.deepEqual(graderNoteOf({ feedback: "Right." }), { feedback: "Right.", satisfied: [], misconception: null });
+  const long = graderNoteOf({ feedback: "x".repeat(4000), satisfied: ["y".repeat(3000)], misconception: "z".repeat(2500) });
+  assert.equal(long.feedback!.length, GRADER_NOTE_MAX_CHARS);
+  assert.ok(long.feedback!.endsWith("…"));
+  assert.equal(long.satisfied[0].length, GRADER_NOTE_MAX_CHARS);
+  assert.equal(long.misconception?.length, GRADER_NOTE_MAX_CHARS);
 });
