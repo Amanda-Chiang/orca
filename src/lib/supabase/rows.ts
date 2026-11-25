@@ -66,12 +66,11 @@ export function eventFromRow(r: EvidenceRow): EvidenceEvent {
   };
 }
 
-/** The grader_note column as the type (its CHECK constraint holds the shape; older or partial notes read safely). */
+/** The grader_note column as the type (its CHECK constraint holds the shape; a part we don't have is left out). */
 function graderNoteFromJson(j: EvidenceRow["grader_note"]): GraderNote {
   const o = (j && typeof j === "object" && !Array.isArray(j) ? j : {}) as Record<string, unknown>;
-  if (typeof o.feedback !== "string") throw new Error("A grader note has no feedback");
   return {
-    feedback: o.feedback,
+    ...(typeof o.feedback === "string" ? { feedback: o.feedback } : {}),
     satisfied: Array.isArray(o.satisfied) ? o.satisfied.filter((x): x is string => typeof x === "string") : [],
     misconception: typeof o.misconception === "string" ? o.misconception : null,
   };

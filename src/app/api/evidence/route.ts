@@ -43,7 +43,7 @@ const Answer = z.object({
   response: z.string().trim().min(1).max(ANSWER_MAX_CHARS * 5).optional(),
   graderNote: z
     .object({
-      feedback: z.string().max(GRADER_NOTE_MAX_CHARS),
+      feedback: z.string().max(GRADER_NOTE_MAX_CHARS).optional(),
       satisfied: z.array(z.string().max(GRADER_NOTE_MAX_CHARS)).max(50),
       misconception: z.string().max(GRADER_NOTE_MAX_CHARS).nullable(),
     })

@@ -1,5 +1,5 @@
 -- The rubric grader's note (2026-11-25, List view History): only on a rubric-graded answer, an object
--- with a string feedback; satisfied an array and misconception a string or null when present.
+-- whose parts may be missing; feedback a string, satisfied an array, misconception a string or null when present.
 begin;
 create extension if not exists pgtap with schema extensions;
 select plan(10);
@@ -37,8 +37,8 @@ select throws_ok(pg_temp.answer('b4000000-0000-4000-8000-000000000271', 'choice'
   '23514', null, 'a choice answer carries no grader note');
 select throws_ok(pg_temp.answer('b5000000-0000-4000-8000-000000000271', 'self', '{"feedback": "Right."}'),
   '23514', null, 'a self-marked answer carries no grader note');
-select throws_ok(pg_temp.answer('b6000000-0000-4000-8000-000000000271', 'rubric', '{"satisfied": []}'),
-  '23514', null, 'a note needs its feedback');
+select lives_ok(pg_temp.answer('b6000000-0000-4000-8000-000000000271', 'rubric', '{"satisfied": []}'),
+  'a note may leave out its feedback');
 select throws_ok(pg_temp.answer('b7000000-0000-4000-8000-000000000271', 'rubric', '{"feedback": 3}'),
   '23514', null, 'feedback is a string');
 select throws_ok(pg_temp.answer('b8000000-0000-4000-8000-000000000271', 'rubric', '{"feedback": "Close.", "satisfied": "the sign bit"}'),

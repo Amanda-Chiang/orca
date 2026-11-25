@@ -213,7 +213,7 @@ function HistoryRow({ entry, questions }: { entry: HistoryEntry; questions: Read
           {e.kind === "answer" && e.graderNote && (
             <div data-part="history-grader">
               <Label>What the grader said</Label>
-              <p>{e.graderNote.feedback}</p>
+              {e.graderNote.feedback && <p>{e.graderNote.feedback}</p>}
               {e.graderNote.satisfied.length > 0 && <p className="text-good-text">Got: {e.graderNote.satisfied.join(" · ")}</p>}
               {e.graderNote.misconception && <p className="text-bad-text">Mix-up: {e.graderNote.misconception}</p>}
             </div>

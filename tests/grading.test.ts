@@ -129,8 +129,8 @@ test("graderNoteOf keeps the grader's words, cut with a visible … where the da
   assert.deepEqual(graderNoteOf({ feedback: "Close.", satisfied: ["the sign bit"], misconception: null }), { feedback: "Close.", satisfied: ["the sign bit"], misconception: null });
   assert.deepEqual(graderNoteOf({ feedback: "Right." }), { feedback: "Right.", satisfied: [], misconception: null });
   const long = graderNoteOf({ feedback: "x".repeat(4000), satisfied: ["y".repeat(3000)], misconception: "z".repeat(2500) });
-  assert.equal(long.feedback.length, GRADER_NOTE_MAX_CHARS);
-  assert.ok(long.feedback.endsWith("…"));
+  assert.equal(long.feedback!.length, GRADER_NOTE_MAX_CHARS);
+  assert.ok(long.feedback!.endsWith("…"));
   assert.equal(long.satisfied[0].length, GRADER_NOTE_MAX_CHARS);
   assert.equal(long.misconception?.length, GRADER_NOTE_MAX_CHARS);
 });

@@ -49,9 +49,9 @@ export interface AnswerEvent {
   graderNote?: GraderNote;
 }
 
-/** The rubric grader's verdict as the student saw it: its sentence, the required ideas it found, a misconception it named. */
+/** The rubric grader's verdict as the student saw it: its sentence, the required ideas it found, a misconception it named. Any part may be missing. */
 export interface GraderNote {
-  feedback: string;
+  feedback?: string;
   satisfied: string[];
   misconception: string | null;
 }

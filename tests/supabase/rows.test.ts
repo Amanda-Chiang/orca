@@ -137,9 +137,9 @@ test("an answer without a note writes null, and a row from a database without th
   assert.equal("response" in read, false, "an answer saved before answers kept their words has none");
 });
 
-test("a partial grader note reads with empty defaults; one without feedback is refused", () => {
+test("a partial grader note reads with what it has", () => {
   const row = { ...eventToRow(answer), owner_id: "u" };
   assert.deepEqual((eventFromRow({ ...row, grader_note: { feedback: "Right." } }) as AnswerEvent).graderNote, { feedback: "Right.", satisfied: [], misconception: null });
   assert.deepEqual((eventFromRow({ ...row, grader_note: { feedback: "Right.", satisfied: ["a", 3], misconception: 7 } }) as AnswerEvent).graderNote, { feedback: "Right.", satisfied: ["a"], misconception: null });
-  assert.throws(() => eventFromRow({ ...row, grader_note: { satisfied: [] } }), /no feedback/);
+  assert.deepEqual((eventFromRow({ ...row, grader_note: { satisfied: ["a"] } }) as AnswerEvent).graderNote, { satisfied: ["a"], misconception: null });
 });
