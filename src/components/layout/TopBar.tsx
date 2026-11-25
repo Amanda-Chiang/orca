@@ -9,6 +9,7 @@ import { OrcaLogo } from "@/components/brand/OrcaLogo";
 import { IconLogOut } from "@/components/icons";
 import { isPublicPath } from "@/lib/auth/paths";
 import { useCramming, useOrca } from "@/lib/store";
+import { useCramResults } from "@/lib/cram-exit";
 
 /**
  * Figma: Header/Top Bar (117:193) on every screen, Header/Top Bar Compact (117:194) under 640 px.
@@ -27,7 +28,9 @@ export function TopBar() {
   const { status, avatar, courses } = useOrca();
   // Over a course in cram mode: the blue of cram mode's path rims (alice-deep under its tokens), with cram mode's tokens for what's on it (owner, 2026-11-22).
   const slug = CRAM_PAGES.exec(pathname)?.[1];
-  const cram = useCramming(slug ? courses.find((c) => c.slug === slug)?.id : undefined);
+  // The cram's results keep cram mode's look though the cram has ended (src/lib/cram-exit.ts).
+  const results = useCramResults();
+  const cram = Boolean(useCramming(slug ? courses.find((c) => c.slug === slug)?.id : undefined)) || (slug !== undefined && results === slug);
   const { preview } = useAvatarPreview();
   const guest = isPublicPath(pathname) || status === "signed-out";
   const creature = guest ? preview : avatar;

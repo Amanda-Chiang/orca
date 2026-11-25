@@ -1,7 +1,9 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { use, useEffect, useLayoutEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { clearCramSurface, cramResultsHref, markCramSurface, requestCramStop, setCramResults, takeCramStop } from "@/lib/cram-exit";
 import { AnimatePresence, motion } from "motion/react";
 import { cardExam, daysUntil, examObjectives } from "@/lib/course/exam-card";
 import { examMap, rulesLine } from "@/lib/course/exam-map";
@@ -23,6 +25,8 @@ import { useConnectorStatus, useCramPlan, useStudyLog, type StudySplit } from "@
 import { CramProgress } from "@/components/course/CramProgress";
 import { WeakSpotBubbles } from "@/components/course/WeakSpotBubbles";
 import { CramCurtain } from "@/components/course/CramCurtain";
+import { useElapsed, useStudyTime } from "@/components/study/StudyTime";
+import { clock } from "@/lib/study-timer";
 import { MASTERY_LABEL } from "@/components/review/parts";
 import { fadeUp, overlayFade, popIn, stagger } from "@/lib/motion";
 
@@ -65,11 +69,41 @@ export default function CramPage({ params, searchParams }: PageProps<"/course/[s
   const [editing, setEditing] = useState(sp.edit === "1");
   const [tab, setTab] = useState<CramTab>(sp.tab === "progress" ? "progress" : "today");
   const today = dayKey(new Date(nowMs).toISOString());
-  const exam = course ? cardExam(exams, course.id, today) : null;
+  // `?ended=<examId>`: the cram's results, where Stop cramming leads (src/lib/cram-exit.ts).
+  const endedId = typeof sp.ended === "string" ? sp.ended : null;
+  const ended = (course && endedId && exams.find((e) => e.id === endedId && e.courseId === course.id)) || null;
+  const exam = ended ?? (course ? cardExam(exams, course.id, today) : null);
   const m = course ? mastery[course.id] : undefined;
   const log = useStudyLog(course?.id, exam?.id);
   const planned = useCramPlan(course, exam, m, log);
   const connected = useConnectorStatus(Boolean(exam?.cramming));
+  const router = useRouter();
+  // The day the welcome last showed for this course, read once when the page opens (kept in this browser), so it stays up while it's read.
+  // Read when the course is first known (the page can open before the store has it). `orca.cramWelcome` "off" turns it off in this browser (the browser tests set it).
+  const [seenRead, setSeenRead] = useState<{ courseId: string; value: string | null } | null>(null);
+  if (course && seenRead?.courseId !== course.id) setSeenRead({ courseId: course.id, value: localStorage.getItem("orca.cramWelcome") === "off" ? "off" : localStorage.getItem(welcomeKey(course.id)) });
+  const welcomeSeen = seenRead?.value ?? null;
+  const [welcomeDone, setWelcomeDone] = useState(false);
+  // Arriving from Stop cramming ends the cram, once; the same URL opened otherwise while cramming is just the plan.
+  const endedKey = ended?.id;
+  const endedCramming = ended?.cramming;
+  useEffect(() => {
+    if (!endedKey || !endedCramming || !course) return;
+    const stop = takeCramStop(endedKey);
+    if (stop === "new") updateExam(endedKey, { cramming: false });
+    else if (stop === "none") router.replace(`/course/${course.slug}/cram`);
+  }, [endedKey, endedCramming, course, updateExam, router]);
+  // While the results show, the top bar stays in cram mode's colour; closing them surfaces the next page.
+  const resultsSlug = ended ? course?.slug : undefined;
+  useLayoutEffect(() => {
+    if (!resultsSlug) return;
+    setCramResults(resultsSlug);
+    clearCramSurface();
+    return () => {
+      setCramResults(null);
+      markCramSurface();
+    };
+  }, [resultsSlug]);
 
   if (!course || !m) {
     return (
@@ -100,8 +134,50 @@ export default function CramPage({ params, searchParams }: PageProps<"/course/[s
   const candidates = examObjectives({ topicIds: exam.topicIds, scope: null }, course.topics, catalogue);
   const days = daysUntil(exam.date, today);
   const cramming = exam.cramming && planned !== null && !editing;
+  // The day's welcome: the first time the plan shows on a day, unless a tab was asked for.
+  const welcome = cramming && !welcomeDone && sp.tab === undefined && welcomeSeen !== "off" && welcomeSeen !== welcomeMark(exam.id, today);
   const mine = materials.filter((mat) => mat.courseId === course.id);
   const vault = mine.filter((mat) => mat.heldBack);
+  const vaultNames = new Map(vault.map((v) => [v.id, v.filename]));
+
+  if (ended) {
+    return (
+      <Screen bg="ocean" className="overflow-auto" data-cram="1">
+        <header className="flex items-center gap-[12px] px-[24px] pt-[20px]">
+          <BackButton href={`/course/${course.slug}`} />
+          <div>
+            <h1 className="text-[40px] font-bold leading-none text-prussian">Your cram for {exam.title}</h1>
+            <p className="mt-[5px] text-[14px] font-medium text-wisteria-deep">
+              {course.name} · {daysText(days)}
+            </p>
+          </div>
+        </header>
+        <motion.div variants={stagger(0.05, 0.08)} initial="hidden" animate="show" className="flex flex-col gap-[12px] px-[24px] pb-[28px] pt-[20px]" data-part="cram-results">
+          {planned ? (
+            <CramProgress plan={planned.plan} topics={planned.topics} studied={planned.spentMinutes.beforeToday + planned.spentMinutes.today} studiedToday={planned.spentMinutes.today} split={planned.split} examDate={exam.date} courseId={course.id} studyLoaded={planned.studyLoaded} today={today} />
+          ) : (
+            <motion.div variants={fadeUp}>
+              <Card className="px-[22px] pb-[18px] pt-[18px]">
+                <p className="text-[15px] font-semibold text-prussian" data-part="cram-results-empty">
+                  This cram had no time budget, so there&apos;s no plan to measure progress against.
+                </p>
+              </Card>
+            </motion.div>
+          )}
+          <motion.div variants={fadeUp}>
+            <ExamMapCard scope={exam.scope} readiness={planned?.readiness ?? null} vaultNames={vaultNames} hasVault={vault.length > 0} />
+          </motion.div>
+          {/* At the left: the study timer's pill floats at the bottom centre. */}
+          <motion.div variants={fadeUp} className="flex pt-[8px]">
+            <Link href={`/course/${course.slug}`} data-part="cram-results-back" className="pressable rounded-pill bg-parchment px-[22px] py-[10px] text-[17px] font-bold text-prussian ring-2 ring-inset ring-alice-deep lip-3 lip-alice">
+              Back to {course.name}
+            </Link>
+          </motion.div>
+        </motion.div>
+      </Screen>
+    );
+  }
+
   const latest = results.filter((r) => r.courseId === course.id).reduce<QuizResult | null>((a, r) => (!a || r.finishedAt > a.finishedAt ? r : a), null);
   const lastQuiz: LastQuiz | null = latest && { topic: latest.topicId ? (course.topics.find((t) => t.id === latest.topicId)?.name ?? null) : null, mode: latest.mode, correct: latest.correct, total: latest.total, minutes: latest.seconds / 60, day: dayKey(latest.finishedAt) };
 
@@ -137,7 +213,11 @@ export default function CramPage({ params, searchParams }: PageProps<"/course/[s
 
       <motion.div variants={stagger(0.05, 0.08)} initial="hidden" animate="show" className="flex items-start gap-[12px] px-[24px] pb-[28px] pt-[20px]" data-part="cram-page" data-cramming={exam.cramming ? "1" : undefined}>
         {cramming ? (
-          <CrammingView course={course} today={today} plan={planned.plan} topics={planned.topics} spentMinutes={planned.spentMinutes} split={planned.split} studyLoaded={planned.studyLoaded} examDate={exam.date} lastQuiz={lastQuiz} tab={tab} onTab={setTab} objectiveName={(id) => catalogue[id]?.name ?? planned.plan.topics.find((t) => t.id === id)?.name ?? id} vault={vault.map((v) => ({ id: v.id, filename: v.filename }))} lastSession={log?.sessions[0] ?? null} readiness={planned.readiness} scope={exam.scope} onReserve={(id) => updateExam(exam.id, { scope: reserveIn(exam.scope, id) })} connected={connected} onEdit={() => setEditing(true)} onStop={() => updateExam(exam.id, { cramming: false })} />
+          <CrammingView course={course} today={today} plan={planned.plan} topics={planned.topics} spentMinutes={planned.spentMinutes} split={planned.split} studyLoaded={planned.studyLoaded} examDate={exam.date} lastQuiz={lastQuiz} tab={tab} onTab={setTab} objectiveName={(id) => catalogue[id]?.name ?? planned.plan.topics.find((t) => t.id === id)?.name ?? id} vault={vault.map((v) => ({ id: v.id, filename: v.filename }))} lastSession={log?.sessions[0] ?? null} readiness={planned.readiness} scope={exam.scope} onReserve={(id) => updateExam(exam.id, { scope: reserveIn(exam.scope, id) })} connected={connected} onEdit={() => setEditing(true)} onStop={() => {
+              // To the results in this page's place, so Back from them doesn't return to a plan that's over.
+              requestCramStop(exam.id);
+              router.replace(cramResultsHref(course.slug, exam.id));
+            }} welcome={welcome} examId={exam.id} onDismiss={() => setWelcomeDone(true)} />
         ) : (
           <motion.div variants={fadeUp} className="w-[600px]">
             <Card className="px-[28px] pb-[24px] pt-[24px]">
@@ -153,17 +233,85 @@ export default function CramPage({ params, searchParams }: PageProps<"/course/[s
   );
 }
 
-const ADD_EXAM_LABEL = "Add a past or practice exam (kept hidden from you until you sit one)";
+/** The day's welcome, once per course per day of a cram: the exam and the day it last showed. */
+const welcomeKey = (courseId: string) => `orca.cramWelcome.${courseId}`;
+const welcomeMark = (examId: string, day: string) => `${examId}:${day}`;
+
+const ADD_EXAM_LABEL ="Add a past or practice exam (kept hidden from you until you sit one)";
 
 const isVerified = (s: ObjectiveStatus) => s === "verified" || s === "mastered";
 
-function CrammingView({ course, today, plan, topics, spentMinutes, split, studyLoaded, examDate, objectiveName, vault, lastSession, lastQuiz, readiness, scope, onReserve, connected, tab, onTab, onEdit, onStop }: { lastSession: SessionLine | null; lastQuiz: LastQuiz | null; readiness: ExamReadiness | null; course: { id: string; slug: string }; today: string; plan: CramPlan; topics: CramPlanInput["topics"]; spentMinutes: SpentMinutes; split: StudySplit; studyLoaded: boolean; examDate: string; objectiveName: (id: string) => string; vault: Array<{ id: string; filename: string }>; scope: ExamScope | null; onReserve: (materialId: string | null) => void; connected: boolean | null; tab: CramTab; onTab: (tab: CramTab) => void; onEdit: () => void; onStop: () => void }) {
+function CrammingView({ course, today, plan, topics, spentMinutes, split, studyLoaded, examDate, objectiveName, vault, lastSession, lastQuiz, readiness, scope, onReserve, connected, tab, onTab, onEdit, onStop, welcome, onDismiss, examId }: { welcome: boolean; examId: string; onDismiss: () => void; lastSession: SessionLine | null; lastQuiz: LastQuiz | null; readiness: ExamReadiness | null; course: { id: string; slug: string }; today: string; plan: CramPlan; topics: CramPlanInput["topics"]; spentMinutes: SpentMinutes; split: StudySplit; studyLoaded: boolean; examDate: string; objectiveName: (id: string) => string; vault: Array<{ id: string; filename: string }>; scope: ExamScope | null; onReserve: (materialId: string | null) => void; connected: boolean | null; tab: CramTab; onTab: (tab: CramTab) => void; onEdit: () => void; onStop: () => void }) {
   void today;
   const studied = spentMinutes.beforeToday + spentMinutes.today;
   const topicName = new Map(plan.topics.map((t) => [t.id, t.name]));
   const coveredOf = new Map(plan.topics.map((t) => [t.id, t.covered]));
   const statusOf = new Map(topics.flatMap((t) => t.objectives.map((o) => [o.id, o.status] as const)));
   const [scopeOpen, setScopeOpen] = useState(false);
+  // Shown counts as seen for the day: the next visit opens on the tabs.
+  const seenMark = welcome ? welcomeMark(examId, today) : null;
+  useEffect(() => {
+    if (seenMark) localStorage.setItem(welcomeKey(course.id), seenMark);
+  }, [seenMark, course.id]);
+  if (welcome) {
+    const onProgress = () => {
+      onDismiss();
+      onTab("progress");
+    };
+    const dayIndex = plan.days.findIndex((d) => d.today);
+    const first = dayIndex <= 0;
+    return (
+      <div className="flex w-full flex-col gap-[12px]" data-part="cram-welcome" data-first={first ? "1" : undefined}>
+        {/* The day's welcome (owner, 2026-11-25): today's focus first, the whole plan under it; the Today tab's own cards. */}
+        <motion.div variants={fadeUp} className="flex items-start gap-[16px]">
+          <div className="min-w-0 flex-1">
+            <p className="eyebrow text-wisteria-deep">{dayIndex >= 0 ? `Day ${dayIndex + 1} of ${plan.days.length}` : daysText(plan.daysLeft)}</p>
+            <h2 className="text-[34px] font-bold leading-tight text-prussian">{first ? "Welcome to your cram" : "Welcome back"}</h2>
+            <p className="mt-[4px] max-w-[760px] text-[16px] font-medium text-prussian" data-part="cram-welcome-line">
+              {plan.line}
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center gap-[8px]">
+            <WelcomeTimer courseId={course.id} />
+            <Button size="sm" variant="secondary" onClick={onDismiss} data-part="cram-welcome-go">
+              See the full plan
+            </Button>
+          </div>
+        </motion.div>
+        <div className="flex items-stretch gap-[12px]">
+          <motion.div variants={fadeUp} className="w-[480px] shrink-0">
+            <TodayCard plan={plan} topicName={(id) => topicName.get(id) ?? id} slug={course.slug} connected={connected} title="Today's focus" onGo={onDismiss} />
+          </motion.div>
+          {/* The cram's loop (owner, 2026-11-25): study with Claude, which has the plan; Orca keeps the score. */}
+          <motion.div variants={fadeUp} className="min-w-0 flex-1">
+            <Card className="flex h-full flex-col gap-[10px] px-[22px] pb-[18px] pt-[18px]" data-part="cram-welcome-claude">
+              <h2 className="text-[20px] font-bold text-prussian">Cram with Claude, track it here</h2>
+              <p className="text-[15px] font-medium text-prussian">
+                {connected
+                  ? "Open Claude and say “start my cram”: it already has this plan and today's focus. Everything you answer there counts here."
+                  : "Connect Claude and it gets this plan and today's focus. Everything you answer there counts here."}
+              </p>
+              <p className="text-[14px] font-medium text-wisteria-deep">Come back to Orca to see your progress and how ready you are.</p>
+              <div className="mt-auto flex flex-wrap items-center gap-[8px] pt-[4px]">
+                {connected === false && (
+                  <Link href="/settings#connector" onClick={onDismiss} data-part="cram-welcome-connect" className={PILL}>
+                    Connect Claude
+                  </Link>
+                )}
+                <button type="button" onClick={onProgress} data-part="cram-welcome-progress" className={PILL}>
+                  See your progress
+                </button>
+              </div>
+            </Card>
+          </motion.div>
+        </div>
+        <motion.div variants={fadeUp}>
+          <ScheduleCard plan={plan} topicName={(id) => topicName.get(id) ?? id} covered={(id) => coveredOf.get(id) ?? "untouched"} onSeeAll={() => setScopeOpen(true)} />
+        </motion.div>
+        <ScopePanel open={scopeOpen} onClose={() => setScopeOpen(false)} plan={plan} topics={topics} objectiveName={objectiveName} statusOf={statusOf} />
+      </div>
+    );
+  }
   return (
     <div className="flex w-full flex-col gap-[12px]">
       {/* Two tabs (owner, 2026-11-22): Today (the plan, where you left off, the weak spots) and Your Progress (the dashboard); Edit and Stop beside them. */}
@@ -192,58 +340,7 @@ function CrammingView({ course, today, plan, topics, spentMinutes, split, studyL
           <div className="flex items-stretch gap-[12px]">
             <div className="flex w-[380px] shrink-0 flex-col">
           <motion.div variants={fadeUp} className="flex-1">
-            <Card className="flex h-full flex-col gap-[10px] px-[22px] pb-[18px] pt-[18px]" data-part="cram-today">
-              <h2 className="text-[20px] font-bold text-prussian">Today</h2>
-              {plan.daysLeft === 0 ? (
-                <p className="text-[14px] font-medium text-wisteria-deep">Light review only, nothing new.</p>
-              ) : plan.today.length === 0 && !plan.diagnostic && !plan.mockToday ? (
-                <p className="text-[14px] font-medium text-wisteria-deep">Nothing planned today.</p>
-              ) : (
-                // A queue, in order: the sweep first while nothing's been answered, today's practice test, then one topic after another.
-                <ol className="flex flex-col gap-[4px]">
-                  {plan.diagnostic && (
-                    <li className="flex justify-between gap-[8px] text-[15px] font-semibold text-prussian" data-part="cram-today-sweep">
-                      <span className="truncate">{plan.unit === "problem-type" ? "Cold start: one exam-style problem per kind" : "Quick sweep: one question per topic"}</span>
-                      <span className="shrink-0 text-wisteria-deep">{plan.diagnostic.minutes} min</span>
-                    </li>
-                  )}
-                  {plan.mockToday && (
-                    <li className="flex justify-between gap-[8px] text-[15px] font-semibold text-prussian" data-part="cram-today-mock">
-                      <span className="truncate">Practice test: {plan.mockToday.name}</span>
-                      <span className="shrink-0 text-wisteria-deep">{plan.mockToday.minutes} min</span>
-                    </li>
-                  )}
-                  {plan.today.map((t, i) => (
-                    <li key={t.topicId} className="flex justify-between gap-[8px] text-[15px] font-semibold text-prussian" data-part="cram-today-topic" data-topic={t.topicId}>
-                      <span className="truncate">
-                        {i > 0 || plan.diagnostic || plan.mockToday ? <span className="font-medium text-wisteria-deep">then </span> : null}
-                        {topicName.get(t.topicId) ?? t.topicId}
-                      </span>
-                      <span className="shrink-0 text-wisteria-deep">{t.minutes} min</span>
-                    </li>
-                  ))}
-                </ol>
-              )}
-              {plan.cut.length > 0 && plan.daysLeft > 0 && (
-                <p className="text-[13px] font-medium text-wisteria-deep" data-part="cram-cut">
-                  If time runs short: {plan.cut.map((id) => topicName.get(id) ?? id).join(", ")}
-                </p>
-              )}
-              <div className="flex flex-wrap items-center gap-[8px] pt-[4px]">
-                <Link href={`/session/${course.slug}?kind=quick`} data-part="cram-start-review" className={PILL}>
-                  Start quick review
-                </Link>
-                {connected ? (
-                  <span className="text-[13px] font-medium text-prussian" data-part="study-with-claude">
-                    Or study with Claude: it has this plan.
-                  </span>
-                ) : (
-                  <Link href="/settings#connector" data-part="study-with-claude" className={PILL}>
-                    Study with Claude
-                  </Link>
-                )}
-              </div>
-            </Card>
+            <TodayCard plan={plan} topicName={(id) => topicName.get(id) ?? id} slug={course.slug} connected={connected} />
           </motion.div>
             </div>
             <motion.div variants={fadeUp} className="min-w-0 flex-1">
@@ -303,32 +400,123 @@ function CrammingView({ course, today, plan, topics, spentMinutes, split, studyL
         </div>
       </div>
       <motion.div variants={fadeUp}>
-          <Card className="flex flex-col gap-[12px] px-[22px] pb-[18px] pt-[18px]">
-            <div className="flex items-baseline justify-between gap-[12px]">
-              <h2 className="text-[20px] font-bold text-prussian">The schedule</h2>
-              <button type="button" onClick={() => setScopeOpen(true)} data-part="cram-scope-open" className="text-[13px] font-bold text-wisteria-deep underline">
-                See all {plan.topics.length} {plan.unit === "problem-type" ? "kinds of problem" : "topics"}
-              </button>
-            </div>
-            {plan.days.length === 0 ? (
-              <p className="text-[14px] font-medium text-wisteria-deep">No days before the exam.</p>
-            ) : (
-              <ol className="flex gap-[8px] overflow-x-auto pb-[4px]" data-part="cram-schedule" aria-label="The schedule by day">
-                {plan.days.map((d) => (
-                  <ScheduleDay key={d.day} day={d} topicName={(id) => topicName.get(id) ?? id} covered={(id) => coveredOf.get(id) ?? "untouched"} />
-                ))}
-              </ol>
-            )}
-            <p className="flex flex-wrap gap-[10px] text-[12px] font-semibold text-wisteria-deep" aria-label="Key">
-              <span><span className="mr-[4px] inline-block h-[10px] w-[10px] rounded-[3px] bg-alice align-middle" />Not started</span>
-              <span><span className="mr-[4px] inline-block h-[10px] w-[10px] rounded-[3px] bg-periwinkle/40 align-middle" />In progress</span>
-              <span><span className="mr-[4px] inline-block h-[10px] w-[10px] rounded-[3px] bg-wisteria/25 align-middle" />Done</span>
-            </p>
-          </Card>
+          <ScheduleCard plan={plan} topicName={(id) => topicName.get(id) ?? id} covered={(id) => coveredOf.get(id) ?? "untouched"} onSeeAll={() => setScopeOpen(true)} />
       </motion.div>
 
       <ScopePanel open={scopeOpen} onClose={() => setScopeOpen(false)} plan={plan} topics={topics} objectiveName={objectiveName} statusOf={statusOf} />
     </div>
+  );
+}
+
+/** Today's queue (the plan's sweep, practice test and topics, in order) and how to start: on the Today tab and the day's welcome. */
+function TodayCard({ plan, topicName, slug, connected, title = "Today", onGo }: { plan: CramPlan; topicName: (id: string) => string; slug: string; connected: boolean | null; title?: string; onGo?: () => void }) {
+  return (
+    <Card className="flex h-full flex-col gap-[10px] px-[22px] pb-[18px] pt-[18px]" data-part="cram-today">
+      <h2 className="text-[20px] font-bold text-prussian">{title}</h2>
+      {plan.daysLeft === 0 ? (
+        <p className="text-[14px] font-medium text-wisteria-deep">Light review only, nothing new.</p>
+      ) : plan.today.length === 0 && !plan.diagnostic && !plan.mockToday ? (
+        <p className="text-[14px] font-medium text-wisteria-deep">Nothing planned today.</p>
+      ) : (
+        // A queue, in order: the sweep first while nothing's been answered, today's practice test, then one topic after another.
+        <ol className="flex flex-col gap-[4px]">
+          {plan.diagnostic && (
+            <li className="flex justify-between gap-[8px] text-[15px] font-semibold text-prussian" data-part="cram-today-sweep">
+              <span className="truncate">{plan.unit === "problem-type" ? "Cold start: one exam-style problem per kind" : "Quick sweep: one question per topic"}</span>
+              <span className="shrink-0 text-wisteria-deep">{plan.diagnostic.minutes} min</span>
+            </li>
+          )}
+          {plan.mockToday && (
+            <li className="flex justify-between gap-[8px] text-[15px] font-semibold text-prussian" data-part="cram-today-mock">
+              <span className="truncate">Practice test: {plan.mockToday.name}</span>
+              <span className="shrink-0 text-wisteria-deep">{plan.mockToday.minutes} min</span>
+            </li>
+          )}
+          {plan.today.map((t, i) => (
+            <li key={t.topicId} className="flex justify-between gap-[8px] text-[15px] font-semibold text-prussian" data-part="cram-today-topic" data-topic={t.topicId}>
+              <span className="truncate">
+                {i > 0 || plan.diagnostic || plan.mockToday ? <span className="font-medium text-wisteria-deep">then </span> : null}
+                {topicName(t.topicId)}
+              </span>
+              <span className="shrink-0 text-wisteria-deep">{t.minutes} min</span>
+            </li>
+          ))}
+        </ol>
+      )}
+      {plan.cut.length > 0 && plan.daysLeft > 0 && (
+        <p className="text-[13px] font-medium text-wisteria-deep" data-part="cram-cut">
+          If time runs short: {plan.cut.map(topicName).join(", ")}
+        </p>
+      )}
+      <div className="flex flex-wrap items-center gap-[8px] pt-[4px]">
+        <Link href={`/session/${slug}?kind=quick`} onClick={onGo} data-part="cram-start-review" className={PILL}>
+          Start quick review
+        </Link>
+        {connected ? (
+          <span className="text-[13px] font-medium text-prussian" data-part="study-with-claude">
+            Or study with Claude: it has this plan.
+          </span>
+        ) : (
+          <Link href="/settings#connector" onClick={onGo} data-part="study-with-claude" className={PILL}>
+            Study with Claude
+          </Link>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+/** Start study timer beside the day's welcome; while one runs, its clock (Stop is on the floating pill and Your Progress). */
+function WelcomeTimer({ courseId }: { courseId: string }) {
+  const { running, start, busy } = useStudyTime();
+  const elapsed = useElapsed(running?.startedAt ?? null);
+  if (running && running.courseId !== courseId) {
+    return (
+      <span className="shrink-0 pt-[8px] text-[13px] font-semibold text-wisteria-deep" data-part="cram-welcome-timer">
+        A timer is running for another course
+      </span>
+    );
+  }
+  if (running) {
+    return (
+      <span className="flex shrink-0 items-center gap-[8px] rounded-pill bg-parchment px-[14px] py-[8px] text-[15px] font-bold text-prussian ring-2 ring-inset ring-alice-deep" data-part="cram-welcome-timer" data-running="1">
+        <span className="h-[10px] w-[10px] animate-pulse rounded-full bg-study-mint" aria-hidden />
+        Studying <span className="tabular-nums">{clock(elapsed)}</span>
+      </span>
+    );
+  }
+  return (
+    <Button size="sm" disabled={busy} onClick={() => void start(courseId)} data-part="cram-welcome-timer">
+      Start study timer
+    </Button>
+  );
+}
+
+/** The schedule: a column per day of the cram. On the Today tab, under both tabs, and on the day's welcome. */
+function ScheduleCard({ plan, topicName, covered, onSeeAll }: { plan: CramPlan; topicName: (id: string) => string; covered: (id: string) => CramCovered; onSeeAll: () => void }) {
+  return (
+    <Card className="flex flex-col gap-[12px] px-[22px] pb-[18px] pt-[18px]">
+      <div className="flex items-baseline justify-between gap-[12px]">
+        <h2 className="text-[20px] font-bold text-prussian">The schedule</h2>
+        <button type="button" onClick={onSeeAll} data-part="cram-scope-open" className="text-[13px] font-bold text-wisteria-deep underline">
+          See all {plan.topics.length} {plan.unit === "problem-type" ? "kinds of problem" : "topics"}
+        </button>
+      </div>
+      {plan.days.length === 0 ? (
+        <p className="text-[14px] font-medium text-wisteria-deep">No days before the exam.</p>
+      ) : (
+        <ol className="flex gap-[8px] overflow-x-auto pb-[4px]" data-part="cram-schedule" aria-label="The schedule by day">
+          {plan.days.map((d) => (
+            <ScheduleDay key={d.day} day={d} topicName={topicName} covered={covered} />
+          ))}
+        </ol>
+      )}
+      <p className="flex flex-wrap gap-[10px] text-[12px] font-semibold text-wisteria-deep" aria-label="Key">
+        <span><span className="mr-[4px] inline-block h-[10px] w-[10px] rounded-[3px] bg-alice align-middle" />Not started</span>
+        <span><span className="mr-[4px] inline-block h-[10px] w-[10px] rounded-[3px] bg-periwinkle/40 align-middle" />In progress</span>
+        <span><span className="mr-[4px] inline-block h-[10px] w-[10px] rounded-[3px] bg-wisteria/25 align-middle" />Done</span>
+      </p>
+    </Card>
   );
 }
 

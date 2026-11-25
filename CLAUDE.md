@@ -163,6 +163,16 @@ own courses (Data Structures, Fundamentals of Computer Systems) on the hosted pr
   hovered (`TopicGraph muted`), the red (`cram` token) CRAM MODE banner (`CramBanner`, `data-part="cram-banner"`) sits on top, the nav (calendar, add material, the course's settings) floats at the bottom right, the top bar over those pages is the blue of cram mode's path rims (`alice-deep` under its tokens), the logo's orca keeps its colours (`orca-body`, `orca-belly`), the dive covers the whole window, the home island (the rim of a not-started topic on cram mode's path, a purple ring inside it and a dark centre, `Island cram`) and its name take the dark look with the path's pulsing halo behind (`island-halo`, the spot `data-cramming`), the sidebar opens with a red cram card per cramming course (`CramCards`, `data-part="cram-card"`: the course, the exam, days left, % of its objectives verified, to the cram page), and the calendar marks the crammed exam red, with a Cramming key and "· cramming" in the filter. One exam per course crams at a time
   (the store's `updateExam` and the connector's `set_exam`). Assumptions in `docs/TO-DISCUSS.md`; e2e
   `e2e/cram-immersive.spec.ts`.
+- **Leaving cram mode and the day's welcome** (2026-11-25, owner; branch `cram-exit-results`): Stop cramming (banner or
+  cram page) opens the cram's results, `/course/<slug>/cram?ended=<examId>` (`cram-results`: Your Progress and "What
+  the exam asks", still dark, the top bar too), which save `cramming: false` on arrival, only when reached through Stop
+  (`src/lib/cram-exit.ts`), so a reload or bookmark can't end a cram. Leaving them (Back, `cram-results-back`) plays the
+  dive back up and the bubbles on the next page with an `AppShell` (`CramCurtain arrive`). The first time the cram page
+  shows the plan on a day it opens on the day's welcome (`cram-welcome`: "Welcome to your cram" / "Welcome back", day N
+  of M, `plan.line`, Start study timer (`cram-welcome-timer`) and See the full plan (`cram-welcome-go`, opens the tabs)
+  beside the heading, the Today card as "Today's focus" beside "Cram with Claude, track it here"
+  (`cram-welcome-claude`: Connect Claude until a token exists, See your progress), then the schedule); seen-for-the-day is kept in this browser (`orca.cramWelcome.<courseId>`). e2e students have it off unless
+  `test.use({ cramWelcome: true })`. Assumptions in `docs/TO-DISCUSS.md`.
 - **After a wrong answer** (2026-11-22, owner; `src/lib/quiz/after-miss.ts`, `src/components/quiz/AfterMiss.tsx`): the
   miss is recorded at once, then the solution waits: a second try (practice only, nothing recorded; `retry-prompt`,
   `show-solution`), then "What went wrong?" chips beside the key (shown against the grader's `errorType`, not saved;

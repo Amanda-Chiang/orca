@@ -70,11 +70,14 @@ export async function settled(page: Page) {
   if (await failed.count()) throw new Error(`The app couldn't save: ${await failed.first().textContent()}`);
 }
 
-export const test = base.extend<{ student: Student; tips: boolean }>({
+export const test = base.extend<{ student: Student; tips: boolean; cramWelcome: boolean }>({
   /** Onboarding tips are off for test students (a bubble would sit over what a spec clicks); `test.use({ tips: true })` leaves them on. */
   tips: [false, { option: true }],
+  /** The cram page's day welcome is off too (the plan's tabs open at once); `test.use({ cramWelcome: true })` leaves it on. */
+  cramWelcome: [false, { option: true }],
   student: [
-    async ({ context, baseURL, tips }, use) => {
+    async ({ context, baseURL, tips, cramWelcome }, use) => {
+      if (!cramWelcome) await context.addInitScript(() => localStorage.setItem("orca.cramWelcome", "off"));
       await fakeModel(); // the fake API's default answers; a test sets its own scenario after this
       const email = `e2e-${crypto.randomUUID()}@example.test`;
       const password = "e2e-password-1";
