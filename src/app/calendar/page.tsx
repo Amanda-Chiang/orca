@@ -146,7 +146,7 @@ export default function CalendarPage() {
 
   return (
     <Screen bg="ocean" className="overflow-y-auto">
-      <header className="mx-auto flex w-full max-w-[1124px] items-center gap-[14px] px-[24px] pt-[24px]">
+      <header className="mx-auto flex w-full max-w-[calc(50%+562px)] items-center gap-[14px] px-[24px] pt-[24px]">
         <BackButton />
         <AnimatePresence mode="wait">
           <motion.h1 key={`${view}-${days[0]}`} variants={fadeSwap} initial="hidden" animate="show" exit="exit" className="min-w-[190px] text-[36px] font-bold leading-none text-prussian">
@@ -197,7 +197,7 @@ export default function CalendarPage() {
         </div>
       </header>
 
-      <div className="mx-auto w-full max-w-[1124px] px-[24px] pb-[32px] pt-[20px]">
+      <div className="mx-auto w-full max-w-[calc(50%+562px)] px-[24px] pb-[32px] pt-[20px]">
         {activeFilters(filter) > 0 && visible.length === 0 && (
           <p className="mb-[12px] flex items-center gap-[10px] text-[15px] font-semibold text-prussian" data-part="filter-empty">
             Nothing matches these filters.
