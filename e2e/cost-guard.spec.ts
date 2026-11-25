@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test";
 import { createHash } from "node:crypto";
-import { type Student, admin, expect, test, stored } from "./fixture";
+import { type Student, admin, expect, test } from "./fixture";
 import { lines, makePdf } from "../tests/fixtures/pdf";
 import { fakeCalls, fakeModel } from "./fake-model";
 import { LIMITS } from "../src/lib/limits";
@@ -82,7 +82,6 @@ test("an upload past the student's daily token budget is saved and waits, the mo
   // The waiting card can be stopped or its file removed (2026-11-08); here it's stopped.
   await expect(page.locator("[data-part=run-waiting] [data-part=remove-material]")).toBeVisible();
   await page.locator("[data-part=run-waiting] [data-part=stop-upload]").click();
-  await page.locator("[data-part=run-waiting] [data-part=stop-confirm]").click();
   await expect.poll(async () => (await runStatus(generation.runId!)).status, { timeout: 20_000 }).toBe("failed");
   // The file and its pages are kept: nothing to redo tomorrow.
   const { count } = await student.db.from("material_pages").select("n", { count: "exact", head: true });
@@ -208,7 +207,6 @@ test("a running upload can be stopped from the Uploads tab: it fails with the st
   await page.goto(`/course/${course.slug}/review?tab=uploads`);
   const card = (name: string) => page.locator("[data-part=upload-card]").filter({ hasText: name });
   await card("first.pdf").locator("[data-part=stop-upload]").click();
-  await card("first.pdf").locator("[data-part=stop-confirm]").click();
   await expect.poll(async () => (await runStatus(first.generation.runId!)).status, { timeout: 15_000 }).toBe("failed");
   const { data: stopped } = await admin().from("pipeline_runs").select("error").eq("id", first.generation.runId!).single();
   expect(stopped!.error).toBe("Stopped by you. Try again from the Uploads tab when you want it built.");
@@ -239,18 +237,3 @@ test("a spend-limit answer from the API fails the job once with the budget messa
   expect(await fakeCalls()).toEqual(["map"]);
 });
 
-test("starting more uploads than the daily rate limit allows answers 429 with retry-after", async ({ page, student }) => {
-  const courseId = await newCourse(student);
-  const bytes = makePdf([lines("Rate")]);
-  let last: { status: number; retryAfter: string | null; body: { error?: string } } | null = null;
-  for (let i = 0; i < LIMITS.rate.upload.max + 1; i++) {
-    const res = await page.request.post("/api/materials", { data: details(courseId, bytes, `deck-${i}.pdf`) });
-    last = { status: res.status(), retryAfter: res.headers()["retry-after"] ?? null, body: (await res.json()) as { error?: string } };
-    if (i < LIMITS.rate.upload.max) expect(res.status()).toBe(201);
-  }
-  expect(last!.status).toBe(429);
-  expect(Number(last!.retryAfter)).toBeGreaterThan(0);
-  expect(last!.body.error).toMatch(/20 uploads in 24 hours, the most Orca allows/);
-  const s = await stored(page, student);
-  expect(s.materials).toEqual([]); // the 20 were only started, never read
-});

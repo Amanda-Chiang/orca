@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { PipelineRun } from "@/lib/data";
 import { useOrca } from "@/lib/store";
 import { pauseUploads } from "@/lib/uploads";
+import { isBetweenSteps } from "./UploadCard";
 
 /**
  * Above the uploads list: "Pause all" while any upload is queued (they leave the queue; the one
@@ -14,9 +15,12 @@ export function QueueControls({ courseId, uploads }: { courseId: string; uploads
   const { refresh } = useOrca();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const queued = uploads.filter((u) => u.status === "queued").length;
+  const waiting = uploads.filter((u) => u.status === "queued");
+  const inLine = waiting.filter(isBetweenSteps).length;
+  const queued = waiting.length - inLine;
   const paused = uploads.filter((u) => u.status === "paused").length;
-  if (queued === 0 && paused === 0) return null;
+  if (queued === 0 && inLine === 0 && paused === 0) return null;
+  const counts = [queued > 0 && `${queued} queued`, inLine > 0 && `${inLine} in line`, paused > 0 && `${paused} paused`].filter(Boolean).join(" · ");
   const set = async (pause: boolean) => {
     setBusy(true);
     setError(null);
@@ -31,12 +35,8 @@ export function QueueControls({ courseId, uploads }: { courseId: string; uploads
   };
   return (
     <div className="flex flex-wrap items-center gap-[12px] text-[14px] font-semibold text-prussian" data-part="queue-controls">
-      <span>
-        {queued > 0 ? `${queued} queued` : ""}
-        {queued > 0 && paused > 0 ? " · " : ""}
-        {paused > 0 ? `${paused} paused` : ""}
-      </span>
-      {queued > 0 && (
+      <span>{counts}</span>
+      {queued + inLine > 0 && (
         <button type="button" disabled={busy} onClick={() => void set(true)} className="pressable rounded-pill border-2 border-periwinkle-deep bg-parchment px-[14px] py-[6px] text-[13px] font-bold text-prussian lip-3 lip-periwinkle disabled:opacity-60" data-part="pause-all">
           Pause all
         </button>

@@ -9,16 +9,19 @@
  */
 export function contentSecurityPolicy(opts: { nonce: string; supabaseUrl?: string; dev: boolean }): string {
   const connect = ["'self'"];
+  const img = ["'self'", "blob:", "data:"];
   if (opts.supabaseUrl) {
     const u = new URL(opts.supabaseUrl);
     connect.push(u.origin, `${u.protocol === "https:" ? "wss:" : "ws:"}//${u.host}`);
+    // Slide previews are signed URLs into the project's own private Storage (2026-11-24).
+    img.push(u.origin);
   }
   if (opts.dev) connect.push("ws:", "http://localhost:*", "http://127.0.0.1:*");
   const directives: Record<string, string[]> = {
     "default-src": ["'self'"],
     "script-src": ["'self'", `'nonce-${opts.nonce}'`, "'strict-dynamic'", ...(opts.dev ? ["'unsafe-eval'"] : [])],
     "style-src": ["'self'", "'unsafe-inline'"],
-    "img-src": ["'self'", "blob:", "data:"],
+    "img-src": img,
     "font-src": ["'self'", "data:"],
     "connect-src": connect,
     "worker-src": ["'self'", "blob:"],

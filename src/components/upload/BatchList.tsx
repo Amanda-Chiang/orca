@@ -60,7 +60,7 @@ export function BatchList({
   compact = false,
   onChange,
   onRemove,
-  onUploadAgain,
+  // onUploadAgain, (commented out with the duplicate check, 2026-11-24)
 }: {
   items: BatchItem[];
   busy: boolean;
@@ -195,11 +195,12 @@ export function BatchList({
                     {statusLine(it.status)}
                   </span>
                 )}
+                {/* Commented out with the duplicate check (owner, 2026-11-24): no row comes back a duplicate now.
                 {it.status.kind === "duplicate" && !busy && onUploadAgain && (
                   <button type="button" onClick={() => onUploadAgain(it.id)} className="shrink-0 text-[12px] font-bold text-wisteria-deep underline underline-offset-2" data-part="upload-again">
                     Upload again
                   </button>
-                )}
+                )} */}
               </div>
             )}
           </li>

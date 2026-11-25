@@ -78,19 +78,18 @@ export function KnowledgePath({ course, progress, onStart, warmUp, examTopics = 
   };
   const PATH_H = pathCanvasHeight(topics.length);
   // Fit the 854×834 design frame as before; longer trails keep that scale and scroll.
-  const { ref, scale, x } = useFitScale(PATH_W, 834, "contain");
+  const { ref, el: container, scale, x } = useFitScale(PATH_W, 834, "contain");
   const d = filtered ? trailFromPoints(topics.map((t) => t.pos)) : (course.trail ?? trailFromPoints(topics.map((t) => t.pos)));
 
   // Opening a course should put the pulsing START/play node in view, even when a long path has
   // already scrolled far past it. Coordinates inside the fixed canvas need the same fit scale.
   useEffect(() => {
-    const container = ref.current;
     if (!container || currentTopicY === undefined) return;
     const top = Math.max(0, currentTopicY * scale - container.clientHeight / 2);
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const frame = requestAnimationFrame(() => container.scrollTo({ top, behavior: reduced ? "auto" : "smooth" }));
     return () => cancelAnimationFrame(frame);
-  }, [course.id, currentTopicId, currentTopicY, ref, scale]);
+  }, [course.id, currentTopicId, currentTopicY, container, scale]);
 
   const toggle = onExam ? (
     <div role="tablist" aria-label="Which topics" className="flex items-center gap-[6px] rounded-pill bg-parchment p-[4px] ring-2 ring-inset ring-alice-deep" data-part="path-cram-view">

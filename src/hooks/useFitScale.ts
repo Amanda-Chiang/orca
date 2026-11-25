@@ -1,18 +1,18 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 /**
  * Scales a fixed-size design canvas (e.g. the 854×834 knowledge map) to fit
  * its container, preserving aspect ratio. Returns the ref to attach to the
- * container and the scale + offsets to apply to the canvas.
+ * container and the scale + offsets to apply to the canvas. The ref is a callback, so a container
+ * that mounts later (after an empty state, say) is still measured.
  */
 export function useFitScale(designWidth: number, designHeight: number, mode: "contain" | "cover" = "contain") {
-  const ref = useRef<HTMLDivElement>(null);
+  const [el, setEl] = useState<HTMLDivElement | null>(null);
   const [state, setState] = useState({ scale: 1, x: 0, y: 0, width: designWidth, height: designHeight });
 
   useEffect(() => {
-    const el = ref.current;
     if (!el) return;
 
     const update = () => {
@@ -34,7 +34,7 @@ export function useFitScale(designWidth: number, designHeight: number, mode: "co
     const ro = new ResizeObserver(update);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [designWidth, designHeight, mode]);
+  }, [el, designWidth, designHeight, mode]);
 
-  return { ref, ...state };
+  return { ref: setEl, el, ...state };
 }
