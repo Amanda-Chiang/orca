@@ -58,8 +58,8 @@ export function CalendarEntry({
         <span className="truncate">{course ? `${course.short} · ${event.title}` : event.title}</span>
       ) : (
         <span className="flex min-w-0 flex-col">
-          {course && <span className="truncate">{course.name}</span>}
-          <span className={cn("truncate", course && "font-medium opacity-80")}>{event.title}</span>
+          {course && <span className="break-words">{course.name}</span>}
+          <span className={cn("break-words", course && "font-medium opacity-80")}>{event.title}</span>
         </span>
       )}
     </div>

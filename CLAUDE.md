@@ -81,8 +81,11 @@ own courses (Data Structures, Fundamentals of Computer Systems) on the hosted pr
     `src/lib/server/notes.ts`); jobs screen them again when they load them.
   - **Exams** have their own table (each course's exams, dates, optional topics), edited with
     "Edit Exams" on the course page; they show on the calendar and drive the exam cadences.
-  - Homework reflection is a text box on the upload page; the calendar shows scheduled reviews,
-    has a course filter and expanding weeks.
+  - Homework reflection is a text box on the upload page; the calendar (2026-11-24, owner) has
+    Week and Month views, colour = course (`src/lib/course/colors.ts`, shared with /progress) and
+    shape = type (exam solid, homework outlined, quick review a dot, dive a ring), a day pop-up for
+    "+n more", and a Filter pop-up by course and type combined (`src/lib/course/calendar-view.ts`;
+    view and filter kept in the URL).
 - **Since 2026-10-18** (details in `docs/BACKEND-ROADMAP.md` §2 and the plan docs): handwritten
   and scanned PDF pages read from their images, figures on typed slides described; thumbs up/down
   on questions (a thumbs down skips and replaces it, its note feeds question writing); unfinished
@@ -157,7 +160,7 @@ own courses (Data Structures, Fundamentals of Computer Systems) on the hosted pr
   cards drop out everywhere (`useTodos`; the home count and the calendar's reviews too), the warm-up and the
   course-wide Dive in pill hide (topic dives stay, exam topics only), Path has a Weak spots / Exam / All switch (`path-cram-view`, Exam by default), Path and List show the exam's topics ("Show N
   other topics": faint, `data-off-exam`, not playable), the Atlas draws the others faint until a neighbour is
-  hovered (`TopicGraph muted`), the red (`cram` token) CRAM MODE banner (`CramBanner`, `data-part="cram-banner"`) sits on top, the nav (calendar, add material, the course's settings) floats at the bottom right, the top bar over those pages is the blue of cram mode's path rims (`alice-deep` under its tokens), the logo's orca keeps its colours (`orca-body`, `orca-belly`), the dive covers the whole window, the home island (the rim of a not-started topic on cram mode's path, a purple ring inside it and a dark centre, `Island cram`) and its name take the dark look with the path's pulsing halo behind (`island-halo`, the spot `data-cramming`), the sidebar opens with a red cram card per cramming course (`CramCards`, `data-part="cram-card"`: the course, the exam, days left, % of its objectives verified, to the cram page), and the calendar marks the crammed exam red and the course's other entries with a red ring, with a Cramming key and "· cramming" in the course filter. One exam per course crams at a time
+  hovered (`TopicGraph muted`), the red (`cram` token) CRAM MODE banner (`CramBanner`, `data-part="cram-banner"`) sits on top, the nav (calendar, add material, the course's settings) floats at the bottom right, the top bar over those pages is the blue of cram mode's path rims (`alice-deep` under its tokens), the logo's orca keeps its colours (`orca-body`, `orca-belly`), the dive covers the whole window, the home island (the rim of a not-started topic on cram mode's path, a purple ring inside it and a dark centre, `Island cram`) and its name take the dark look with the path's pulsing halo behind (`island-halo`, the spot `data-cramming`), the sidebar opens with a red cram card per cramming course (`CramCards`, `data-part="cram-card"`: the course, the exam, days left, % of its objectives verified, to the cram page), and the calendar marks the crammed exam red, with a Cramming key and "· cramming" in the filter. One exam per course crams at a time
   (the store's `updateExam` and the connector's `set_exam`). Assumptions in `docs/TO-DISCUSS.md`; e2e
   `e2e/cram-immersive.spec.ts`.
 - **After a wrong answer** (2026-11-22, owner; `src/lib/quiz/after-miss.ts`, `src/components/quiz/AfterMiss.tsx`): the
