@@ -68,7 +68,7 @@ export function MonthGrid({
               data-today={isToday || undefined}
               onClick={(e) => evs.length > 0 && openDay(iso, e.currentTarget)}
               className={cn(
-                "flex h-[118px] min-w-0 flex-col gap-[3px] border-line p-[6px]",
+                "flex h-[132px] min-w-0 flex-col gap-[3px] border-line p-[6px]",
                 i % 7 !== 6 && "border-r",
                 i < 35 && "border-b",
                 !inMonth && "bg-page",

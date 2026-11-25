@@ -64,7 +64,7 @@ export function CalendarFilter({
               {courses.map((c) => (
                 <Check key={c.id} checked={filter.courses?.has(c.id) ?? true} onChange={() => onChange({ ...filter, courses: toggle(filter.courses, c.id, courseIds) })}>
                   <span aria-hidden className={cn("h-[10px] w-[10px] shrink-0 rounded-full", colors.get(c.id)?.bg)} />
-                  <span className="truncate">{c.name}</span>
+                  <span className="min-w-0 truncate" title={c.name}>{c.name}</span>
                   {cramming.has(c.id) && <span className="shrink-0 text-[12px] font-bold text-cram">· cramming</span>}
                 </Check>
               ))}
@@ -97,7 +97,7 @@ export function TypeMark({ type }: { type: EntryType }) {
 
 function Group({ title, all, onAll, children }: { title: string; all: boolean; onAll: () => void; children: React.ReactNode }) {
   return (
-    <fieldset className="flex flex-col gap-[6px]">
+    <fieldset className="flex min-w-0 flex-col gap-[6px]">
       <div className="flex items-center justify-between">
         <legend className="eyebrow text-[12px] text-wisteria-deep">{title}</legend>
         {!all && (
@@ -113,7 +113,7 @@ function Group({ title, all, onAll, children }: { title: string; all: boolean; o
 
 function Check({ checked, onChange, children }: { checked: boolean; onChange: () => void; children: React.ReactNode }) {
   return (
-    <label className="flex cursor-pointer items-center gap-[8px] rounded-[8px] px-[4px] py-[3px] text-[14px] font-semibold text-prussian hover:bg-alice/50">
+    <label className="flex min-w-0 cursor-pointer items-center gap-[8px] rounded-[8px] px-[4px] py-[3px] text-[14px] font-semibold text-prussian hover:bg-alice/50">
       <input type="checkbox" checked={checked} onChange={onChange} className="h-[16px] w-[16px] shrink-0 accent-wisteria-deep" />
       {children}
     </label>

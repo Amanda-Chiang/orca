@@ -12,7 +12,6 @@ import { courseColors } from "@/lib/course/colors";
 import {
   type CalendarFilter as Filter,
   type CalendarView,
-  ENTRY_TYPE_LABELS,
   ENTRY_TYPES,
   NO_FILTER,
   activeFilters,
@@ -38,6 +37,9 @@ const VIEWS: { id: CalendarView; label: string }[] = [
   { id: "week", label: "Week" },
   { id: "month", label: "Month" },
 ];
+
+/** The key's short names (the filter spells them out). */
+const KEY_LABELS = { exam: "Exam", hw: "HW", rev: "Review", dive: "Dive in" } as const;
 
 const parseDay = (iso: string) => {
   const [y, m, d] = iso.split("-").map(Number);
@@ -144,10 +146,10 @@ export default function CalendarPage() {
 
   return (
     <Screen bg="ocean" className="overflow-y-auto">
-      <header className="flex items-center gap-[16px] px-[28px] pt-[24px]">
+      <header className="mx-auto flex w-full max-w-[1124px] items-center gap-[14px] px-[24px] pt-[24px]">
         <BackButton />
         <AnimatePresence mode="wait">
-          <motion.h1 key={`${view}-${days[0]}`} variants={fadeSwap} initial="hidden" animate="show" exit="exit" className="min-w-[230px] text-[40px] font-bold leading-none text-prussian">
+          <motion.h1 key={`${view}-${days[0]}`} variants={fadeSwap} initial="hidden" animate="show" exit="exit" className="min-w-[190px] text-[36px] font-bold leading-none text-prussian">
             {title.main}
             {title.year && <span className="ml-3 text-[24px] font-semibold text-wisteria-deep">{title.year}</span>}
           </motion.h1>
@@ -166,6 +168,20 @@ export default function CalendarPage() {
           ))}
         </div>
         {courses.length > 0 && <CalendarFilter filter={filter} onChange={setFilter} courses={courses} colors={colors} cramming={cram.courses} />}
+        <div className="flex items-center gap-[12px] text-[12.5px] font-semibold text-prussian" aria-label="Key" data-part="calendar-key">
+          {ENTRY_TYPES.map((t) => (
+            <span key={t} className="inline-flex items-center gap-[5px] whitespace-nowrap">
+              <TypeMark type={t} />
+              {KEY_LABELS[t]}
+            </span>
+          ))}
+          {cram.courses.size > 0 && (
+            <span className="inline-flex items-center gap-[5px] whitespace-nowrap" data-part="cram-legend">
+              <span aria-hidden className="h-[16px] w-[16px] rounded-[4px] bg-cram" />
+              Cramming
+            </span>
+          )}
+        </div>
         <div className="ml-auto flex items-center gap-[10px]">
           {!showsToday && (
             <button type="button" onClick={() => setPicked(null)} className="pressable h-[40px] rounded-[12px] border-2 border-periwinkle-deep bg-parchment px-[14px] text-[15px] font-bold text-prussian lip-3 lip-periwinkle">
@@ -181,7 +197,7 @@ export default function CalendarPage() {
         </div>
       </header>
 
-      <div className="px-[28px] pb-[32px] pt-[20px]">
+      <div className="mx-auto w-full max-w-[1124px] px-[24px] pb-[32px] pt-[20px]">
         {activeFilters(filter) > 0 && visible.length === 0 && (
           <p className="mb-[12px] flex items-center gap-[10px] text-[15px] font-semibold text-prussian" data-part="filter-empty">
             Nothing matches these filters.
@@ -195,21 +211,6 @@ export default function CalendarPage() {
         ) : (
           <WeekGrid days={days} today={today} byDate={byDate} entry={entry} />
         )}
-        <div className="mt-[12px] flex flex-wrap items-center gap-x-[18px] gap-y-[6px] text-[13px] font-semibold text-prussian" aria-label="Key" data-part="calendar-key">
-          {ENTRY_TYPES.map((t) => (
-            <span key={t} className="inline-flex items-center gap-[6px]">
-              <TypeMark type={t} />
-              {ENTRY_TYPE_LABELS[t]}
-            </span>
-          ))}
-          {cram.courses.size > 0 && (
-            <span className="inline-flex items-center gap-[6px]" data-part="cram-legend">
-              <span aria-hidden className="h-[16px] w-[16px] rounded-[4px] bg-cram" />
-              Cramming
-            </span>
-          )}
-          <span className="text-muted">Colour = course</span>
-        </div>
       </div>
     </Screen>
   );
