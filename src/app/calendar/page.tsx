@@ -96,22 +96,28 @@ export default function CalendarPage() {
   const colors = useMemo(() => courseColors(courses), [courses]);
   const byId = useMemo(() => new Map(courses.map((c) => [c.id, c])), [courses]);
 
-  // The view and the filter live in the URL, so Back and a reload keep them.
-  const view: CalendarView = params.get("view") === "week" ? "week" : "month";
-  const filter = useMemo(() => readFilter(params, courses.map((c) => c.id)), [params, courses]);
+  // The view and the filter are kept in the URL too, so Back and a reload keep them; the page's own
+  // state leads, so a click shows at once rather than after the URL changes.
+  const [view, setViewState] = useState<CalendarView>(() => (params.get("view") === "week" ? "week" : "month"));
+  const [filter, setFilterState] = useState<Filter>(() => readFilter(params, courses.map((c) => c.id)));
   const setParams = useCallback(
-    (next: URLSearchParams) => {
-      const q = next.toString();
+    (edit: (p: URLSearchParams) => URLSearchParams) => {
+      const q = edit(new URLSearchParams(window.location.search)).toString();
       router.replace(q ? `${pathname}?${q}` : pathname, { scroll: false });
     },
     [router, pathname],
   );
-  const setFilter = (f: Filter) => setParams(writeFilter(f, new URLSearchParams(params)));
+  const setFilter = (f: Filter) => {
+    setFilterState(f);
+    setParams((p) => writeFilter(f, p));
+  };
   const setView = (v: CalendarView) => {
-    const next = new URLSearchParams(params);
-    if (v === "month") next.delete("view");
-    else next.set("view", v);
-    setParams(next);
+    setViewState(v);
+    setParams((p) => {
+      if (v === "month") p.delete("view");
+      else p.set("view", v);
+      return p;
+    });
   };
 
   const visible = useMemo(() => filterEntries(shown, filter), [shown, filter]);
