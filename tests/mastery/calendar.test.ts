@@ -12,7 +12,7 @@ const TODAY = "2026-10-06";
 
 test("no courses or nothing scheduled, no review dates", () => {
   assert.deepEqual(reviewDates([], TODAY, day), []);
-  assert.deepEqual(reviewDates([{ id: "c", short: "LOG", agenda: empty, objectives: new Map() }], TODAY, day), []);
+  assert.deepEqual(reviewDates([{ id: "c", agenda: empty, objectives: new Map() }], TODAY, day), []);
 });
 
 test("today's quick review, what was missed today on the next one, later spaced checks by day, and an overdue deep review today", () => {
@@ -29,19 +29,19 @@ test("today's quick review, what was missed today on the next one, later spaced 
     ["c", state("c", "2026-10-09T18:00:00Z")],
     ["d", state("d", "2026-10-20T10:00:00Z")],
   ]);
-  const out = reviewDates([{ id: "c", short: "LOG", agenda, objectives }], TODAY, day);
+  const out = reviewDates([{ id: "c", agenda, objectives }], TODAY, day);
   assert.deepEqual(out.map((e) => [e.date, e.kind, e.title]), [
-    [TODAY, "rev", "LOG Dive in"],
-    [TODAY, "rev", "LOG quick review · 1 objective"],
-    ["2026-10-07", "rev", "LOG quick review · 2 objectives"],
-    ["2026-10-09", "rev", "LOG quick review · 2 objectives"],
-    ["2026-10-20", "rev", "LOG quick review · 1 objective"],
+    [TODAY, "dive", "Dive in"],
+    [TODAY, "rev", "Quick review · 1 objective"],
+    ["2026-10-07", "rev", "Quick review · 2 objectives"],
+    ["2026-10-09", "rev", "Quick review · 2 objectives"],
+    ["2026-10-20", "rev", "Quick review · 1 objective"],
   ]);
 });
 
 test("with today's quick review done (or not on the cadence), today's due list moves to the next one", () => {
   const agenda: CourseAgenda = { ...empty, dueToday: [ranked("a", "learning")], heldForNext: [ranked("b", "learning")] };
-  assert.deepEqual(reviewDates([{ id: "c", short: "LOG", agenda, objectives: new Map() }], TODAY, day).map((e) => [e.date, e.title]), [["2026-10-07", "LOG quick review · 2 objectives"]]);
+  assert.deepEqual(reviewDates([{ id: "c", agenda, objectives: new Map() }], TODAY, day).map((e) => [e.date, e.title]), [["2026-10-07", "Quick review · 2 objectives"]]);
 });
 
 test("Never omits future spaced checks from the calendar while dives remain scheduled", () => {
@@ -53,5 +53,5 @@ test("Never omits future spaced checks from the calendar while dives remain sche
     deepReview: { due: false, dueDay: "2026-10-10", tomorrow: false, candidates: 1 },
   };
   const objectives = new Map([["a", state("a", "2026-10-09T10:00:00Z")]]);
-  assert.deepEqual(reviewDates([{ id: "c", short: "LOG", agenda, objectives }], TODAY, day).map((e) => [e.date, e.title]), [["2026-10-10", "LOG Dive in"]]);
+  assert.deepEqual(reviewDates([{ id: "c", agenda, objectives }], TODAY, day).map((e) => [e.date, e.title]), [["2026-10-10", "Dive in"]]);
 });

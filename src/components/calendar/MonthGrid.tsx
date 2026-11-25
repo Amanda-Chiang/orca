@@ -1,101 +1,131 @@
 "use client";
 
-import { useState } from "react";
-import { motion } from "motion/react";
+import { type ReactNode, useCallback, useRef, useState } from "react";
+import { AnimatePresence } from "motion/react";
 import type { CalendarEvent } from "@/lib/data";
-import { toISODate } from "@/lib/data";
-import { Tag } from "@/components/ui/Tag";
+import type { Box } from "@/lib/anchor-geometry";
+import { AnchoredBubble } from "@/components/ui/AnchoredBubble";
+import { useDismiss } from "@/hooks/useDismiss";
 import { cn } from "@/lib/cn";
-import { popIn, stagger } from "@/lib/motion";
 
-const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+export const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 /** Entries a day shows before "+n more". */
-const SHOWN = 2;
+const SHOWN = 4;
+
+/** "Wednesday, Nov 12" for a local ISO day. */
+export function dayTitle(iso: string) {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
+}
 
 /**
- * 6×7 grid of day cells for the month containing `cursor`. "+n more" expands that whole week's row
- * to fit every entry; "Show less" folds it again.
+ * The month: its weeks on one hairline grid. A day shows its first few entries; "+n more", or a
+ * click anywhere on the day, opens a pop-up with all of them, so rows never change height.
  */
-/**
- * `cram`: courses in cram mode and the exams they're cramming for (owner, 2026-11-22): the exam is red,
- * the course's other entries have a red ring.
- */
-export function MonthGrid({ cursor, events, today, cram }: { cursor: Date; events: CalendarEvent[]; today: string; cram?: { courses: ReadonlySet<string>; exams: ReadonlySet<string> } }) {
-  const [expanded, setExpanded] = useState<ReadonlySet<number>>(new Set());
-  const toggleWeek = (week: number) => setExpanded((s) => (s.has(week) ? new Set([...s].filter((w) => w !== week)) : new Set([...s, week])));
-  const first = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
-  const start = new Date(first);
-  start.setDate(first.getDate() - first.getDay());
-
-  const days = Array.from({ length: 42 }, (_, i) => {
-    const d = new Date(start);
-    d.setDate(start.getDate() + i);
-    return d;
-  });
-
-  const byDate = new Map<string, CalendarEvent[]>();
-  for (const e of events) byDate.set(e.date, [...(byDate.get(e.date) ?? []), e]);
+export function MonthGrid({
+  days,
+  month,
+  today,
+  byDate,
+  entry,
+}: {
+  /** Whole weeks of local ISO days, Sunday first. */
+  days: readonly string[];
+  /** "YYYY-MM" of the month shown; other days are faded. */
+  month: string;
+  today: string;
+  byDate: ReadonlyMap<string, CalendarEvent[]>;
+  entry: (e: CalendarEvent, compact: boolean) => ReactNode;
+}) {
+  const [open, setOpen] = useState<{ day: string; box: Box } | null>(null);
+  const popover = useRef<HTMLDivElement>(null);
+  const close = useCallback(() => setOpen(null), []);
+  useDismiss(popover, open !== null, close, { inside: "[data-part=day-popover]", onScroll: true });
+  const openDay = (day: string, el: HTMLElement) => {
+    const r = el.getBoundingClientRect();
+    setOpen((o) => (o?.day === day ? null : { day, box: { left: r.left, top: r.top, width: r.width, height: r.height } }));
+  };
 
   return (
-    <div className="flex flex-col gap-[10px]">
-      <div className="grid grid-cols-7 gap-[12px] px-[4px]">
+    <div className="overflow-hidden rounded-[20px] border border-line bg-card">
+      <div className="grid grid-cols-7 border-b border-line">
         {WEEKDAYS.map((w) => (
-          <span key={w} className="text-center text-[14px] font-semibold text-wisteria-deep">
+          <span key={w} className="py-[8px] text-center text-[12px] font-semibold uppercase tracking-[1px] text-wisteria-deep">
             {w}
           </span>
         ))}
       </div>
-      <motion.div key={toISODate(first)} variants={stagger(0.02, 0.012)} initial="hidden" animate="show" className="grid grid-cols-7 gap-[12px]">
-        {days.map((d, i) => {
-          const week = Math.floor(i / 7);
-          const open = expanded.has(week);
-          const iso = toISODate(d);
-          const inMonth = d.getMonth() === cursor.getMonth();
+      <div className="grid grid-cols-7">
+        {days.map((iso, i) => {
+          const inMonth = iso.startsWith(month);
           const isToday = iso === today;
           const evs = byDate.get(iso) ?? [];
           return (
-            <motion.div
+            <div
               key={iso}
-              variants={popIn}
+              data-day={iso}
               data-today={isToday || undefined}
+              onClick={(e) => evs.length > 0 && openDay(iso, e.currentTarget)}
               className={cn(
-                "flex flex-col gap-[4px] rounded-[18px] border-2 p-[8px]",
-                open ? "min-h-[104px]" : "h-[104px]",
-                inMonth ? "border-alice-deep bg-parchment lip-3 lip-alice" : "border-transparent bg-alice-deep/35",
+                "flex h-[132px] min-w-0 flex-col gap-[3px] border-line p-[6px]",
+                i % 7 !== 6 && "border-r",
+                i < days.length - 7 && "border-b",
+                !inMonth && "bg-page",
+                evs.length > 0 && "cursor-pointer hover:bg-alice/40",
               )}
             >
               <span
                 className={cn(
-                  "flex h-[26px] w-[26px] items-center justify-center rounded-pill text-[14px] font-bold",
-                  isToday ? "bg-wisteria text-parchment" : inMonth ? "text-prussian" : "text-periwinkle-deep",
+                  "mb-[1px] flex h-[24px] w-[24px] shrink-0 items-center justify-center rounded-pill text-[13px] font-bold",
+                  isToday ? "bg-wisteria text-parchment" : inMonth ? "text-prussian" : "text-muted/60",
                 )}
               >
-                {d.getDate()}
+                {Number(iso.slice(8))}
               </span>
-              <div className={cn("flex min-h-0 flex-col gap-[4px]", !open && "overflow-hidden")}>
-                {(open ? evs : evs.slice(0, SHOWN)).map((e) => (
-                  <Tag
-                    key={e.id}
-                    kind={e.kind}
-                    title={e.title}
-                    data-part="event"
-                    data-cramming={cram?.exams.has(e.id) ? "exam" : e.courseId && cram?.courses.has(e.courseId) ? "course" : undefined}
-                    className={cram?.exams.has(e.id) ? "bg-cram! text-parchment" : e.courseId && cram?.courses.has(e.courseId) ? "ring-2 ring-inset ring-cram" : undefined}
-                  >
-                    {e.title}
-                  </Tag>
+              <div className={cn("flex min-h-0 flex-col gap-[3px]", !inMonth && "opacity-50")}>
+                {evs.slice(0, evs.length > SHOWN ? SHOWN - 1 : SHOWN).map((e) => (
+                  <div key={e.id}>{entry(e, true)}</div>
                 ))}
                 {evs.length > SHOWN && (
-                  <button type="button" onClick={() => toggleWeek(week)} aria-expanded={open} data-part="more" className="self-start text-[11px] font-semibold text-wisteria-deep hover:underline">
-                    {open ? "Show less" : `+${evs.length - SHOWN} more`}
+                  <button
+                    type="button"
+                    data-part="more"
+                    aria-haspopup="dialog"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openDay(iso, e.currentTarget.closest("[data-day]") as HTMLElement);
+                    }}
+                    className="self-start rounded-[6px] px-[6px] text-[11.5px] font-bold text-wisteria-deep hover:underline"
+                  >
+                    +{evs.length - (SHOWN - 1)} more
                   </button>
                 )}
               </div>
-            </motion.div>
+            </div>
           );
         })}
-      </motion.div>
+      </div>
+      <AnimatePresence>
+        {open && (
+          <DayPopover key={open.day} ref={popover} day={open.day} box={open.box} onClose={close}>
+            {(byDate.get(open.day) ?? []).map((e) => (
+              <div key={e.id}>{entry(e, false)}</div>
+            ))}
+          </DayPopover>
+        )}
+      </AnimatePresence>
     </div>
+  );
+}
+
+function DayPopover({ ref, day, box, onClose, children }: { ref: React.Ref<HTMLDivElement>; day: string; box: Box; onClose: () => void; children: ReactNode }) {
+  return (
+    <AnchoredBubble target={box} width={300} preferredSide="right" onClose={onClose} closeLabel="Close day" label={dayTitle(day)} data-part="day-popover" className="px-[16px] pb-[14px] pt-[16px]">
+      <div ref={ref} className="flex flex-col gap-[6px]">
+        <h2 className="pr-[28px] text-[15px] font-bold text-prussian">{dayTitle(day)}</h2>
+        {children}
+      </div>
+    </AnchoredBubble>
   );
 }

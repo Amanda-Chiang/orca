@@ -86,7 +86,8 @@ test("cram mode: dark course pages on the exam's topics, reviews paused, banner,
   // Calendar: a Cramming key, and the course marked in the filter.
   await page.goto("/calendar");
   await expect(page.locator("[data-part=cram-legend]")).toBeVisible();
-  await expect(page.locator("[data-part=course-filter]")).toContainText("Logic Fixture · cramming");
+  await page.locator("[data-part=calendar-filter]").click();
+  await expect(page.locator("[data-part=filter-panel]")).toContainText("Logic Fixture· cramming");
 
   // Once the exam has passed, cram mode is over by itself: no banner, light, Enter cram mode back (for the Quiz).
   await admin().from("exams").update({ date: inDays(-1) }).eq("id", final.id);
