@@ -108,7 +108,7 @@ export function CramProgress({ plan, topics, studied, studiedToday, split, examD
  * A column per day of the cram, plus today and any day studied since it started: the planned hours as
  * an outline, the minutes studied stacked by source in the progress page's colors (hover for each).
  */
-function DayBars({ plan, split, today }: { plan: CramPlan; split: StudySplit; today: string }) {
+export function DayBars({ plan, split, today }: { plan: CramPlan; split: StudySplit; today: string }) {
   const HEIGHT = 170;
   // Today shows even on a day off, so a session started today is on the chart.
   const extra = [...Object.keys(split), ...(plan.daysLeft > 0 ? [today] : [])].filter((day) => !(day in plan.perDay));

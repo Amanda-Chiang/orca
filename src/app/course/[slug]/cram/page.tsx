@@ -21,7 +21,8 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { CramSetup } from "@/components/course/CramSetup";
-import { useConnectorStatus, useCramPlan, useStudyLog, type StudySplit } from "@/components/course/useCram";
+import { useConnectorStatus, useCramPlan, useCramResults, useStudyLog, type StudySplit } from "@/components/course/useCram";
+import { CramResults } from "@/components/course/CramResults";
 import { CramProgress } from "@/components/course/CramProgress";
 import { WeakSpotBubbles } from "@/components/course/WeakSpotBubbles";
 import { CramCurtain } from "@/components/course/CramCurtain";
@@ -77,6 +78,10 @@ export default function CramPage({ params, searchParams }: PageProps<"/course/[s
   const log = useStudyLog(course?.id, exam?.id);
   const planned = useCramPlan(course, exam, m, log);
   const connected = useConnectorStatus(Boolean(exam?.cramming));
+  // The results end when Stop was clicked (`at`); opened without it, when the page opened.
+  const [openedAt] = useState(() => new Date().toISOString());
+  const endedAt = typeof sp.at === "string" && !Number.isNaN(Date.parse(sp.at)) ? new Date(sp.at).toISOString() : openedAt;
+  const report = useCramResults(course, ended, log, endedAt);
   const router = useRouter();
   // The day the welcome last showed for this course, read once when the page opens (kept in this browser), so it stays up while it's read.
   // Read when the course is first known (the page can open before the store has it). `orca.cramWelcome` "off" turns it off in this browser (the browser tests set it).
@@ -153,8 +158,8 @@ export default function CramPage({ params, searchParams }: PageProps<"/course/[s
           </div>
         </header>
         <motion.div variants={stagger(0.05, 0.08)} initial="hidden" animate="show" className="flex flex-col gap-[12px] px-[24px] pb-[28px] pt-[20px]" data-part="cram-results">
-          {planned ? (
-            <CramProgress plan={planned.plan} topics={planned.topics} studied={planned.spentMinutes.beforeToday + planned.spentMinutes.today} studiedToday={planned.spentMinutes.today} split={planned.split} examDate={exam.date} courseId={course.id} studyLoaded={planned.studyLoaded} today={today} />
+          {planned && report ? (
+            <CramResults data={report} plan={planned.plan} />
           ) : (
             <motion.div variants={fadeUp}>
               <Card className="px-[22px] pb-[18px] pt-[18px]">

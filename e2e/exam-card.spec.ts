@@ -89,9 +89,9 @@ test("Enter cram mode opens the next exam's setup; Confirm stores cramming, the 
   await page.goto(`/course/${SLUG}`);
   // Stop cramming opens the cram's results, still dark, and ends the cram at once (owner, 2026-11-25).
   await banner.locator("[data-part=cram-stop]").click();
-  await expect(page).toHaveURL(`/course/${SLUG}/cram?ended=${examId}`);
+  await expect(page).toHaveURL(new RegExp(`/course/${SLUG}/cram\\?ended=${examId}&at=`));
   const results = page.locator("[data-part=cram-results]");
-  await expect(results.locator("[data-part=cram-progress]")).toBeVisible();
+  await expect(results.locator("[data-part=cram-results-report]")).toBeVisible();
   await expect(results.locator("[data-part=cram-exam-map]")).toBeVisible();
   await expect(page.locator("[data-part=top-bar]")).toHaveAttribute("data-cram", "1");
   await expect.poll(async () => (await stored(page, student)).exams.find((e) => e.id === examId)!.cramming).toBe(false);

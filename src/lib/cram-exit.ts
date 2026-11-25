@@ -8,8 +8,8 @@ import { useSyncExternalStore } from "react";
  * (CramCurtain) on the next page that has one. In-memory only: a reload starts clean.
  */
 
-/** The cram's results: the cram page with `ended`. */
-export const cramResultsHref = (slug: string, examId: string) => `/course/${slug}/cram?ended=${examId}`;
+/** The cram's results: the cram page with `ended`, and `at` the moment Stop was clicked (the results end there). */
+export const cramResultsHref = (slug: string, examId: string) => `/course/${slug}/cram?ended=${examId}&at=${encodeURIComponent(new Date().toISOString())}`;
 
 /** The exam whose Stop cramming was just clicked: the results page ends it once, so a reload or a bookmark of the URL can't. */
 let stopping: string | null = null;

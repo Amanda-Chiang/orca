@@ -164,8 +164,11 @@ own courses (Data Structures, Fundamentals of Computer Systems) on the hosted pr
   (the store's `updateExam` and the connector's `set_exam`). Assumptions in `docs/TO-DISCUSS.md`; e2e
   `e2e/cram-immersive.spec.ts`.
 - **Leaving cram mode and the day's welcome** (2026-11-25, owner; branch `cram-exit-results`): Stop cramming (banner or
-  cram page) opens the cram's results, `/course/<slug>/cram?ended=<examId>` (`cram-results`: Your Progress and "What
-  the exam asks", still dark, the top bar too), which save `cramming: false` on arrival, only when reached through Stop
+  cram page) opens the cram's results, `/course/<slug>/cram?ended=<examId>&at=<stop time>` (`cram-results`, still
+  dark, the top bar too: `CramResults` + `useCramResults` cover only the cram, from `budget.since` to `at`: time
+  studied against the hours planned through that day, % ready and objectives verified at the start and at Stop
+  (mastery replayed from the evidence log at each end; readiness from the attempts before each), what moved per
+  topic, the days, and "Since the cram started" by source (`useStudyDays` `until`); then "What the exam asks"), which save `cramming: false` on arrival, only when reached through Stop
   (`src/lib/cram-exit.ts`), so a reload or bookmark can't end a cram. Leaving them (Back, `cram-results-back`) plays the
   dive back up and the bubbles on the next page with an `AppShell` (`CramCurtain arrive`). The first time the cram page
   shows the plan on a day it opens on the day's welcome (`cram-welcome`: "Welcome to your cram" / "Welcome back", day N
