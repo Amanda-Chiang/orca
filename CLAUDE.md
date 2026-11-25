@@ -160,6 +160,12 @@ own courses (Data Structures, Fundamentals of Computer Systems) on the hosted pr
   hovered (`TopicGraph muted`), the red (`cram` token) CRAM MODE banner (`CramBanner`, `data-part="cram-banner"`) sits on top, the nav (calendar, add material, the course's settings) floats at the bottom right, the top bar over those pages is the blue of cram mode's path rims (`alice-deep` under its tokens), the logo's orca keeps its colours (`orca-body`, `orca-belly`), the dive covers the whole window, the home island (the rim of a not-started topic on cram mode's path, a purple ring inside it and a dark centre, `Island cram`) and its name take the dark look with the path's pulsing halo behind (`island-halo`, the spot `data-cramming`), the sidebar opens with a red cram card per cramming course (`CramCards`, `data-part="cram-card"`: the course, the exam, days left, % of its objectives verified, to the cram page), and the calendar marks the crammed exam red and the course's other entries with a red ring, with a Cramming key and "· cramming" in the course filter. One exam per course crams at a time
   (the store's `updateExam` and the connector's `set_exam`). Assumptions in `docs/TO-DISCUSS.md`; e2e
   `e2e/cram-immersive.spec.ts`.
+- **List view History** (2026-11-25, owner; branch `list-history`): each List row's History opens `TopicHistory`, the
+  topic's attempts per objective, newest first (Orca questions, connector answers, Claude's work), with result, date,
+  the display percent before → after (`objectiveHistory` in `src/lib/mastery/history.ts`, replayed from the evidence),
+  and flags, marks and signals as marker rows; a row opens to the question, the student's answer, the key and the
+  rubric grader's note. App answers now send `response` (and for rubric answers `graderNote` and `errorType`) to
+  `POST /api/evidence`; `evidence_events.grader_note` (migration `20261125090000`) holds the note, never folded.
 - **After a wrong answer** (2026-11-22, owner; `src/lib/quiz/after-miss.ts`, `src/components/quiz/AfterMiss.tsx`): the
   miss is recorded at once, then the solution waits: a second try (practice only, nothing recorded; `retry-prompt`,
   `show-solution`), then "What went wrong?" chips beside the key (shown against the grader's `errorType`, not saved;

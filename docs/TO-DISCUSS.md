@@ -6,6 +6,19 @@ in the doc it affects (usually `docs/BACKEND-ROADMAP.md`) and move it to "Decide
 
 ## Open
 
+### List view History: assumptions (2026-11-25)
+- **Source:** owner, 2026-11-25; `src/components/course/TopicHistory.tsx`, `src/lib/mastery/history.ts`, migration
+  `20261125090000_answer_grader_note.sql`.
+- **Assumed, for the owner to confirm:**
+  1. History lists every objective of the topic that has evidence (weak spots first), not only weak spots.
+  2. The change in mastery is the quiz's display percent (`masteryPercent`) read at the event's time, before → after.
+  3. Answers from before this change kept no answer text and show "Not saved"; a self-marked miss with none
+     shows "Don't know, or not saved".
+  4. In-app rubric answers now also store the grader's `errorType` (the connector already did), so the cram
+     plan's `topErrors` counts them too.
+  5. The grader's note is sent by the browser (as the outcome already is): an edited request can only change
+     what the student is shown about their own answer.
+
 ### After a wrong answer: assumptions (2026-11-22)
 
 Decided by the owner: the second try is practice only (the first answer is what's recorded), the
