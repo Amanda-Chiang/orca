@@ -241,6 +241,33 @@ own courses (Data Structures, Fundamentals of Computer Systems) on the hosted pr
   unless a spec says `test.use({ tips: true })`. A new feature worth pointing out gets a tip there. Built from
   reusable pieces: `ui/AnchoredBubble` (a popover pointing at an element, placed by `src/lib/anchor-geometry.ts`),
   `ui/Spotlight`, `ui/Kbd`, `ui/InlineConfirm`, `Button size="xs"`, `useElementBox`.
+- **Feedback and activity** (2026-11-25, owner: before Orca goes public): a small inline prompt
+  (`src/components/feedback/FeedbackPrompt.tsx`: one line, a thumb, an optional note, X) after a
+  session (QuizEnd), on the built upload card opened from a toast, under a practice test's timed score,
+  and always in Settings → Feedback (`FeedbackCard`). Answers and dismissals go to `app_feedback`
+  (migration `20261125110000`, server-only; `POST /api/feedback`, `GET /api/feedback` says where each
+  spot stands; a spot stops asking once answered or dismissed `LIMITS.feedbackDismissals` times).
+  The heartbeat also marks the UTC day in `activity_days` (`touch_activity`, backfilled from older
+  rows); `/admin/feedback` lists what students said with active / came back / dropped off counts
+  (`admin_activity_summary`), and each account's admin page shows its 90-day strip and gaps
+  (`src/lib/admin/activity.ts`). The three new functions are called through `rpc(fn as never)`:
+  `database.types.ts` wasn't regenerated (no local stack on the machine that built it); run
+  `npm run locked -- npm run db:types` when one is at hand.
+- **Integrations without OAuth** (2026-11-25, owner: as many ways in as possible; the Google and Notion
+  sign-in flows wait for the owner's credentials). **Calendar feed:** Settings → Connections → "Google or
+  Apple Calendar" mints a secret subscription link (`profiles.calendar_feed_token`, server-set, migration
+  `20261125120000`; `/api/calendar-feed`), and `GET /api/calendar/feed/<token>.ics` answers exams, due
+  dates, class meetings and review days as iCalendar (`src/lib/calendar/ics.ts`, pure). **Google Docs,
+  Slides, Sheets and Drive links** pasted in Add material's link field (`src/lib/google-link.ts`) are
+  fetched as files (a PDF export, or the Drive file) through `POST /api/materials/google`, the upload
+  path; only "anyone with the link" sharing works and the route says so. **Notion:** Settings → Notion
+  takes an internal-integration secret (`notion_connections`, encrypted like the Canvas token;
+  `/api/notion`), `/import/notion` lists the pages shared with it (`/api/notion/pages`) and imports the
+  ticked ones as text material named after the page (`/api/notion/import`, `src/lib/notion/api.ts` turns
+  blocks into text; `notion_links` keeps importing again from duplicating). GoodNotes has no API: the
+  upload page says to export as PDF. New rate limits: `calendarFeed`, `google`, `notionConnect`,
+  `notionPages`, `notionImport`. The new tables and column are read through casts (`database.types.ts`
+  not regenerated, as above).
 - **Two hosted Supabase projects.** Production is `fbbimuspcsytjhbqlzzc` (the live site's; its
   keys are Vercel's Production env vars). `mtztzsxgcopohlokragm` is a second hosted project Amanda
   uses for development. `.env` may point at either (it has pointed at each at different times):

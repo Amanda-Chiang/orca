@@ -87,7 +87,7 @@ export const TIPS: readonly Tip[] = [
   { id: "settings-notes", route: SETTINGS, target: '[data-part="notes-for-orca"]', when: settledIn, title: "For all your classes", body: "Preferences here apply to every class, like the kinds of questions you want. A class's own notes win when they disagree." },
   { id: "settings-markers", route: SETTINGS, target: '[data-part="marker-notes"]', when: settledIn, title: "Your marks", body: "Tell me how you mark confusion in handwritten notes, like a star or a question mark, and I'll flag those passages as weak spots." },
   { id: "settings-canvas", route: SETTINGS, target: '[data-part="canvas-connection"]', when: settledIn, title: "Canvas", body: "Connect once, then import a class's files and assignment dates instead of uploading them." },
-  { id: "settings-claude", route: SETTINGS, target: '[data-part="claude-connector"]', when: settledIn, title: "Study with Claude", body: "Connect Claude and it can quiz you with my questions in a chat. I grade your answers and keep score." },
+  { id: "settings-claude", route: SETTINGS, target: '[data-part="claude-connector"]', when: settledIn, title: "Study with your AI", body: "Connect Claude or ChatGPT and it can quiz you with my questions in a chat. I grade your answers and keep score." },
 ];
 
 /**

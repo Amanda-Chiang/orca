@@ -66,7 +66,22 @@ export const LIMITS = {
     timer: { max: 30, windowSeconds: 3600 },
     /** Asking the server to check runs (POST /api/runs/check): pages following a staged run ask once a minute per browser; a few tabs fit, a loop doesn't. */
     runsCheck: { max: 20, windowSeconds: 300 },
+    /** A feedback answer or dismissal (POST /api/feedback, 2026-11-25): a few prompts a day; a loop doesn't. */
+    feedback: { max: 30, windowSeconds: 3600 },
+    /** Making a calendar feed link (POST /api/calendar-feed, 2026-11-25): each replaces the last. */
+    calendarFeed: { max: 10, windowSeconds: 3600 },
+    /** A Google Docs, Slides or Drive link as material (POST /api/materials/google, 2026-11-25): an outbound fetch of up to 50 MB and a job per call. */
+    google: { max: 20, windowSeconds: 3600 },
+    /** Connecting Notion (POST /api/notion, 2026-11-25): one outbound request to Notion. */
+    notionConnect: { max: 10, windowSeconds: 3600 },
+    /** Listing the pages shared with the integration (GET /api/notion/pages). */
+    notionPages: { max: 60, windowSeconds: 3600 },
+    /** Importing Notion pages (POST /api/notion/import): each page is a few Notion calls and a job. */
+    notionImport: { max: 30, windowSeconds: 3600 },
   },
+
+  /** A feedback prompt stops asking at a spot after this many dismissals (2026-11-25). */
+  feedbackDismissals: 2,
 
   /** One model call: the longest it may take, and how often a transient failure is retried. */
   modelTimeoutMs: 10 * 60_000,

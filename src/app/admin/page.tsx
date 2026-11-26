@@ -2,14 +2,14 @@ import { UsersTable } from "@/components/admin/UsersTable";
 import { AdminPage, Section, Tiles } from "@/components/admin/AdminPage";
 import { int, money } from "@/components/admin/format";
 import { requireAdmin } from "@/lib/server/admin";
-import { overview, users } from "@/lib/server/admin-queries";
+import { activitySummary, overview, users } from "@/lib/server/admin-queries";
 
 /** /admin: the overview tiles and the users table. Admins only; anyone else sees the app's 404. */
 export const dynamic = "force-dynamic";
 
 export default async function AdminOverviewPage() {
   const { db } = await requireAdmin("/admin");
-  const [o, rows] = await Promise.all([overview(db), users(db, "joined")]);
+  const [o, rows, a] = await Promise.all([overview(db), users(db, "joined"), activitySummary(db)]);
   return (
     <AdminPage title="Overview" current="/admin">
       <Tiles
@@ -23,6 +23,10 @@ export default async function AdminOverviewPage() {
           { label: "Answers today", value: int(o.answersToday) },
           { label: "Open runs", value: int(o.openRuns) },
           { label: "Paused runs", value: int(o.pausedRuns) },
+          { label: "Active, 7 days", value: int(a.active7d) },
+          { label: "Came back, 7 days", value: int(a.cameBack7d) },
+          { label: "Dropped off (7–30 days)", value: int(a.droppedOff) },
+          { label: "Feedback, 7 days", value: int(a.feedback7d) },
         ]}
       />
       <Section title="Users" aside={`${int(rows.length)} accounts · newest first`}>

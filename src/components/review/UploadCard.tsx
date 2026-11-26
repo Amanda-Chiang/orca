@@ -10,6 +10,7 @@ import { Card } from "@/components/ui/Card";
 import { HardSlides } from "@/components/review/HardSlides";
 import { DeleteUploadDialog } from "@/components/review/DeleteUploadDialog";
 import { FileName } from "@/components/review/FileName";
+import { FeedbackPrompt } from "@/components/feedback/FeedbackPrompt";
 import { WhatItAdded } from "@/components/review/WhatItAdded";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 
@@ -71,7 +72,8 @@ const when = (iso: string) => new Date(iso).toLocaleString(undefined, { month: "
  * upload the page was opened for (`?run=`): the page already follows it (one Realtime channel per
  * run), and its parts keep the names the browser tests use.
  */
-export function UploadCard({ run: stored, material, focused = false, openSlides = false }: { run: PipelineRun; material: Material | undefined; focused?: boolean; openSlides?: boolean }) {
+/** `askFeedback`: the one built card on the page that may ask how the upload came out (owner, 2026-11-25). */
+export function UploadCard({ run: stored, material, focused = false, openSlides = false, askFeedback = false }: { run: PipelineRun; material: Material | undefined; focused?: boolean; openSlides?: boolean; askFeedback?: boolean }) {
   // Only an unfinished run is followed (a finished one won't change), and never twice.
   // After Try again, Stop, Pause or Resume the card follows its run live (Realtime, with a poll as
   // backstop) and shows each change as it lands (owner, 2026-11-24), instead of waiting for the store's
@@ -298,6 +300,7 @@ export function UploadCard({ run: stored, material, focused = false, openSlides 
         {run.questionsAdded > 0 ? `, ${plural(run.questionsAdded, "question")} added.` : "."}
       </span>
       {course && <WhatItAdded run={run} course={course} />}
+      {askFeedback && run.status === "done" && <FeedbackPrompt spot="upload-done" question="Did this upload come out right?" />}
       {pausing && <span className="text-[13px] font-semibold text-prussian">{pausing}</span>}
       {hidden && (
         <span className="text-[14px] font-semibold text-prussian" data-part="hidden-text">

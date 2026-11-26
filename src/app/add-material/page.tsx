@@ -7,7 +7,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { MATERIAL_TYPES, MATERIAL_TYPE_LABELS, type MaterialType, formatUSDate, toISODate } from "@/lib/data";
 import { useOrca } from "@/lib/store";
 import { browserSupabase } from "@/lib/supabase/browser";
-import { type UploadOutcome, type UploadStage, filesFromDataTransfer, importText, importWebsite, uploadMaterial, uploadProblem, admitUploads, concurrent, PIPELINE_LIMITS } from "@/lib/uploads";
+import { type UploadOutcome, type UploadStage, filesFromDataTransfer, importGoogle, importText, importWebsite, uploadMaterial, uploadProblem, admitUploads, concurrent, PIPELINE_LIMITS } from "@/lib/uploads";
 import { type BatchItem, BatchList } from "@/components/upload/BatchList";
 import type { MaterialPages } from "@/lib/data";
 import type { ReflectOutput } from "@/lib/pipeline/schemas";
@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Chip, ContextPill } from "@/components/ui/Chip";
 import { Select } from "@/components/ui/Select";
+import { parseGoogleLink } from "@/lib/google-link";
 import { heldBackByDefault } from "@/lib/material/hold-back";
 import { uploadKind } from "@/lib/material/kind";
 import { ProgressBar } from "@/components/ui/ProgressBar";
@@ -28,6 +29,8 @@ const SKELETON = [92, 100, 78, 96, 60, 0, 100, 88, 94, 70, 0, 90, 84];
 
 /** From this many files an upload counts as bulk (owner, 2026-10-27): dates hidden behind "Add dates". */
 const BULK_FROM = 3;
+
+const isGoogleLink = (url: string) => parseGoogleLink(url) !== null;
 
 const STAGE_MESSAGE: Record<UploadStage, string> = {
   hashing: "Preparing the upload…",
@@ -254,9 +257,10 @@ export default function AddMaterialPage({ searchParams }: PageProps<"/add-materi
     if (websiteUrl.trim()) {
       try {
         setPhase({ kind: "sending", stage: "reading" });
-        const outcome = await importWebsite(websiteUrl.trim(), meta);
+        // A Google Docs, Slides, Sheets or Drive share link is fetched as a file (2026-11-25); anything else is read as a course website.
+        const outcome = isGoogleLink(websiteUrl) ? await importGoogle(websiteUrl.trim(), meta) : await importWebsite(websiteUrl.trim(), meta);
         afterImport(outcome);
-      } catch (error) { setPhase({ kind: "error", message: error instanceof Error ? error.message : "The website import failed." }); }
+      } catch (error) { setPhase({ kind: "error", message: error instanceof Error ? error.message : "The import failed." }); }
       return;
     }
     if (!file || unreadable) return;
@@ -427,9 +431,10 @@ export default function AddMaterialPage({ searchParams }: PageProps<"/add-materi
             {/* Several files: their list takes this space (the other ways in are for one thing at a time). */}
             {!batch && (<>
             <label className="flex flex-col gap-[6px] text-[13px] font-semibold text-wisteria-deep" onClick={(e) => e.stopPropagation()}>
-              Or import a public course website
-              <input value={websiteUrl} onChange={(e) => { setWebsiteUrl(e.target.value); setFile(null); setChosenName(null); setAiChatUrl(""); setPastedText(""); setPhase({ kind: "idle" }); }} placeholder="https://example.edu/course" className="h-[40px] rounded-[12px] border-2 border-alice-deep bg-parchment px-[12px] text-[14px] font-medium text-prussian outline-none focus:border-wisteria" />
+              Or paste a link: a public course website, or a Google Docs, Slides or Drive file shared with the link
+              <input value={websiteUrl} onChange={(e) => { setWebsiteUrl(e.target.value); setFile(null); setChosenName(null); setAiChatUrl(""); setPastedText(""); setPhase({ kind: "idle" }); }} placeholder="https://example.edu/course, or docs.google.com/…" className="h-[40px] rounded-[12px] border-2 border-alice-deep bg-parchment px-[12px] text-[14px] font-medium text-prussian outline-none focus:border-wisteria" />
             </label>
+            <span className="text-[11px] leading-snug text-wisteria-deep" onClick={(e) => e.stopPropagation()}>GoodNotes or Notability? Export the notebook as a PDF and upload it as handwritten notes.</span>
             <div className="flex flex-col gap-[6px]" onClick={(e) => e.stopPropagation()}>
               <span className="text-[13px] font-semibold text-wisteria-deep">Or paste text</span>
               <textarea value={pastedText} onChange={(e) => { setPastedText(e.target.value); setAiChatUrl(""); setWebsiteUrl(""); setFile(null); setChosenName(null); setPhase({ kind: "idle" }); }} rows={4} placeholder="Paste a syllabus, your notes, or an exported AI chat. The type above decides how it's read." className="resize-y rounded-[12px] border-2 border-alice-deep bg-parchment px-[12px] py-[9px] text-[13px] font-medium text-prussian outline-none focus:border-wisteria" data-part="paste-text" />

@@ -14,6 +14,7 @@ import type { CramCovered, CramPlan, CramPlanDay, CramPlanInput, SpentMinutes } 
 import type { ObjectiveStatus } from "@/lib/mastery/types";
 import { useCourse, useDayKey, useMasteryByCourse, useOrca } from "@/lib/store";
 import { useNow } from "@/hooks/useNow";
+import { FeedbackPrompt } from "@/components/feedback/FeedbackPrompt";
 import { Screen } from "@/components/layout/Screen";
 import { IconUpload } from "@/components/icons";
 import { BackButton } from "@/components/layout/BackButton";
@@ -290,17 +291,17 @@ function CrammingView({ course, today, plan, topics, spentMinutes, split, studyL
           {/* The cram's loop (owner, 2026-11-25): study with Claude, which has the plan; Orca keeps the score. */}
           <motion.div variants={fadeUp} className="min-w-0 flex-1">
             <Card className="flex h-full flex-col gap-[10px] px-[22px] pb-[18px] pt-[18px]" data-part="cram-welcome-claude">
-              <h2 className="text-[20px] font-bold text-prussian">Cram with Claude, track it here</h2>
+              <h2 className="text-[20px] font-bold text-prussian">Cram with your AI, track it here</h2>
               <p className="text-[15px] font-medium text-prussian">
                 {connected
-                  ? "Open Claude and say “start my cram”: it already has this plan and today's focus. Everything you answer there counts here."
-                  : "Connect Claude and it gets this plan and today's focus. Everything you answer there counts here."}
+                  ? "Open Claude or ChatGPT and say “start my cram”: it already has this plan and today's focus. Everything you answer there counts here."
+                  : "Connect Claude or ChatGPT and it gets this plan and today's focus. Everything you answer there counts here."}
               </p>
               <p className="text-[14px] font-medium text-wisteria-deep">Come back to Orca to see your progress and how ready you are.</p>
               <div className="mt-auto flex flex-wrap items-center gap-[8px] pt-[4px]">
                 {connected === false && (
                   <Link href="/settings#connector" onClick={onDismiss} data-part="cram-welcome-connect" className={PILL}>
-                    Connect Claude
+                    Connect your AI
                   </Link>
                 )}
                 <button type="button" onClick={onProgress} data-part="cram-welcome-progress" className={PILL}>
@@ -459,11 +460,11 @@ function TodayCard({ plan, topicName, slug, connected, title = "Today", onGo }: 
         </Link>
         {connected ? (
           <span className="text-[13px] font-medium text-prussian" data-part="study-with-claude">
-            Or study with Claude: it has this plan.
+            Or study with your AI: it has this plan.
           </span>
         ) : (
           <Link href="/settings#connector" onClick={onGo} data-part="study-with-claude" className={PILL}>
-            Study with Claude
+            Study with your AI
           </Link>
         )}
       </div>
@@ -577,7 +578,7 @@ function LeftOff({ lastSession, lastQuiz, connected }: { lastSession: SessionLin
         </>
       ) : (
         <p className="text-[14px] font-medium text-wisteria-deep" data-part="cram-last-empty">
-          No sittings with Claude yet. Study with Claude and it picks up here next time.
+          No sittings with your AI yet. Study with Claude or ChatGPT and it picks up here next time.
         </p>
       )}
       {lastQuiz && (
@@ -764,6 +765,9 @@ function ExamMapCard({ scope, readiness, vaultNames, hasVault }: { scope: ExamSc
               Timed score: {readiness.measured.points} / {readiness.measured.outOf}
               <span className="font-medium text-wisteria-deep"> · {vaultNames.get(readiness.measured.materialId) ?? "the reserved exam"}</span>
             </p>
+          )}
+          {readiness?.measured && (
+            <FeedbackPrompt spot="practice-test" question="Was the practice test worth it?" />
           )}
           {map.uncertain && (
             <p className="text-[12px] font-medium text-wisteria-deep" data-part="cram-map-uncertain">

@@ -63,7 +63,11 @@ export default function NewCoursePage() {
             <Link href="/import/canvas" className="font-bold text-wisteria-deep underline underline-offset-2" data-part="import-from-canvas">
               Import the course from Canvas
             </Link>{" "}
-            and skip the uploads.
+            and skip the uploads. Notes in Notion?{" "}
+            <Link href="/import/notion" className="font-bold text-wisteria-deep underline underline-offset-2" data-part="import-from-notion">
+              Import pages from Notion
+            </Link>
+            .
           </motion.p>
 
           <motion.label variants={fadeUp} className="mt-[40px] flex flex-col gap-[10px]">

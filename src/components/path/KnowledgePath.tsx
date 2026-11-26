@@ -124,7 +124,7 @@ export function KnowledgePath({ course, progress, onStart, warmUp, examTopics = 
     return (
       <div className="absolute inset-0 flex flex-col items-center justify-center gap-[12px] px-[80px] text-center" data-part="path-no-exam-weak-spots">
         <p className="text-[22px] font-bold text-prussian">No weak spots on this exam&apos;s topics yet.</p>
-        <p className="max-w-[460px] text-[16px] text-wisteria-deep">Study with Claude, or try a topic: a miss becomes a weak spot.</p>
+        <p className="max-w-[460px] text-[16px] text-wisteria-deep">Study with your AI, or try a topic: a miss becomes a weak spot.</p>
         {toggle}
       </div>
     );
