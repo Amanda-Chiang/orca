@@ -69,6 +69,11 @@ export async function importGoogle(url: string, meta: UploadMeta): Promise<Uploa
   return importOutcome(await post<Imported>("/api/materials/google", { ...meta, url }));
 }
 
+/** A file picked in Google Drive's picker: Orca downloads it with the student's Drive access (2026-11-27). */
+export async function importDrive(fileId: string, meta: UploadMeta): Promise<UploadOutcome> {
+  return importOutcome(await post<Imported>("/api/materials/google-drive", { ...meta, fileId }));
+}
+
 /**
  * Save pasted text as material (read as the type in `meta`), or a public AI-chat link (always an
  * "AI chat"), or recognise it as one already in the course.

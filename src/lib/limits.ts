@@ -78,6 +78,12 @@ export const LIMITS = {
     notionPages: { max: 60, windowSeconds: 3600 },
     /** Importing Notion pages (POST /api/notion/import): each page is a few Notion calls and a job. */
     notionImport: { max: 30, windowSeconds: 3600 },
+    /** Starting or finishing Google sign-in (GET /api/google/connect, 2026-11-27): one token exchange with Google. */
+    googleConnect: { max: 20, windowSeconds: 3600 },
+    /** Syncing the Orca calendar in Google Calendar by hand (POST /api/google/calendar/sync): a few dozen Calendar API calls. */
+    googleSync: { max: 30, windowSeconds: 3600 },
+    /** A short-lived Drive token for the file picker (POST /api/google/picker-token): one token refresh. */
+    googleToken: { max: 60, windowSeconds: 3600 },
   },
 
   /** A feedback prompt stops asking at a spot after this many dismissals (2026-11-25). */

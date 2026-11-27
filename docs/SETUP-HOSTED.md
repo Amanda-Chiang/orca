@@ -286,6 +286,36 @@ or not, gets a 404 on `/admin` and `/api/admin/*`; every admin read is logged in
 as `admin_read`. To take it away, set it back to false. "Last active" on the users table comes from
 the heartbeat the app sends every 5 minutes while a tab is open (`profiles.last_active_at`).
 
+## 11. Google Calendar and Drive sign-in (the owner, once)
+
+Students connect Google from Settings → Connections (and Drive from Add material's "Google Drive"
+button). Orca asks for two narrow scopes, each only when the student uses that feature:
+`calendar.app.created` (only an "Orca" calendar that Orca makes; a **sensitive** scope) and
+`drive.file` (only files the student picks in Google's picker; **non-sensitive**). Without the
+variables below the Google card and button don't show.
+
+1. Google Cloud console → new project ("Orca"). Note its **project number** (Dashboard).
+2. APIs & Services → Library: enable **Google Calendar API**, **Google Drive API** and **Google
+   Picker API**.
+3. Google Auth Platform → Branding: app name Orca, support email, the homepage
+   (`https://orca-lake-omega.vercel.app`), privacy policy URL. Audience: **External**, status
+   **Testing**; add each tester's Google address under Test users (at most 100).
+4. Data Access → Add scopes: `openid`, `.../auth/userinfo.email`, `.../auth/calendar.app.created`,
+   `.../auth/drive.file`.
+5. Clients → Create client → **Web application**. Authorized redirect URIs:
+   `https://orca-lake-omega.vercel.app/api/google/callback` and `http://localhost:3000/api/google/callback`.
+   Authorized JavaScript origins (for the picker): `https://orca-lake-omega.vercel.app`, `http://localhost:3000`.
+6. APIs & Services → Credentials → Create credentials → **API key**; restrict it to the Google
+   Picker API and to the two origins above (HTTP referrers).
+7. Vercel → Production env vars: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_PICKER_API_KEY`,
+   `GOOGLE_PROJECT_NUMBER` (and `SITE_URL`, which the redirect URI is built from). Redeploy.
+
+In Testing status Google lets in only the listed test users and **expires their access after 7
+days** (Settings then says "Connect again"). Going public: Audience → Publish app; Drive alone needs
+only brand verification, Calendar's sensitive scope needs Google's review (a demo video, a privacy
+policy on a domain you own and have verified; `vercel.app` can't be verified). Until then an
+unverified public app shows a warning screen and is capped at 100 users.
+
 ## Order
 
 Done: the Supabase project, keys and auth settings; Vercel's variables; the model key; the Deploy
