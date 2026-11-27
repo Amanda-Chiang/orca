@@ -7,7 +7,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { MATERIAL_TYPES, MATERIAL_TYPE_LABELS, type MaterialType, formatUSDate, toISODate } from "@/lib/data";
 import { useOrca } from "@/lib/store";
 import { browserSupabase } from "@/lib/supabase/browser";
-import { type UploadOutcome, type UploadStage, filesFromDataTransfer, importGoogle, importText, importWebsite, uploadMaterial, uploadProblem, admitUploads, concurrent, PIPELINE_LIMITS } from "@/lib/uploads";
+import { type UploadOutcome, type UploadStage, filesFromDataTransfer, importDrive, importGoogle, importText, importWebsite, uploadMaterial, uploadProblem, admitUploads, concurrent, PIPELINE_LIMITS } from "@/lib/uploads";
 import { type BatchItem, BatchList } from "@/components/upload/BatchList";
 import type { MaterialPages } from "@/lib/data";
 import type { ReflectOutput } from "@/lib/pipeline/schemas";
@@ -20,6 +20,7 @@ import { Chip, ContextPill } from "@/components/ui/Chip";
 import { Select } from "@/components/ui/Select";
 import { InfoTip } from "@/components/ui/InfoTip";
 import { parseGoogleLink } from "@/lib/google-link";
+import { type PickedFile, pickDriveFiles } from "@/lib/google-picker";
 import { heldBackByDefault } from "@/lib/material/hold-back";
 import { uploadKind } from "@/lib/material/kind";
 import { ProgressBar } from "@/components/ui/ProgressBar";
@@ -122,6 +123,22 @@ export default function AddMaterialPage({ searchParams }: PageProps<"/add-materi
   const fileRef = useRef<HTMLInputElement>(null);
   const folderRef = useRef<HTMLInputElement>(null);
   const [source, setSource] = useState<Source>("file");
+  /** Files picked in Google Drive (2026-11-27); Orca downloads them on Add. */
+  const [driveFiles, setDriveFiles] = useState<PickedFile[] | null>(null);
+  /** Whether this server has Google set up (the Drive button shows), and whether Drive is connected. */
+  const [drive, setDrive] = useState<{ ready: boolean; connected: boolean } | null>(null);
+  useEffect(() => {
+    let live = true;
+    void fetch("/api/google", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((g: { configured: boolean; pickerReady: boolean; drive: { connected: boolean } } | null) => {
+        if (live && g) setDrive({ ready: g.configured && g.pickerReady, connected: g.drive.connected });
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, []);
 
   if (!course) {
     if (!hydrated) return null;
@@ -159,6 +176,7 @@ export default function AddMaterialPage({ searchParams }: PageProps<"/add-materi
     const files = list.filter((f) => !f.name.startsWith("."));
     if (files.length === 0) return;
     if (files.length === 1) return onFile(files[0]);
+    setDriveFiles(null);
     setFile(null);
     setDoc(null);
     setWebsiteUrl("");
@@ -179,6 +197,7 @@ export default function AddMaterialPage({ searchParams }: PageProps<"/add-materi
   };
 
   const onFile = (f: File) => {
+    setDriveFiles(null);
     setBatch(null);
     setChosenName(f.name);
     setDoc(null);
@@ -189,6 +208,36 @@ export default function AddMaterialPage({ searchParams }: PageProps<"/add-materi
     const problem = uploadProblem(f);
     // A file Orca can't take (too big, empty, a kind it can't read) is refused: nothing is added.
     setPhase(problem ? { kind: "error", message: `${problem} Choose another file.` } : { kind: "idle" });
+  };
+
+  /** Google Drive: connect first (Google's consent screen, then back here), else open the picker. */
+  const chooseFromDrive = async () => {
+    if (!drive?.connected) {
+      // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- a full navigation to Google's consent screen, through Orca's API route.
+      window.location.href = `/api/google/connect?feature=drive&next=${encodeURIComponent(`/add-material?course=${course.slug}`)}`;
+      return;
+    }
+    try {
+      const res = await fetch("/api/google/picker-token", { method: "POST" });
+      const body = (await res.json().catch(() => ({}))) as { token?: string; apiKey?: string; appId?: string; error?: string; reconnect?: boolean };
+      if (!res.ok || !body.token || !body.apiKey || !body.appId) {
+        if (body.reconnect) setDrive({ ready: true, connected: false });
+        return setPhase({ kind: "error", message: body.error ?? "Google Drive didn't open." });
+      }
+      const picked = await pickDriveFiles({ token: body.token, apiKey: body.apiKey, appId: body.appId });
+      if (picked.length === 0) return;
+      setBatch(null);
+      setFile(null);
+      setDoc(null);
+      setWebsiteUrl("");
+      setAiChatUrl("");
+      setPastedText("");
+      setDriveFiles(picked);
+      setChosenName(picked.length === 1 ? picked[0].name : `${picked.length} files from Google Drive`);
+      setPhase({ kind: "idle" });
+    } catch (error) {
+      setPhase({ kind: "error", message: error instanceof Error ? error.message : "Google Drive didn't open." });
+    }
   };
 
   /**
@@ -242,7 +291,7 @@ export default function AddMaterialPage({ searchParams }: PageProps<"/add-materi
   /** `again`: the student chose "Upload again" for a file the course already has (a new copy). */
   const submit = async (again = false) => {
     if (batch) return submitBatch();
-    if (!file && !websiteUrl.trim() && !aiChatUrl.trim() && !pastedText.trim()) return;
+    if (!file && !driveFiles && !websiteUrl.trim() && !aiChatUrl.trim() && !pastedText.trim()) return;
     const reflection = type === "Homework" ? note.trim() : "";
     const meta = { courseId: course.id, type, assigned, due, reflect: reflection.length > 0, handwritten: type === "Handwritten notes" && isPdf, again, heldBack: holdBack };
     // The form is done with: it gives way to where the student goes next, so Back from there skips it.
@@ -261,6 +310,25 @@ export default function AddMaterialPage({ searchParams }: PageProps<"/add-materi
         const outcome = await importText({ ...(aiChatUrl.trim() ? { url: aiChatUrl.trim() } : {}), ...(pastedText.trim() ? { text: pastedText.trim() } : {}) }, meta);
         afterImport(outcome);
       } catch (error) { setPhase({ kind: "error", message: error instanceof Error ? error.message : (aiChatUrl.trim() ? "The AI chat import failed." : "The pasted text couldn't be saved.") }); }
+      return;
+    }
+    if (driveFiles && !websiteUrl.trim()) {
+      const failed: string[] = [];
+      let last: UploadOutcome | null = null;
+      for (const [i, f] of driveFiles.entries()) {
+        setPhase({ kind: "sending", stage: "reading" });
+        setChosenName(driveFiles.length === 1 ? f.name : `${f.name} (${i + 1} of ${driveFiles.length})`);
+        try {
+          last = await importDrive(f.id, meta);
+          if (last.kind === "read") addMaterial(last.material, { saved: true });
+        } catch (error) {
+          failed.push(`${f.name}: ${error instanceof Error ? error.message : "it couldn't be added."}`);
+        }
+      }
+      setDriveFiles(null);
+      if (failed.length > 0) return setPhase({ kind: "error", message: failed.join(" ") });
+      if (driveFiles.length === 1 && last) return afterImport(last);
+      router.replace(`/course/${course.slug}/review?tab=uploads`);
       return;
     }
     if (websiteUrl.trim()) {
@@ -462,6 +530,11 @@ export default function AddMaterialPage({ searchParams }: PageProps<"/add-materi
                         <IconUpload size={16} /> {label}
                       </button>
                     ))}
+                    {drive?.ready && (
+                      <button type="button" disabled={busy} onClick={() => void chooseFromDrive()} className="flex items-center gap-1 text-[13px] font-semibold text-wisteria-deep hover:underline" data-part="google-drive-pick">
+                        <IconUpload size={16} /> Google Drive
+                      </button>
+                    )}
                     <InfoTip label="About GoodNotes and Notability">GoodNotes or Notability? Export the notebook as a PDF and upload it as handwritten notes.</InfoTip>
                   </span>
                 </div>

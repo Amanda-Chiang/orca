@@ -5,7 +5,7 @@
  * Making a new link replaces the old one; clearing it stops the feed at once.
  */
 import { randomBytes } from "node:crypto";
-import { type FeedCourse, buildIcs } from "@/lib/calendar/ics";
+import { type FeedCourse, type FeedInput, buildIcs } from "@/lib/calendar/ics";
 import { CourseScheduleSchema } from "@/lib/supabase/app-rows";
 import type { OrcaSupabase } from "@/lib/supabase/server";
 
@@ -36,15 +36,21 @@ export async function revokeFeed(db: OrcaSupabase, ownerId: string): Promise<voi
 
 /** The feed for a token, or null when no account holds it. Days are the student's (their timezone). */
 export async function feedForToken(db: OrcaSupabase, token: string, now = new Date()): Promise<string | null> {
-  const { data: profile, error } = await db.from("profiles").select("owner_id, timezone").eq("calendar_feed_token", token).maybeSingle();
+  const { data: profile, error } = await db.from("profiles").select("owner_id").eq("calendar_feed_token", token).maybeSingle();
   if (error) throw new Error(`Couldn't read the calendar feed: ${error.message}`);
   if (!profile) return null;
-  const owner = profile.owner_id;
-  const [courses, exams, events] = await Promise.all([
+  return buildIcs({ ...(await feedInputFor(db, profile.owner_id, now)), now });
+}
+
+/** A student's courses, exams and calendar entries, with their timezone and today (in it). Shared with the Google Calendar sync. */
+export async function feedInputFor(db: OrcaSupabase, owner: string, now = new Date()): Promise<Omit<FeedInput, "now">> {
+  const [profile, courses, exams, events] = await Promise.all([
+    db.from("profiles").select("timezone").eq("owner_id", owner).single(),
     db.from("courses").select("id, name, short, schedule").eq("owner_id", owner).is("deleted_at", null),
     db.from("exams").select("id, course_id, title, date").eq("owner_id", owner),
     db.from("calendar_events").select("id, course_id, kind, title, date").eq("owner_id", owner),
   ]);
+  if (profile.error) throw new Error(`Couldn't read the profile: ${profile.error.message}`);
   if (courses.error) throw new Error(`Couldn't read the courses: ${courses.error.message}`);
   if (exams.error) throw new Error(`Couldn't read the exams: ${exams.error.message}`);
   if (events.error) throw new Error(`Couldn't read the calendar: ${events.error.message}`);
@@ -52,13 +58,17 @@ export async function feedForToken(db: OrcaSupabase, token: string, now = new Da
     const parsed = c.schedule === null ? null : CourseScheduleSchema.safeParse(c.schedule);
     return { id: c.id, name: c.name, short: c.short, schedule: parsed && parsed.success ? parsed.data : null };
   });
-  const today = new Intl.DateTimeFormat("en-CA", { timeZone: profile.timezone, year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
-  return buildIcs({
+  const timezone = profile.data.timezone;
+  return {
     courses: feedCourses,
     exams: exams.data.map((e) => ({ id: e.id, courseId: e.course_id, title: e.title, date: e.date })),
     events: events.data.map((e) => ({ id: e.id, courseId: e.course_id, kind: e.kind, title: e.title, date: e.date })),
-    from: today,
-    timezone: profile.timezone,
-    now,
-  });
+    from: localDay(now, timezone),
+    timezone,
+  };
+}
+
+/** YYYY-MM-DD in a timezone. */
+export function localDay(now: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
 }

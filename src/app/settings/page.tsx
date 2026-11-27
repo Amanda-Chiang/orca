@@ -16,6 +16,7 @@ import { MarkerNotes } from "@/components/config/MarkerNotes";
 import { NotesForOrca } from "@/components/config/NotesForOrca";
 import { AccountCard, SignOutButton, TimezoneRow } from "@/components/settings/Account";
 import { CalendarFeedCard } from "@/components/settings/CalendarFeed";
+import { GoogleConnectionCard } from "@/components/settings/GoogleConnection";
 import { CanvasConnectionCard } from "@/components/settings/CanvasConnection";
 import { ClaudeConnectorCard } from "@/components/settings/ClaudeConnector";
 import { FeedbackCard } from "@/components/settings/FeedbackCard";
@@ -90,10 +91,11 @@ function SettingsBody() {
               {section.key !== "preferences" && (
                 <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-[14px] overflow-y-auto overscroll-contain px-[8px] pb-[12px] [&>*]:shrink-0" data-part="settings-scroll">
                   {section.key === "connections" && (
-                    // A 2×2 grid of tiles; each one's setup opens in a pop-up, so the section fits the window.
-                    <div className="grid grid-cols-2 gap-[14px]" data-part="connections-grid">
+                    // A grid of tiles (2×2, or 3 across once Google is set up); each one's setup opens in a pop-up, so the section fits the window.
+                    <div className="grid grid-cols-2 gap-[14px] has-[>:nth-child(5)]:grid-cols-3" data-part="connections-grid">
                       <ClaudeConnectorCard />
                       <CanvasConnectionCard />
+                      <GoogleConnectionCard />
                       <NotionConnectionCard />
                       <CalendarFeedCard />
                     </div>
