@@ -170,6 +170,19 @@ isOneToOne: false
       referencedColumns: ["id","owner_id"]
     }
                   ]
+                },"google_connections": {
+                  Row: {
+                    "broken_at": string | null,"calendar_error": string | null,"calendar_id": string | null,"calendar_since": string | null,"calendar_synced_at": string | null,"created_at": string,"google_email": string | null,"last_used_at": string | null,"owner_id": string,"refresh_token_enc": string,"scopes": (string)[]
+                  }
+                  Insert: {
+                    "broken_at"?: string | null,"calendar_error"?: string | null,"calendar_id"?: string | null,"calendar_since"?: string | null,"calendar_synced_at"?: string | null,"created_at"?: string,"google_email"?: string | null,"last_used_at"?: string | null,"owner_id": string,"refresh_token_enc": string,"scopes"?: (string)[]
+                  }
+                  Update: {
+                    "broken_at"?: string | null,"calendar_error"?: string | null,"calendar_id"?: string | null,"calendar_since"?: string | null,"calendar_synced_at"?: string | null,"created_at"?: string,"google_email"?: string | null,"last_used_at"?: string | null,"owner_id"?: string,"refresh_token_enc"?: string,"scopes"?: (string)[]
+                  }
+                  Relationships: [
+                    
+                  ]
                 },"material_pages": {
                   Row: {
                     "material_id": string,"n": number,"owner_id": string,"source": string,"text": string
@@ -217,19 +230,6 @@ isOneToOne: false
                   }
                   Update: {
                     "at"?: string,"attempt_id"?: string | null,"cache_read_tokens"?: number,"cache_write_tokens"?: number,"cost_usd"?: number,"duration_ms"?: number | null,"id"?: string,"input_tokens"?: number,"kind"?: string,"model"?: string,"output_tokens"?: number,"owner_id"?: string,"phase"?: string | null,"run_id"?: string | null,"step"?: string | null
-                  }
-                  Relationships: [
-                    
-                  ]
-                },"google_connections": {
-                  Row: {
-                    "broken_at": string | null,"calendar_error": string | null,"calendar_id": string | null,"calendar_since": string | null,"calendar_synced_at": string | null,"created_at": string,"google_email": string | null,"last_used_at": string | null,"owner_id": string,"refresh_token_enc": string,"scopes": string[]
-                  }
-                  Insert: {
-                    "broken_at"?: string | null,"calendar_error"?: string | null,"calendar_id"?: string | null,"calendar_since"?: string | null,"calendar_synced_at"?: string | null,"created_at"?: string,"google_email"?: string | null,"last_used_at"?: string | null,"owner_id": string,"refresh_token_enc": string,"scopes"?: string[]
-                  }
-                  Update: {
-                    "broken_at"?: string | null,"calendar_error"?: string | null,"calendar_id"?: string | null,"calendar_since"?: string | null,"calendar_synced_at"?: string | null,"created_at"?: string,"google_email"?: string | null,"last_used_at"?: string | null,"owner_id"?: string,"refresh_token_enc"?: string,"scopes"?: string[]
                   }
                   Relationships: [
                     
