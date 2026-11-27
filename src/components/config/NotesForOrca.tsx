@@ -2,6 +2,7 @@
 
 import { LIMITS } from "@/lib/limits";
 import { Card } from "@/components/ui/Card";
+import { InfoTip } from "@/components/ui/InfoTip";
 
 /**
  * Notes for Orca (owner, 2026-10-25): what the student knows about a class, in their own words.
@@ -28,22 +29,24 @@ const COPY = {
 export function NotesForOrca({ scope, value, onChange }: { scope: "account" | "course"; value: string; onChange: (value: string) => void }) {
   const copy = COPY[scope];
   return (
-    <Card className="flex flex-col gap-[12px] px-[24px] pb-[20px] pt-[20px]" data-part="notes-for-orca">
-      <div className="flex flex-col gap-[4px]">
-        <h2 className="text-[22px] font-bold text-prussian">{copy.title}</h2>
+    <Card className="flex flex-col gap-[10px] px-[22px] pb-[16px] pt-[18px]" data-part="notes-for-orca">
+      <div className="flex flex-col gap-[2px]">
+        <h2 className="flex items-center gap-[8px] text-[20px] font-bold text-prussian">
+          {copy.title}
+          <InfoTip label={`About ${copy.title}`}>{copy.body}</InfoTip>
+        </h2>
         <p className="eyebrow text-wisteria-deep">{copy.eyebrow}</p>
-        <p className="text-[14px] font-medium text-wisteria-deep">{copy.body}</p>
       </div>
       <textarea
         value={value}
         onChange={(e) => onChange(e.target.value)}
         maxLength={LIMITS.notesChars}
-        rows={5}
+        rows={4}
         aria-label={copy.title}
         placeholder={copy.placeholder}
-        className="min-h-[120px] w-full resize-y rounded-[16px] border-2 border-alice-deep bg-parchment px-[16px] py-[12px] text-[16px] text-prussian outline-none focus:border-wisteria"
+        className="min-h-[100px] w-full resize-y rounded-[16px] border-2 border-alice-deep bg-parchment px-[16px] py-[12px] text-[16px] text-prussian outline-none focus:border-wisteria"
       />
-      <p className="self-end text-[13px] font-semibold text-wisteria-deep">
+      <p className="-mt-[4px] self-end text-[12px] font-semibold text-wisteria-deep">
         {value.length.toLocaleString()} / {LIMITS.notesChars.toLocaleString()}
       </p>
     </Card>

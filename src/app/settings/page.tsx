@@ -23,6 +23,7 @@ import { FeedbackCard } from "@/components/settings/FeedbackCard";
 import { NotionConnectionCard } from "@/components/settings/NotionConnection";
 import { fadeSwap, fadeUp, stagger } from "@/lib/motion";
 import { Button } from "@/components/ui/Button";
+import { InfoTip } from "@/components/ui/InfoTip";
 
 async function saveAccountNotes(notes: string | null) {
   const response = await fetch("/api/account-notes", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ notes }) });
@@ -53,9 +54,9 @@ type SectionKey = (typeof SECTIONS)[number]["key"];
 export default function SettingsPage() {
   return (
     <Screen bg="ocean" className="h-screen-below-bar max-h-screen-below-bar">
-      <header className="flex shrink-0 items-center gap-[12px] px-[24px] pt-[20px]">
+      <header className="flex shrink-0 items-center gap-[12px] px-[24px] pt-[18px]">
         <BackButton />
-        <h1 className="text-[46px] font-bold leading-none text-prussian">Settings</h1>
+        <h1 className="text-[32px] font-bold leading-none text-prussian">Settings</h1>
       </header>
       <Suspense>
         <SettingsBody />
@@ -69,10 +70,10 @@ function SettingsBody() {
   const section = SECTIONS.find((s) => s.key === asked) ?? SECTIONS[0];
 
   return (
-    <div className="flex min-h-0 flex-1 gap-[20px] overflow-hidden px-[24px] pb-[28px] pt-[20px]">
+    <div className="flex min-h-0 flex-1 gap-[20px] overflow-hidden px-[24px] pb-[20px] pt-[16px]">
       <SectionRail current={section.key} />
-      <main className={cn("flex min-h-0 min-w-0 flex-1 flex-col gap-[14px]", section.key === "preferences" ? "max-w-[1000px]" : "max-w-[720px]")} data-part="settings-section" data-section={section.key}>
-        <h2 className="shrink-0 px-[4px] text-[28px] font-semibold leading-tight text-prussian">{section.label}</h2>
+      <main aria-label={section.label} className={cn("flex min-h-0 min-w-0 flex-1 flex-col gap-[14px]", section.key === "account" || section.key === "feedback" ? "max-w-[720px]" : "max-w-[1000px]")} data-part="settings-section" data-section={section.key}>
+        {/* No section heading: the rail beside it names the section. */}
         {/* Each column scrolls independently; padding leaves room for the cards' lips. */}
         <div className="-mx-[8px] flex min-h-0 flex-1 flex-col">
           <AnimatePresence mode="wait">
@@ -82,7 +83,7 @@ function SettingsBody() {
                   <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-[14px] overflow-y-auto overscroll-contain px-[8px] pb-[12px] [&>*]:shrink-0" data-part="settings-scroll" data-column="notes">
                     <StudyNotes />
                   </div>
-                  <div className="min-h-0 w-[356px] shrink-0 overflow-y-auto overscroll-contain px-[8px] pb-[12px]" data-part="settings-scroll" data-column="rhythm">
+                  <div className="min-h-0 w-[464px] shrink-0 overflow-y-auto overscroll-contain px-[8px] pb-[12px]" data-part="settings-scroll" data-column="rhythm">
                     <ReviewRhythm />
                   </div>
                 </>
@@ -90,13 +91,14 @@ function SettingsBody() {
               {section.key !== "preferences" && (
                 <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-[14px] overflow-y-auto overscroll-contain px-[8px] pb-[12px] [&>*]:shrink-0" data-part="settings-scroll">
                   {section.key === "connections" && (
-                    <>
+                    // A grid of tiles (2×2, or 3 across once Google is set up); each one's setup opens in a pop-up, so the section fits the window.
+                    <div className="grid grid-cols-2 gap-[14px] has-[>:nth-child(5)]:grid-cols-3" data-part="connections-grid">
                       <ClaudeConnectorCard />
                       <CanvasConnectionCard />
                       <GoogleConnectionCard />
                       <NotionConnectionCard />
                       <CalendarFeedCard />
-                    </>
+                    </div>
                   )}
                   {section.key === "feedback" && <FeedbackCard />}
                   {section.key === "account" && <AccountCard />}
@@ -168,17 +170,17 @@ function ReviewRhythm() {
   // Only once loaded: an edit made before the load lands would be overwritten on screen by it.
   if (!hydrated) return null;
   return (
-    <Card className="flex flex-col gap-[16px] px-[22px] pb-[22px] pt-[20px]" data-part="default-config">
-      <div className="flex flex-col gap-[4px]">
-        <h2 className="text-[22px] font-bold text-prussian">Review rhythm</h2>
-        <p className="text-[13px] font-medium text-wisteria-deep">How long and how often. Changes save as you make them.</p>
-      </div>
-      <motion.div variants={stagger(0, 0.05)} initial="hidden" animate="show" className="flex flex-col gap-[14px]">
+    <Card className="flex flex-col gap-[14px] px-[20px] pb-[18px] pt-[18px]" data-part="default-config">
+      <h2 className="flex items-center gap-[8px] text-[20px] font-bold text-prussian">
+        Review rhythm
+        <InfoTip label="About the review rhythm">How long and how often. Changes save as you make them.</InfoTip>
+      </h2>
+      <motion.div variants={stagger(0, 0.05)} initial="hidden" animate="show" className="flex flex-col gap-[12px]">
         {(["quick", "deep", "exam"] as const).map((k) => (
-          <ConfigRow key={k} stacked allowNever={k !== "exam"} label={REVIEW_LABELS[k]} row={defaultConfig[k]} onChange={(row) => setDefaults({ ...defaultConfig, [k]: row })} />
+          <ConfigRow key={k} compact allowNever={k !== "exam"} label={REVIEW_LABELS[k]} row={defaultConfig[k]} onChange={(row) => setDefaults({ ...defaultConfig, [k]: row })} />
         ))}
       </motion.div>
-      <div className="border-t border-alice-deep pt-[16px]">
+      <div className="border-t border-alice-deep pt-[14px]">
         <TimezoneRow />
       </div>
     </Card>

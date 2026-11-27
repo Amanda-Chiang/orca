@@ -8,7 +8,9 @@ import { expect, test, F, FIXTURE_STATE, seedState } from "./fixture";
 
 test("Settings → Canvas refuses a site Orca can't send a token to, with the reason", async ({ page }) => {
   await page.goto("/settings?section=connections");
-  const card = page.locator('[data-part="canvas-connection"]');
+  // The site and token are entered in the tile's pop-up.
+  await page.locator('[data-part="canvas-connection"] [data-part="canvas-setup"]').click();
+  const card = page.locator('[data-part="canvas-setup-dialog"]');
   await card.locator('[data-part="canvas-site"]').fill("http://canvas.test");
   await card.locator('[data-part="canvas-token"]').fill("7~abcdefghijklmnopqrstuvwxyz0123456789");
   await card.locator('[data-part="canvas-connect"]').click();

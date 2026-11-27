@@ -37,6 +37,7 @@ export function AnchoredBubble({
   closePart = "bubble-close",
   role = "dialog",
   label,
+  tip = false,
   className,
   children,
   ...data
@@ -54,6 +55,8 @@ export function AnchoredBubble({
   closePart?: string;
   role?: "dialog" | "tooltip" | "status";
   label?: string;
+  /** A small tooltip card (InfoTip) rather than a full bubble. */
+  tip?: boolean;
   className?: string;
   children: ReactNode;
 } & { [attribute: `data-${string}`]: string | undefined }) {
@@ -91,7 +94,7 @@ export function AnchoredBubble({
       {...data}
     >
       {speakerOnTop && speakerRow}
-      <div className={cn("relative rounded-[24px] bg-parchment px-[22px] pb-[18px] pt-[20px] shadow-[0_12px_32px_-6px_rgb(21_29_58/0.35)]", className)}>
+      <div className={cn("relative bg-parchment shadow-[0_12px_32px_-6px_rgb(21_29_58/0.35)]", tip ? "rounded-[14px] px-[14px] py-[10px]" : "rounded-[24px] px-[22px] pb-[18px] pt-[20px]", className)}>
         {arrow && (
           <div
             aria-hidden

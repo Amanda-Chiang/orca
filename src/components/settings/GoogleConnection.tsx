@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
 import type { GoogleStatus } from "@/lib/server/google";
+import { ConfirmRow, ConnectionTile } from "./ConnectionTile";
 
 const OUTCOME: Record<string, string> = {
   denied: "Google didn't grant access. Try again and leave the permission ticked.",
@@ -96,74 +96,67 @@ export function GoogleConnectionCard() {
 
   if (status && !status.configured) return null;
   const connected = status ? status.calendar.connected || status.drive.connected : false;
+  const calendarLine = !status?.calendar.connected
+    ? null
+    : status.calendar.error ?? (status.calendar.syncedAt ? `Calendar synced ${ago(status.calendar.syncedAt)}` : "Calendar not synced yet");
+  const connectLink = (feature: "calendar" | "drive", label: string) => (
+    <a href={connectGoogleUrl(feature, here)} className="pressable inline-flex items-center rounded-[14px] bg-wisteria px-[14px] py-[7px] text-[14px] font-bold text-parchment lip-4 lip-wisteria" data-part={`google-${feature}-connect`}>
+      {label}
+    </a>
+  );
 
   return (
-    <Card className="flex flex-col gap-[12px] px-[24px] pb-[22px] pt-[20px]" data-part="google-connection">
-      <div className="flex flex-col gap-[4px]">
-        <h2 className="text-[22px] font-bold text-prussian">Google</h2>
-        {status?.email && <p className="text-[13px] font-semibold text-wisteria-deep" data-part="google-email">{status.email}</p>}
-      </div>
-      {status === null ? (
-        <p className="text-[13px] font-medium text-wisteria-deep">Loading…</p>
-      ) : (
-        <>
-          {status.needsReconnect && <p className="text-[13px] font-semibold text-bad-text">Google no longer accepts Orca&apos;s access. Connect again.</p>}
-          <div className="flex flex-wrap items-center justify-between gap-[10px] rounded-[14px] border-2 border-alice-deep bg-alice px-[14px] py-[10px]" data-part="google-calendar">
-            <div className="flex flex-col">
-              <span className="text-[15px] font-bold text-prussian">Google Calendar</span>
-              <span className="text-[13px] font-medium text-wisteria-deep">
-                {status.calendar.connected
-                  ? status.calendar.error
-                    ? status.calendar.error
-                    : status.calendar.syncedAt
-                      ? `Orca calendar synced ${ago(status.calendar.syncedAt)}`
-                      : "Not synced yet"
-                  : "Exams, due dates, classes and review days in an Orca calendar"}
-              </span>
-            </div>
+    <ConnectionTile
+      title="Google"
+      info="Calendar: an Orca calendar in Google Calendar with your exams, due dates, classes and review days, kept in sync. Drive: pick files from your Drive on Add material. Each asks only for its own permission."
+      data-part="google-connection"
+      status={
+        status === null ? (
+          "…"
+        ) : status.needsReconnect ? (
+          <span className="text-bad-text">Google no longer accepts Orca&apos;s access. Connect again.</span>
+        ) : (
+          <span className="flex flex-col">
+            {status.email && <span data-part="google-email">{status.email}</span>}
+            <span data-part="google-calendar">{calendarLine ?? "Calendar not connected"}</span>
+            <span data-part="google-drive">{status.drive.connected ? "Drive connected" : "Drive not connected"}</span>
+            {notice && <span className="text-wisteria-deep" data-part="google-notice">{notice}</span>}
+          </span>
+        )
+      }
+      actions={
+        status && (
+          <>
             {status.calendar.connected ? (
               <Button size="sm" variant="ghost" onClick={() => void sync()} disabled={busy} data-part="google-calendar-sync">
                 Sync now
               </Button>
             ) : (
-              <a href={connectGoogleUrl("calendar", here)} className="pressable inline-flex items-center rounded-[16px] bg-wisteria px-4 py-2 text-[14px] font-bold text-parchment lip-4 lip-wisteria" data-part="google-calendar-connect">
-                Connect
-              </a>
+              connectLink("calendar", "Connect Calendar")
             )}
-          </div>
-          <div className="flex flex-wrap items-center justify-between gap-[10px] rounded-[14px] border-2 border-alice-deep bg-alice px-[14px] py-[10px]" data-part="google-drive">
-            <div className="flex flex-col">
-              <span className="text-[15px] font-bold text-prussian">Google Drive</span>
-              <span className="text-[13px] font-medium text-wisteria-deep">{status.drive.connected ? "Pick files from Drive on Add material" : "Add Docs, Slides and PDFs from your Drive"}</span>
-            </div>
-            {!status.drive.connected && (
-              <a href={connectGoogleUrl("drive", here)} className="pressable inline-flex items-center rounded-[16px] bg-wisteria px-4 py-2 text-[14px] font-bold text-parchment lip-4 lip-wisteria" data-part="google-drive-connect">
-                Connect
-              </a>
-            )}
-          </div>
-          {(connected || status.needsReconnect) && !confirming && (
-            <div>
+            {!status.drive.connected && connectLink("drive", "Connect Drive")}
+            {(connected || status.needsReconnect) && !confirming && (
               <Button size="sm" variant="ghost" onClick={() => setConfirming(true)} disabled={busy} data-part="google-revoke">
-                Disconnect Google
-              </Button>
-            </div>
-          )}
-          {confirming && (
-            <div className="flex flex-wrap items-center gap-[10px] rounded-[14px] border-2 border-alice-deep bg-alice px-[14px] py-[10px]">
-              <span className="text-[13px] font-semibold text-prussian">Disconnect Google? The Orca calendar is removed from Google Calendar; files already added stay.</span>
-              <Button size="sm" variant="danger" onClick={() => void disconnect()} disabled={busy} data-part="google-revoke-yes">
                 Disconnect
               </Button>
-              <Button size="sm" variant="ghost" onClick={() => setConfirming(false)} disabled={busy}>
-                Keep
-              </Button>
-            </div>
-          )}
-        </>
-      )}
-      {notice && <p className="text-[13px] font-semibold text-prussian" data-part="google-notice">{notice}</p>}
-      {problem && <p className="text-[13px] font-semibold text-bad-text" data-part="google-problem">{problem}</p>}
-    </Card>
+            )}
+          </>
+        )
+      }
+      confirm={
+        confirming ? (
+          <ConfirmRow>
+            <span className="text-[13px] font-semibold text-prussian">Disconnect Google? The Orca calendar is removed; files already added stay.</span>
+            <Button size="sm" variant="danger" onClick={() => void disconnect()} disabled={busy} data-part="google-revoke-yes">
+              Disconnect
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setConfirming(false)} disabled={busy}>
+              Keep
+            </Button>
+          </ConfirmRow>
+        ) : undefined
+      }
+      problem={problem}
+    />
   );
 }

@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/Button";
 import { Island } from "@/components/brand/Island";
 import { Wave } from "@/components/brand/Decor";
 import { LabelPill } from "@/components/map/LabelPill";
+import { InfoTip } from "@/components/ui/InfoTip";
 import { fadeUp, popIn, stagger } from "@/lib/motion";
 
 export default function NewCoursePage() {
@@ -34,8 +35,9 @@ export default function NewCoursePage() {
   };
 
   return (
-    <Screen bg="ocean" className="overflow-y-auto">
-      <header className="px-[28px] pt-[28px]">
+    // Fits the window: one column of the form beside the island, nothing below the fold.
+    <Screen bg="ocean" className="h-screen-below-bar max-h-screen-below-bar">
+      <header className="shrink-0 px-[28px] pt-[20px]">
         <BackButton />
       </header>
 
@@ -44,33 +46,17 @@ export default function NewCoursePage() {
           e.preventDefault();
           create();
         }}
-        className="relative flex flex-1"
+        className="relative flex min-h-0 flex-1"
       >
-        <motion.div variants={stagger(0.05, 0.08)} initial="hidden" animate="show" className="z-10 flex w-[560px] max-w-full flex-col px-[72px] pb-[120px] pt-[40px] lg:px-[100px]">
+        <motion.div variants={stagger(0.05, 0.08)} initial="hidden" animate="show" className="z-10 flex min-h-0 w-[600px] max-w-full flex-col overflow-y-auto px-[72px] [&>:first-child]:mt-auto [&>:last-child]:mb-auto pb-[48px] lg:px-[100px]">
           <motion.span variants={fadeUp} className="eyebrow">
             New island
           </motion.span>
-          <motion.h1 variants={fadeUp} className="mt-[14px] text-[54px] font-bold leading-[1.05] text-prussian">
-            What are you
-            <br />
-            studying?
+          <motion.h1 variants={fadeUp} className="mt-[10px] whitespace-nowrap text-[40px] font-bold leading-[1.05] text-prussian">
+            What are you studying?
           </motion.h1>
-          <motion.p variants={fadeUp} className="mt-[22px] max-w-[400px] text-[17px] leading-[1.45] text-prussian">
-            Every class becomes an island you can explore and grow.
-          </motion.p>
-          <motion.p variants={fadeUp} className="mt-[12px] text-[15px] font-semibold text-prussian">
-            On CourseWorks?{" "}
-            <Link href="/import/canvas" className="font-bold text-wisteria-deep underline underline-offset-2" data-part="import-from-canvas">
-              Import the course from Canvas
-            </Link>{" "}
-            and skip the uploads. Notes in Notion?{" "}
-            <Link href="/import/notion" className="font-bold text-wisteria-deep underline underline-offset-2" data-part="import-from-notion">
-              Import pages from Notion
-            </Link>
-            .
-          </motion.p>
 
-          <motion.label variants={fadeUp} className="mt-[40px] flex flex-col gap-[10px]">
+          <motion.label variants={fadeUp} className="mt-[28px] flex flex-col gap-[8px]">
             <span className="text-[14px] font-semibold text-wisteria-deep">Course Name</span>
             <input
               autoFocus
@@ -78,18 +64,30 @@ export default function NewCoursePage() {
               onChange={(e) => setName(e.target.value)}
               maxLength={COURSE_NAME_MAX}
               placeholder="Advanced Logic Design"
-              className="h-[68px] w-[440px] max-w-full rounded-[24px] border-[3.5px] border-wisteria bg-parchment px-[22px] text-[24px] font-semibold text-prussian lip-5 lip-periwinkle placeholder:font-medium placeholder:text-alice-deep focus:border-wisteria-deep focus:outline-none"
+              className="h-[60px] w-[440px] max-w-full rounded-[22px] border-[3.5px] border-wisteria bg-parchment px-[20px] text-[22px] font-semibold text-prussian lip-5 lip-periwinkle placeholder:font-medium placeholder:text-alice-deep focus:border-wisteria-deep focus:outline-none"
             />
           </motion.label>
+          {/* The other ways in: a whole course from Canvas, or pages from Notion. */}
+          <motion.div variants={fadeUp} className="mt-[14px] flex flex-wrap items-center gap-[8px] text-[13px] font-semibold text-wisteria-deep">
+            Or import:
+            <Link href="/import/canvas" className="pressable rounded-pill bg-alice px-[12px] py-[5px] font-bold text-prussian lip-2 lip-alice" data-part="import-from-canvas">
+              Canvas course
+            </Link>
+            <Link href="/import/notion" className="pressable rounded-pill bg-alice px-[12px] py-[5px] font-bold text-prussian lip-2 lip-alice" data-part="import-from-notion">
+              Notion pages
+            </Link>
+          </motion.div>
 
-          <motion.div variants={fadeUp} className="mt-[28px] flex w-[560px] max-w-full flex-col gap-[10px]">
-            <span className="text-[14px] font-semibold text-wisteria-deep">When does it meet? (optional)</span>
-            <p className="text-[14px] text-prussian">Quick reviews and dives land the day before class. You can change this in the course&apos;s settings.</p>
+          <motion.div variants={fadeUp} className="mt-[26px] flex w-[560px] max-w-full flex-col gap-[10px]">
+            <span className="flex items-center gap-[6px] text-[14px] font-semibold text-wisteria-deep">
+              When does it meet? (optional)
+              <InfoTip label="About class times">Quick reviews and dives land the day before class. You can change this in the course&apos;s settings.</InfoTip>
+            </span>
             <ClassMeetings meetings={meetings} onChange={setMeetings} />
             {timesProblem && <span role="alert" className="text-[14px] font-semibold text-bad-text">{timesProblem}</span>}
           </motion.div>
 
-          <motion.div variants={fadeUp} className="mt-[26px] flex items-center gap-[14px]">
+          <motion.div variants={fadeUp} className="mt-[24px] flex items-center gap-[14px]">
             <Button type="submit" disabled={!trimmed || timesProblem !== null}>
               Create Course
             </Button>
@@ -101,11 +99,11 @@ export default function NewCoursePage() {
 
         <div className="pointer-events-none absolute inset-y-0 right-0 hidden w-[620px] md:block" aria-hidden>
           <Wave tone="light" x={20} y={120} width={70} seed={1} />
-          <Wave tone="light" x={80} y={560} width={60} seed={2} />
-          {/* Sized and placed to leave the label clear of the bottom edge, with room to spare on shorter windows. */}
-          <motion.div variants={popIn} initial="hidden" animate="show" className="absolute" style={{ left: 70, top: 64 }}>
-            <Island variant="ald" level="growing" scale={1.9} float seed={2} />
-            <div className="absolute left-[266px] -translate-x-1/2" style={{ top: 380 }}>
+          <Wave tone="light" x={80} y={460} width={60} seed={2} />
+          {/* Sized and placed to leave the label clear of the bottom edge of a 1280×800 laptop's window. */}
+          <motion.div variants={popIn} initial="hidden" animate="show" className="absolute" style={{ left: 90, top: 40 }}>
+            <Island variant="ald" level="growing" scale={1.6} float seed={2} />
+            <div className="absolute left-[224px] -translate-x-1/2" style={{ top: 320 }}>
               <LabelPill interactive={false} className="text-[16px]">
                 {trimmed || "Your course"}
               </LabelPill>

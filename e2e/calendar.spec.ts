@@ -17,11 +17,18 @@ test("a busy day opens in a pop-up, Week shows it in full, and the filter combin
     evidence: fixtureFlags(),
   });
 
-  await test.step("month: three entries and +2 more; the pop-up lists all five, exams first", async () => {
+  await test.step("month: the weeks share the window's height, so a day shows what fits and +n more; the pop-up lists all five, exams first", async () => {
     await page.goto("/calendar");
     const today = page.locator("[data-today]");
+    // The 1194×834 frame: two entries fit in a day.
+    await expect(today.locator("[data-part=event]")).toHaveCount(2);
+    await expect(today.locator("[data-part=more]")).toHaveText("+3 more");
+    // A taller window: three fit.
+    await page.setViewportSize({ width: 1194, height: 1000 });
     await expect(today.locator("[data-part=event]")).toHaveCount(3);
     await expect(today.locator("[data-part=more]")).toHaveText("+2 more");
+    // Nothing scrolls: the month fits the window.
+    await expect.poll(() => page.evaluate(() => document.scrollingElement!.scrollHeight - innerHeight)).toBe(0);
     await today.locator("[data-part=more]").click();
     const popover = page.locator("[data-part=day-popover]");
     await expect(popover.locator("[data-part=event]")).toHaveCount(5);
@@ -29,6 +36,7 @@ test("a busy day opens in a pop-up, Week shows it in full, and the filter combin
     await expect(popover.locator("[data-part=event][data-kind=rev]")).toContainText("Quick review");
     await page.keyboard.press("Escape");
     await expect(popover).toHaveCount(0);
+    await page.setViewportSize({ width: 1194, height: 834 });
   });
 
   await test.step("week: every entry in full, with its course's name; the view survives a reload", async () => {
