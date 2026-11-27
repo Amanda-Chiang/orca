@@ -56,21 +56,13 @@ export interface NotionStatus {
   lastUsedAt: string | null;
 }
 
-// The tables aren't in database.types.ts yet (no local stack to regenerate it); migration 20261125120000 is the contract.
-const connections = (db: OrcaSupabase) => db.from("notion_connections" as never);
-const links = (db: OrcaSupabase) => db.from("notion_links" as never);
-
-interface ConnectionRow {
-  token_enc: string;
-  workspace_name: string | null;
-  bot_name: string | null;
-  last_used_at: string | null;
-}
+const connections = (db: OrcaSupabase) => db.from("notion_connections");
+const links = (db: OrcaSupabase) => db.from("notion_links");
 
 export async function notionStatus(db: OrcaSupabase, ownerId: string): Promise<NotionStatus> {
   const { data, error } = await connections(db).select("workspace_name, bot_name, last_used_at").eq("owner_id", ownerId).maybeSingle();
   if (error) throw new Error(`Couldn't read the Notion connection: ${error.message}`);
-  const row = data as unknown as ConnectionRow | null;
+  const row = data;
   return { connected: row !== null, workspaceName: row?.workspace_name ?? null, botName: row?.bot_name ?? null, lastUsedAt: row?.last_used_at ?? null };
 }
 
@@ -86,7 +78,7 @@ export async function saveNotion(db: OrcaSupabase, ownerId: string, token: strin
   const me = await notionClient(trimmed, fetchImpl).get<BotUser>("/users/me");
   const workspaceName = me.bot?.workspace_name ? sanitize(me.bot.workspace_name, 120).text.trim() || null : null;
   const botName = me.name ? sanitize(me.name, 120).text.trim() || null : null;
-  const { error } = await connections(db).upsert({ owner_id: ownerId, token_enc: encryptToken(trimmed), workspace_name: workspaceName, bot_name: botName, created_at: new Date().toISOString(), last_used_at: null } as never);
+  const { error } = await connections(db).upsert({ owner_id: ownerId, token_enc: encryptToken(trimmed), workspace_name: workspaceName, bot_name: botName, created_at: new Date().toISOString(), last_used_at: null });
   if (error) throw new Error(`Couldn't save the Notion connection: ${error.message}`);
   return { workspaceName, botName };
 }
@@ -99,9 +91,9 @@ export async function revokeNotion(db: OrcaSupabase, ownerId: string): Promise<v
 async function clientFor(db: OrcaSupabase, ownerId: string, fetchImpl?: typeof fetch): Promise<Client | null> {
   const { data, error } = await connections(db).select("token_enc").eq("owner_id", ownerId).maybeSingle();
   if (error) throw new Error(`Couldn't read the Notion connection: ${error.message}`);
-  const row = data as unknown as { token_enc: string } | null;
+  const row = data;
   if (!row) return null;
-  await connections(db).update({ last_used_at: new Date().toISOString() } as never).eq("owner_id", ownerId);
+  await connections(db).update({ last_used_at: new Date().toISOString() }).eq("owner_id", ownerId);
   return notionClient(decryptToken(row.token_enc), fetchImpl);
 }
 
@@ -122,7 +114,7 @@ export async function listNotionPages(db: OrcaSupabase, ownerId: string, fetchIm
   const found = await client.post<NotionList<NotionPage>>("/search", { filter: { property: "object", value: "page" }, sort: { direction: "descending", timestamp: "last_edited_time" }, page_size: 100 });
   const { data, error } = await links(db).select("page_id, material_id").eq("owner_id", ownerId);
   if (error) throw new Error(`Couldn't read the Notion links: ${error.message}`);
-  const linked = new Map((data as unknown as Array<{ page_id: string; material_id: string }>).map((l) => [l.page_id, l.material_id]));
+  const linked = new Map(data.map((l) => [l.page_id, l.material_id]));
   return found.results
     .filter((p) => p.object === "page")
     .map((p) => ({ id: p.id, title: sanitize(pageTitle(p), 200).text.trim() || "Untitled", lastEdited: p.last_edited_time, materialId: linked.get(p.id) ?? null }));
@@ -162,7 +154,7 @@ export async function importNotionPages(db: OrcaSupabase, ownerId: string, input
   if (!client) throw new NotionError(409, "Connect Notion in Settings first.");
   const { data, error } = await links(db).select("page_id, material_id").eq("owner_id", ownerId);
   if (error) throw new Error(`Couldn't read the Notion links: ${error.message}`);
-  const linked = new Map((data as unknown as Array<{ page_id: string; material_id: string }>).map((l) => [l.page_id, l.material_id]));
+  const linked = new Map(data.map((l) => [l.page_id, l.material_id]));
   const results: NotionImportResult[] = [];
   for (const pageId of input.pageIds) {
     const already = linked.get(pageId);
@@ -180,7 +172,7 @@ export async function importNotionPages(db: OrcaSupabase, ownerId: string, input
       }
       const out = await addTextMaterial(db, ownerId, { courseId: input.courseId, type: input.type, assigned: null, due: null, text: `# ${title}\n\n${text}`, heldBack: input.heldBack, filename: `${title} (Notion)` });
       if (out.status === 201) {
-        const put = await links(db).insert({ owner_id: ownerId, page_id: pageId, material_id: out.body.material.id } as never);
+        const put = await links(db).insert({ owner_id: ownerId, page_id: pageId, material_id: out.body.material.id });
         if (put.error) throw new Error(`Couldn't link the Notion page: ${put.error.message}`);
         results.push({ pageId, title, result: "added", materialId: out.body.material.id });
       } else if (out.status === 200) {

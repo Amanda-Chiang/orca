@@ -16,8 +16,7 @@ export async function POST(request: Request) {
     if (!verdict.ok) return tooManyRequests(verdict);
     const { error } = await db.from("profiles").update({ last_active_at: new Date().toISOString() }).eq("owner_id", student.id);
     if (error) return reply(500, { error: "Orca couldn't record the heartbeat." });
-    // The function's shape isn't in database.types.ts yet (no local stack to regenerate it); the migration's SQL is the contract.
-    const marked = await db.rpc("touch_activity" as never, { p_owner: student.id } as never);
+    const marked = await db.rpc("touch_activity", { p_owner: student.id });
     if (marked.error) return reply(500, { error: "Orca couldn't record the heartbeat." });
     return new Response(null, { status: 204, headers: { "cache-control": "no-store" } });
   });

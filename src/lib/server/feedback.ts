@@ -25,22 +25,22 @@ export interface FeedbackInput {
 export type SpotState = Record<string, { answered: boolean; dismissed: number }>;
 
 export async function recordFeedback(db: OrcaSupabase, owner: string, input: FeedbackInput): Promise<string> {
-  // The functions' argument shapes aren't in database.types.ts yet (no local stack to regenerate it); the SQL in the migration is the contract.
-  const { data, error } = await db.rpc("record_app_feedback" as never, {
+  const { data, error } = await db.rpc("record_app_feedback", {
     p_owner: owner,
     p_spot: input.spot,
-    p_rating: input.rating,
-    p_note: input.note,
-    p_page: input.page,
+    // Generated types mark every SQL argument non-null; a dismissal has no rating, and the function stores null as given.
+    p_rating: input.rating as string,
+    p_note: input.note ?? "",
+    p_page: input.page ?? "",
     p_dismissed: input.dismissed,
-  } as never);
+  });
   if (error) throw new Error(`Couldn't record the feedback: ${error.message}`);
   if (typeof data !== "string") throw new Error("Couldn't record the feedback: the database answered nothing");
   return data;
 }
 
 export async function feedbackSpots(db: OrcaSupabase, owner: string): Promise<SpotState> {
-  const { data, error } = await db.rpc("app_feedback_spots" as never, { p_owner: owner } as never);
+  const { data, error } = await db.rpc("app_feedback_spots", { p_owner: owner });
   if (error) throw new Error(`Couldn't read the feedback spots: ${error.message}`);
   if (!data || typeof data !== "object") return {};
   const out: SpotState = {};

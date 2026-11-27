@@ -5,7 +5,33 @@ export type Database = {
   
   "public": {
           Tables: {
-            "calendar_events": {
+            "activity_days": {
+                  Row: {
+                    "beats": number,"day": string,"first_at": string,"last_at": string,"owner_id": string
+                  }
+                  Insert: {
+                    "beats"?: number,"day": string,"first_at"?: string,"last_at"?: string,"owner_id": string
+                  }
+                  Update: {
+                    "beats"?: number,"day"?: string,"first_at"?: string,"last_at"?: string,"owner_id"?: string
+                  }
+                  Relationships: [
+                    
+                  ]
+                },"app_feedback": {
+                  Row: {
+                    "created_at": string,"dismissed": boolean,"id": string,"note": string | null,"owner_id": string,"page": string | null,"rating": string | null,"spot": string
+                  }
+                  Insert: {
+                    "created_at"?: string,"dismissed"?: boolean,"id"?: string,"note"?: string | null,"owner_id": string,"page"?: string | null,"rating"?: string | null,"spot": string
+                  }
+                  Update: {
+                    "created_at"?: string,"dismissed"?: boolean,"id"?: string,"note"?: string | null,"owner_id"?: string,"page"?: string | null,"rating"?: string | null,"spot"?: string
+                  }
+                  Relationships: [
+                    
+                  ]
+                },"calendar_events": {
                   Row: {
                     "course_id": string | null,"created_at": string,"date": string,"id": string,"kind": string,"material_id": string | null,"owner_id": string,"title": string
                   }
@@ -191,6 +217,32 @@ isOneToOne: false
                   }
                   Update: {
                     "at"?: string,"attempt_id"?: string | null,"cache_read_tokens"?: number,"cache_write_tokens"?: number,"cost_usd"?: number,"duration_ms"?: number | null,"id"?: string,"input_tokens"?: number,"kind"?: string,"model"?: string,"output_tokens"?: number,"owner_id"?: string,"phase"?: string | null,"run_id"?: string | null,"step"?: string | null
+                  }
+                  Relationships: [
+                    
+                  ]
+                },"notion_connections": {
+                  Row: {
+                    "bot_name": string | null,"created_at": string,"last_used_at": string | null,"owner_id": string,"token_enc": string,"workspace_name": string | null
+                  }
+                  Insert: {
+                    "bot_name"?: string | null,"created_at"?: string,"last_used_at"?: string | null,"owner_id": string,"token_enc": string,"workspace_name"?: string | null
+                  }
+                  Update: {
+                    "bot_name"?: string | null,"created_at"?: string,"last_used_at"?: string | null,"owner_id"?: string,"token_enc"?: string,"workspace_name"?: string | null
+                  }
+                  Relationships: [
+                    
+                  ]
+                },"notion_links": {
+                  Row: {
+                    "created_at": string,"material_id": string,"owner_id": string,"page_id": string
+                  }
+                  Insert: {
+                    "created_at"?: string,"material_id": string,"owner_id": string,"page_id": string
+                  }
+                  Update: {
+                    "created_at"?: string,"material_id"?: string,"owner_id"?: string,"page_id"?: string
                   }
                   Relationships: [
                     
@@ -579,13 +631,13 @@ isOneToOne: false
                   ]
                 },"profiles": {
                   Row: {
-                    "avatar": string,"created_at": string,"default_review_config": Json | null,"is_admin": boolean,"last_active_at": string | null,"marker_notes": string | null,"name": string | null,"onboarded": boolean,"onboarding": NonNullable<Json>,"orca_notes": string | null,"owner_id": string,"timezone": string
+                    "avatar": string,"calendar_feed_token": string | null,"created_at": string,"default_review_config": Json | null,"is_admin": boolean,"last_active_at": string | null,"marker_notes": string | null,"name": string | null,"onboarded": boolean,"onboarding": NonNullable<Json>,"orca_notes": string | null,"owner_id": string,"timezone": string
                   }
                   Insert: {
-                    "avatar"?: string,"created_at"?: string,"default_review_config"?: Json | null,"is_admin"?: boolean,"last_active_at"?: string | null,"marker_notes"?: string | null,"name"?: string | null,"onboarded"?: boolean,"onboarding"?: NonNullable<Json>,"orca_notes"?: string | null,"owner_id": string,"timezone"?: string
+                    "avatar"?: string,"calendar_feed_token"?: string | null,"created_at"?: string,"default_review_config"?: Json | null,"is_admin"?: boolean,"last_active_at"?: string | null,"marker_notes"?: string | null,"name"?: string | null,"onboarded"?: boolean,"onboarding"?: NonNullable<Json>,"orca_notes"?: string | null,"owner_id": string,"timezone"?: string
                   }
                   Update: {
-                    "avatar"?: string,"created_at"?: string,"default_review_config"?: Json | null,"is_admin"?: boolean,"last_active_at"?: string | null,"marker_notes"?: string | null,"name"?: string | null,"onboarded"?: boolean,"onboarding"?: NonNullable<Json>,"orca_notes"?: string | null,"owner_id"?: string,"timezone"?: string
+                    "avatar"?: string,"calendar_feed_token"?: string | null,"created_at"?: string,"default_review_config"?: Json | null,"is_admin"?: boolean,"last_active_at"?: string | null,"marker_notes"?: string | null,"name"?: string | null,"onboarded"?: boolean,"onboarding"?: NonNullable<Json>,"orca_notes"?: string | null,"owner_id"?: string,"timezone"?: string
                   }
                   Relationships: [
                     
@@ -834,7 +886,13 @@ isOneToOne: false
             [_ in never]: never
           }
           Functions: {
-            "admin_feedback":
+            "admin_activity_summary":
+{ Args: Record<PropertyKey, never>; Returns: Json
+                           },
+"admin_app_feedback":
+{ Args: { "p_limit": number,"p_offset": number }; Returns: Json
+                           },
+"admin_feedback":
 { Args: { "down_only"?: boolean,"lim"?: number,"off"?: number,"owner"?: string,"reason"?: string }; Returns: Json
                            },
 "admin_feedback_counts":
@@ -845,6 +903,9 @@ isOneToOne: false
                            },
 "admin_spend":
 { Args: { "days"?: number,"owner"?: string }; Returns: Json
+                           },
+"admin_user_activity":
+{ Args: { "uid": string }; Returns: Json
                            },
 "admin_user_courses":
 { Args: { "uid": string }; Returns: Json
@@ -857,6 +918,9 @@ isOneToOne: false
                            },
 "admin_users":
 { Args: Record<PropertyKey, never>; Returns: Json
+                           },
+"app_feedback_spots":
+{ Args: { "p_owner": string }; Returns: Json
                            },
 "course_structure":
 { Args: { "course": string,"owner": string }; Returns: Json
@@ -969,6 +1033,9 @@ isOneToOne: false
 "pipeline_writer_result":
 { Args: { "payload": Json }; Returns: Json
                            },
+"record_app_feedback":
+{ Args: { "p_dismissed": boolean,"p_note": string,"p_owner": string,"p_page": string,"p_rating": string,"p_spot": string }; Returns: string
+                           },
 "record_evidence":
 { Args: { "accumulator": Json,"event": Json,"expected_version": number,"objective": string,"owner": string,"rules_version": number }; Returns: boolean
                            },
@@ -980,6 +1047,9 @@ isOneToOne: false
                            },
 "save_structure_rows":
 { Args: { "course": string,"rows": Json }; Returns: undefined
+                           },
+"touch_activity":
+{ Args: { "p_owner": string }; Returns: undefined
                            }
           }
           Enums: {

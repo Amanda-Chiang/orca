@@ -187,7 +187,6 @@ export const FEEDBACK_REASONS = ["wrong-answer", "unclear", "too-easy", "too-har
 
 async function call<T>(db: OrcaSupabase, fn: "admin_overview" | "admin_users" | "admin_user_courses" | "admin_user_uploads" | "admin_spend" | "admin_user_evidence" | "admin_feedback" | "admin_feedback_counts" | "admin_app_feedback" | "admin_activity_summary" | "admin_user_activity", args: Record<string, unknown>, what: string): Promise<T> {
   // The functions' argument shapes are in database.types.ts; each caller below passes what its function takes.
-  // The three functions of migration 20261125110000 aren't in database.types.ts yet (no local stack to regenerate it); the SQL is the contract.
   const { data, error } = await db.rpc(fn as never, args as never);
   if (error) throw new Error(`Couldn't read ${what}: ${error.message}`);
   if (data === null || data === undefined) throw new Error(`Couldn't read ${what}: the database answered nothing`);
