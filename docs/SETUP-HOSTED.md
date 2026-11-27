@@ -298,22 +298,24 @@ variables below the Google card and button don't show.
 2. APIs & Services → Library: enable **Google Calendar API**, **Google Drive API** and **Google
    Picker API**.
 3. Google Auth Platform → Branding: app name Orca, support email, the homepage
-   (`https://orca-lake-omega.vercel.app`), privacy policy URL. Audience: **External**, status
+   (`https://orca.us.com`), privacy policy URL; under Authorized domains, `orca.us.com`. Audience: **External**, status
    **Testing**; add each tester's Google address under Test users (at most 100).
 4. Data Access → Add scopes: `openid`, `.../auth/userinfo.email`, `.../auth/calendar.app.created`,
    `.../auth/drive.file`.
 5. Clients → Create client → **Web application**. Authorized redirect URIs:
-   `https://orca-lake-omega.vercel.app/api/google/callback` and `http://localhost:3000/api/google/callback`.
-   Authorized JavaScript origins (for the picker): `https://orca-lake-omega.vercel.app`, `http://localhost:3000`.
+   `https://orca.us.com/api/google/callback` and `http://localhost:3000/api/google/callback`.
+   Authorized JavaScript origins (for the picker): `https://orca.us.com`, `http://localhost:3000`.
 6. APIs & Services → Credentials → Create credentials → **API key**; restrict it to the Google
    Picker API and to the two origins above (HTTP referrers).
 7. Vercel → Production env vars: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_PICKER_API_KEY`,
-   `GOOGLE_PROJECT_NUMBER` (and `SITE_URL`, which the redirect URI is built from). Redeploy.
+   `GOOGLE_PROJECT_NUMBER`, and `SITE_URL=https://orca.us.com` (the redirect URI is built from it).
+   Redeploy. Students must use the site on that domain: Google's sign-in starts and ends there, so
+   in Vercel → Domains set `orca-lake-omega.vercel.app` to redirect to `orca.us.com`.
 
 In Testing status Google lets in only the listed test users and **expires their access after 7
 days** (Settings then says "Connect again"). Going public: Audience → Publish app; Drive alone needs
 only brand verification, Calendar's sensitive scope needs Google's review (a demo video, a privacy
-policy on a domain you own and have verified; `vercel.app` can't be verified). Until then an
+policy on `orca.us.com`, verified in Google Search Console). Until then an
 unverified public app shows a warning screen and is capped at 100 users.
 
 ## Order
