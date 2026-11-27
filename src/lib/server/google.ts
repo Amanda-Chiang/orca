@@ -24,7 +24,8 @@ export interface GoogleConfig {
 }
 
 export function googleConfig(): GoogleConfig | null {
-  const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
+  // Tolerates the ID pasted with its scheme or a trailing slash (as Google's console sometimes shows it).
+  const clientId = process.env.GOOGLE_CLIENT_ID?.trim().replace(/^https?:\/\//i, "").replace(/\/+$/, "");
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim();
   if (!clientId || !clientSecret) return null;
   return { clientId, clientSecret, pickerApiKey: process.env.GOOGLE_PICKER_API_KEY?.trim() || null, projectNumber: process.env.GOOGLE_PROJECT_NUMBER?.trim() || null };
