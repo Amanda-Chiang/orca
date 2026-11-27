@@ -145,11 +145,12 @@ export default function CalendarPage() {
   };
 
   return (
-    <Screen bg="ocean" className="overflow-y-auto">
-      <header className="mx-auto flex w-full max-w-[calc(50%+562px)] items-center gap-[14px] px-[24px] pt-[24px]">
+    // The calendar fits the window: the grid takes the height left under the header (no page scroll).
+    <Screen bg="ocean" className="h-screen-below-bar max-h-screen-below-bar">
+      <header className="mx-auto flex w-full max-w-[calc(50%+562px)] shrink-0 items-center gap-[14px] px-[24px] pt-[20px]">
         <BackButton />
         <AnimatePresence mode="wait">
-          <motion.h1 key={`${view}-${days[0]}`} variants={fadeSwap} initial="hidden" animate="show" exit="exit" className="min-w-[190px] text-[36px] font-bold leading-none text-prussian">
+          <motion.h1 key={`${view}-${days[0]}`} variants={fadeSwap} initial="hidden" animate="show" exit="exit" className="min-w-[190px] text-[32px] font-bold leading-none text-prussian">
             {title.main}
             {title.year && <span className="ml-3 text-[24px] font-semibold text-wisteria-deep">{title.year}</span>}
           </motion.h1>
@@ -197,9 +198,9 @@ export default function CalendarPage() {
         </div>
       </header>
 
-      <div className="mx-auto w-full max-w-[calc(50%+562px)] px-[24px] pb-[32px] pt-[20px]">
+      <div className="mx-auto flex min-h-0 w-full max-w-[calc(50%+562px)] flex-1 flex-col px-[24px] pb-[20px] pt-[16px]">
         {activeFilters(filter) > 0 && visible.length === 0 && (
-          <p className="mb-[12px] flex items-center gap-[10px] text-[15px] font-semibold text-prussian" data-part="filter-empty">
+          <p className="mb-[12px] flex shrink-0 items-center gap-[10px] text-[15px] font-semibold text-prussian" data-part="filter-empty">
             Nothing matches these filters.
             <button type="button" onClick={() => setFilter(NO_FILTER)} className="font-bold text-wisteria-deep hover:underline">
               Clear
@@ -207,9 +208,9 @@ export default function CalendarPage() {
           </p>
         )}
         {view === "month" ? (
-          <MonthGrid days={days} month={anchor.slice(0, 7)} today={today} byDate={byDate} entry={entry} />
+          <div className="min-h-0 flex-1"><MonthGrid days={days} month={anchor.slice(0, 7)} today={today} byDate={byDate} entry={entry} /></div>
         ) : (
-          <WeekGrid days={days} today={today} byDate={byDate} entry={entry} />
+          <div className="min-h-0 flex-1"><WeekGrid days={days} today={today} byDate={byDate} entry={entry} /></div>
         )}
       </div>
     </Screen>

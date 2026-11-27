@@ -177,3 +177,13 @@ export function IconBell({ size = 20, ...props }: IconProps) {
     </svg>
   );
 }
+
+export function IconInfo({ size = 16, ...props }: IconProps) {
+  return (
+    <svg viewBox="0 0 20 20" {...base(size, props)} strokeWidth={1.8}>
+      <circle cx="10" cy="10" r="8" />
+      <path d="M10 9v5" />
+      <circle cx="10" cy="6.2" r="0.6" fill="currentColor" />
+    </svg>
+  );
+}

@@ -32,7 +32,7 @@ test("Settings mints the connector link once; Claude can read the course, ask a 
   const card = page.locator('[data-part="claude-connector"]');
   await expect(card.locator('[data-part="connector-status"]')).toHaveText(/Not connected/);
   await card.locator('[data-part="connector-create"]').click();
-  const url = (await card.locator('[data-part="connector-url"]').textContent())!.trim();
+  const url = (await page.locator('[data-part="connector-url"]').textContent())!.trim();
   expect(url).toMatch(/\/api\/mcp\/[A-Za-z0-9_-]{40,}$/);
 
   // The handshake, as Claude's client does it.
@@ -209,7 +209,7 @@ test("in a cram Orca makes no model calls: prose is handed back for Claude to gr
   await page.goto("/settings?section=connections");
   const card = page.locator('[data-part="claude-connector"]');
   await card.locator('[data-part="connector-create"]').click();
-  const url = (await card.locator('[data-part="connector-url"]').textContent())!.trim();
+  const url = (await page.locator('[data-part="connector-url"]').textContent())!.trim();
   await fakeModel({});
 
   // An exam 12 days out the student is cramming for: the course is in exam-week whatever the date.
@@ -331,7 +331,7 @@ test("the exam map: Claude reads a held-back exam (never the reserved one), stor
   await page.goto("/settings?section=connections");
   const card = page.locator('[data-part="claude-connector"]');
   await card.locator('[data-part="connector-create"]').click();
-  const url = (await card.locator('[data-part="connector-url"]').textContent())!.trim();
+  const url = (await page.locator('[data-part="connector-url"]').textContent())!.trim();
 
   const soon = localDay(5);
   const exam = toolText(await call(page, url, "set_exam", { courseId: F.course, title: "Quiz 2", date: soon, topicIds: [], cramming: true, scope: { reservedMaterialId: id.fall23, rules: { notes: "none", calculator: "simple", minutes: 75 } } })) as { id: string };

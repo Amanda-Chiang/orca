@@ -13,9 +13,10 @@ export const REVIEW_LABELS = { quick: "Quick review", deep: "Dive in", exam: "Ex
 
 /**
  * Figma: Config Row — bell, label, duration select, cadence select. `stacked` puts the two selects
- * under the label, for a narrow column (account Settings' Preferences, beside the notes).
+ * under the label; `compact` keeps one line without the bell, for a narrow column (account Settings'
+ * Preferences, beside the notes, which fit the window without scrolling).
  */
-export function ConfigRow({ label, row, onChange, stacked = false, allowNever = false }: { label: string; row: ReviewRow; onChange: (r: ReviewRow) => void; stacked?: boolean; allowNever?: boolean }) {
+export function ConfigRow({ label, row, onChange, stacked = false, compact = false, allowNever = false }: { label: string; row: ReviewRow; onChange: (r: ReviewRow) => void; stacked?: boolean; compact?: boolean; allowNever?: boolean }) {
   const cadences: readonly Cadence[] = allowNever ? [...CADENCES, "Never"] : CADENCES;
   const bell = (
     <span className="flex h-[32px] w-[32px] shrink-0 items-center justify-center rounded-[10px] bg-alice text-wisteria-deep">
@@ -28,6 +29,13 @@ export function ConfigRow({ label, row, onChange, stacked = false, allowNever = 
       <Select label={`${label} cadence`} value={row.cadence} options={cadences} onChange={(cadence) => onChange({ ...row, cadence })} />
     </>
   );
+  if (compact)
+    return (
+      <motion.div variants={fadeUp} className="flex items-center gap-[8px]">
+        <span className="w-[96px] shrink-0 text-[15px] font-bold leading-tight text-prussian">{label}</span>
+        {selects}
+      </motion.div>
+    );
   if (stacked)
     return (
       <motion.div variants={fadeUp} className="flex flex-col gap-[8px]">

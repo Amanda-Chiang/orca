@@ -5,6 +5,7 @@ import { signOut } from "@/app/auth/actions";
 import { AvatarPicker } from "@/components/auth/AvatarPicker";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { InfoTip } from "@/components/ui/InfoTip";
 import { Select } from "@/components/ui/Select";
 import { useOrca } from "@/lib/store";
 import { browserSupabase } from "@/lib/supabase/browser";
@@ -60,11 +61,11 @@ function ProfileFields() {
 export function TimezoneRow() {
   const { timezone, setTimezone } = useOrca();
   return (
-    <div className="flex flex-col items-start gap-[8px]">
-      <div className="flex flex-col gap-[2px]">
-        <span className="text-[16px] font-bold text-prussian">Timezone</span>
-        <span className="text-[13px] font-medium text-wisteria-deep">Decides when your day starts and what&apos;s due today.</span>
-      </div>
+    <div className="flex items-center gap-[8px]">
+      <span className="flex w-[96px] shrink-0 items-center gap-[6px] text-[15px] font-bold text-prussian">
+        Timezone
+        <InfoTip label="About the timezone">Decides when your day starts and what&apos;s due today.</InfoTip>
+      </span>
       <Select size="sm" label="Timezone" value={timezone} options={zones(timezone)} onChange={setTimezone} />
     </div>
   );

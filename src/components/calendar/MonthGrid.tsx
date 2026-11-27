@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useCallback, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence } from "motion/react";
 import type { CalendarEvent } from "@/lib/data";
 import type { Box } from "@/lib/anchor-geometry";
@@ -10,8 +10,16 @@ import { cn } from "@/lib/cn";
 
 export const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-/** Entries a day shows before "+n more". */
-const SHOWN = 4;
+/** At most this many entries a day before "+n more"; fewer when the rows are short (they share the window's height). */
+const MAX_SHOWN = 4;
+/** A compact entry's height with the gap under it, and what a day spends on its padding and date. */
+const ENTRY_PX = 24;
+const DAY_CHROME_PX = 40;
+
+/** How many entries fit in a row `height` px tall: at least 1, at most MAX_SHOWN. */
+function entriesThatFit(height: number) {
+  return Math.max(1, Math.min(MAX_SHOWN, Math.floor((height - DAY_CHROME_PX) / ENTRY_PX)));
+}
 
 /** "Wednesday, Nov 12" for a local ISO day. */
 export function dayTitle(iso: string) {
@@ -21,7 +29,8 @@ export function dayTitle(iso: string) {
 
 /**
  * The month: its weeks on one hairline grid. A day shows its first few entries; "+n more", or a
- * click anywhere on the day, opens a pop-up with all of them, so rows never change height.
+ * click anywhere on the day, opens a pop-up with all of them, so rows never change height. The weeks
+ * share the height they're given (the calendar fits the window), and a day shows as many entries as fit.
  */
 export function MonthGrid({
   days,
@@ -42,21 +51,33 @@ export function MonthGrid({
   const popover = useRef<HTMLDivElement>(null);
   const close = useCallback(() => setOpen(null), []);
   useDismiss(popover, open !== null, close, { inside: "[data-part=day-popover]", onScroll: true });
+  const grid = useRef<HTMLDivElement>(null);
+  const weeks = Math.max(1, days.length / 7);
+  const [shown, setShown] = useState(MAX_SHOWN);
+  useEffect(() => {
+    const el = grid.current;
+    if (!el) return;
+    const measure = () => setShown(entriesThatFit(el.clientHeight / weeks));
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [weeks]);
   const openDay = (day: string, el: HTMLElement) => {
     const r = el.getBoundingClientRect();
     setOpen((o) => (o?.day === day ? null : { day, box: { left: r.left, top: r.top, width: r.width, height: r.height } }));
   };
 
   return (
-    <div className="overflow-hidden rounded-[20px] border border-line bg-card">
-      <div className="grid grid-cols-7 border-b border-line">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[20px] border border-line bg-card">
+      <div className="grid shrink-0 grid-cols-7 border-b border-line">
         {WEEKDAYS.map((w) => (
           <span key={w} className="py-[8px] text-center text-[12px] font-semibold uppercase tracking-[1px] text-wisteria-deep">
             {w}
           </span>
         ))}
       </div>
-      <div className="grid grid-cols-7">
+      <div ref={grid} className="grid min-h-0 flex-1 grid-cols-7" style={{ gridTemplateRows: `repeat(${weeks}, minmax(0, 1fr))` }} data-part="month-weeks">
         {days.map((iso, i) => {
           const inMonth = iso.startsWith(month);
           const isToday = iso === today;
@@ -68,7 +89,7 @@ export function MonthGrid({
               data-today={isToday || undefined}
               onClick={(e) => evs.length > 0 && openDay(iso, e.currentTarget)}
               className={cn(
-                "flex h-[132px] min-w-0 flex-col gap-[3px] border-line p-[6px]",
+                "flex min-h-0 min-w-0 flex-col gap-[3px] overflow-hidden border-line p-[6px]",
                 i % 7 !== 6 && "border-r",
                 i < days.length - 7 && "border-b",
                 !inMonth && "bg-page",
@@ -84,10 +105,10 @@ export function MonthGrid({
                 {Number(iso.slice(8))}
               </span>
               <div className={cn("flex min-h-0 flex-col gap-[3px]", !inMonth && "opacity-50")}>
-                {evs.slice(0, evs.length > SHOWN ? SHOWN - 1 : SHOWN).map((e) => (
+                {evs.slice(0, evs.length > shown ? shown - 1 : shown).map((e) => (
                   <div key={e.id}>{entry(e, true)}</div>
                 ))}
-                {evs.length > SHOWN && (
+                {evs.length > shown && (
                   <button
                     type="button"
                     data-part="more"
@@ -98,7 +119,7 @@ export function MonthGrid({
                     }}
                     className="self-start rounded-[6px] px-[6px] text-[11.5px] font-bold text-wisteria-deep hover:underline"
                   >
-                    +{evs.length - (SHOWN - 1)} more
+                    +{evs.length - (shown - 1)} more
                   </button>
                 )}
               </div>
