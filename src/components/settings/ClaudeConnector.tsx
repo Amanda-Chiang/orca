@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
+import { ConfirmRow, ConnectionTile, SetupDialog } from "./ConnectionTile";
 
 interface Status {
   connected: boolean;
@@ -12,7 +12,7 @@ interface Status {
 
 /**
  * Settings → AI connector: one secret link per student that their AI (Claude or ChatGPT) calls while
- * they study in a chat (`/api/connector`). The link is shown once; making a new one replaces the old.
+ * they study in a chat (`/api/connector`). The link is shown once, in a pop-up; making a new one replaces the old.
  */
 export function ClaudeConnectorCard() {
   const [status, setStatus] = useState<Status | null>(null);
@@ -77,53 +77,58 @@ export function ClaudeConnectorCard() {
   };
 
   return (
-    <Card id="connector" className="flex flex-col gap-[12px] scroll-mt-[24px] px-[24px] pb-[22px] pt-[20px]" data-part="claude-connector">
-      <div className="flex flex-col gap-[4px]">
-        <h2 className="text-[22px] font-bold text-prussian">AI connector</h2>
-        <p className="text-[14px] font-medium text-wisteria-deep">
-          Works with Claude and ChatGPT. Study in the chat you already use; with this connected, it knows what each exam covers and what you&apos;re weak on, and every answer it grades goes on your record here.
-        </p>
-      </div>
-      {url ? (
-        <div className="flex flex-col gap-[8px]" data-part="connector-link">
-          <p className="text-[13px] font-semibold text-prussian">Your link, shown once. Paste it as the connector URL, no sign-in:</p>
-          <ul className="flex flex-col gap-[2px] text-[13px] font-medium text-prussian" data-part="connector-steps">
-            <li><b>Claude:</b> Settings → Connectors → Add custom connector.</li>
-            <li><b>ChatGPT:</b> Settings → Connectors → Create (turn on developer mode first), paste it as the MCP server URL.</li>
-          </ul>
-          <code className="break-all rounded-[12px] border-2 border-alice-deep bg-alice px-[12px] py-[8px] text-[12px] text-prussian" data-part="connector-url">{url}</code>
-          <div className="flex items-center gap-[10px]">
-            <Button size="sm" variant="secondary" onClick={() => void copy()}>{copied ? "Copied" : "Copy link"}</Button>
-            <span className="text-[13px] font-medium text-wisteria-deep">Anyone with this link can read and change your study record. Keep it to yourself.</span>
-          </div>
+    <>
+      <ConnectionTile
+        id="connector"
+        title="AI connector"
+        info="Works with Claude and ChatGPT. Study in the chat you already use; it knows what each exam covers and what you're weak on, and every answer it grades goes on your record here."
+        data-part="claude-connector"
+        status={
+          <span data-part="connector-status">
+            {status === null ? "…" : status.connected ? `Connected${status.lastUsedAt ? `, last used ${new Date(status.lastUsedAt).toLocaleDateString()}` : ", not used yet"}.` : "Not connected."}
+          </span>
+        }
+        actions={
+          <>
+            <Button size="sm" onClick={() => void create()} disabled={busy || status === null} data-part="connector-create">
+              {status?.connected ? "Make a new link" : "Connect your AI"}
+            </Button>
+            {status?.connected && !confirming && (
+              <Button size="sm" variant="ghost" onClick={() => setConfirming(true)} disabled={busy} data-part="connector-revoke">
+                Disconnect
+              </Button>
+            )}
+          </>
+        }
+        confirm={
+          status?.connected && confirming ? (
+            <ConfirmRow data-part="connector-revoke-confirm">
+              <span className="text-[13px] font-semibold text-prussian">Disconnect? The link stops working at once.</span>
+              <Button size="sm" variant="danger" onClick={() => void revoke()} disabled={busy} data-part="connector-revoke-yes">
+                Yes, disconnect
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setConfirming(false)} disabled={busy} data-part="connector-revoke-cancel">
+                Keep it
+              </Button>
+            </ConfirmRow>
+          ) : undefined
+        }
+        problem={url ? null : problem}
+      />
+      {/* The new link, shown once, in a pop-up with where to paste it. */}
+      <SetupDialog open={url !== null} title="Your AI connector link" onClose={() => setUrl(null)} data-part="connector-link">
+        <p className="text-[13px] font-semibold text-prussian">Shown once. Paste it as the connector URL, no sign-in:</p>
+        <ul className="flex flex-col gap-[2px] text-[13px] font-medium text-prussian" data-part="connector-steps">
+          <li><b>Claude:</b> Settings → Connectors → Add custom connector.</li>
+          <li><b>ChatGPT:</b> Settings → Connectors → Create (turn on developer mode first), paste it as the MCP server URL.</li>
+        </ul>
+        <code className="break-all rounded-[12px] border-2 border-alice-deep bg-alice px-[12px] py-[8px] text-[12px] text-prussian" data-part="connector-url">{url}</code>
+        <div className="flex items-center gap-[10px]">
+          <Button size="sm" variant="secondary" onClick={() => void copy()}>{copied ? "Copied" : "Copy link"}</Button>
+          <span className="text-[13px] font-medium text-wisteria-deep">Anyone with this link can read and change your study record. Keep it to yourself.</span>
         </div>
-      ) : (
-        <p className="text-[13px] font-semibold text-prussian" data-part="connector-status">
-          {status === null ? "…" : status.connected ? `Connected${status.lastUsedAt ? `, last used ${new Date(status.lastUsedAt).toLocaleDateString()}` : ", not used yet"}.` : "Not connected."}
-        </p>
-      )}
-      <div className="flex flex-wrap items-center gap-[10px]">
-        <Button size="sm" onClick={() => void create()} disabled={busy || status === null} data-part="connector-create">
-          {status?.connected ? "Make a new link" : "Connect your AI"}
-        </Button>
-        {status?.connected && !confirming && (
-          <Button size="sm" variant="ghost" onClick={() => setConfirming(true)} disabled={busy} data-part="connector-revoke">
-            Disconnect
-          </Button>
-        )}
         {problem && <span role="alert" className="text-[13px] font-semibold text-bad-text">{problem}</span>}
-      </div>
-      {status?.connected && confirming && (
-        <div className="flex flex-wrap items-center gap-[10px] rounded-[14px] border-2 border-alice-deep bg-alice px-[14px] py-[10px]" data-part="connector-revoke-confirm">
-          <span className="text-[13px] font-semibold text-prussian">Disconnect? The link stops working at once; your AI would need a new one.</span>
-          <Button size="sm" variant="danger" onClick={() => void revoke()} disabled={busy} data-part="connector-revoke-yes">
-            Yes, disconnect
-          </Button>
-          <Button size="sm" variant="ghost" onClick={() => setConfirming(false)} disabled={busy} data-part="connector-revoke-cancel">
-            Keep it
-          </Button>
-        </div>
-      )}
-    </Card>
+      </SetupDialog>
+    </>
   );
 }

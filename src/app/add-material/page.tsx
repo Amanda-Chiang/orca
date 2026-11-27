@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Chip, ContextPill } from "@/components/ui/Chip";
 import { Select } from "@/components/ui/Select";
+import { InfoTip } from "@/components/ui/InfoTip";
 import { parseGoogleLink } from "@/lib/google-link";
 import { heldBackByDefault } from "@/lib/material/hold-back";
 import { uploadKind } from "@/lib/material/kind";
@@ -25,7 +26,14 @@ import { ProgressBar } from "@/components/ui/ProgressBar";
 import { cn } from "@/lib/cn";
 import { fadeUp, stagger } from "@/lib/motion";
 
-const SKELETON = [92, 100, 78, 96, 60, 0, 100, 88, 94, 70, 0, 90, 84];
+/** The ways in, one at a time (owner, 2026-11-27: tabs, so the page fits the window). */
+const SOURCES = [
+  { id: "file", label: "File" },
+  { id: "link", label: "Link" },
+  { id: "text", label: "Text" },
+  { id: "chat", label: "AI chat" },
+] as const;
+type Source = (typeof SOURCES)[number]["id"];
 
 /** From this many files an upload counts as bulk (owner, 2026-10-27): dates hidden behind "Add dates". */
 const BULK_FROM = 3;
@@ -113,6 +121,7 @@ export default function AddMaterialPage({ searchParams }: PageProps<"/add-materi
   /** Bulk upload: id of the last file the class has covered (`"none"`: none yet); null means every file. */
   const fileRef = useRef<HTMLInputElement>(null);
   const folderRef = useRef<HTMLInputElement>(null);
+  const [source, setSource] = useState<Source>("file");
 
   if (!course) {
     if (!hydrated) return null;
@@ -346,10 +355,10 @@ export default function AddMaterialPage({ searchParams }: PageProps<"/add-materi
   const previewLines = doc ? doc.slice(0, 6).flatMap((p) => p.text.split("\n").filter((l) => l.trim().length > 3).slice(0, 4)).slice(0, 18) : [];
 
   return (
-    <Screen bg="ocean" className="overflow-y-auto">
-      <header className="flex items-center gap-[16px] px-[28px] pt-[28px]">
+    <Screen bg="ocean" className="h-screen-below-bar max-h-screen-below-bar">
+      <header className="flex shrink-0 items-center gap-[16px] px-[28px] pt-[18px]">
         <BackButton href={`/course/${course.slug}`} />
-        <h1 className="text-[44px] font-bold leading-none text-prussian">Add material</h1>
+        <h1 className="text-[32px] font-bold leading-none text-prussian">Add material</h1>
         {courses.length > 1 ? (
           <Select
             label="Course"
@@ -364,10 +373,9 @@ export default function AddMaterialPage({ searchParams }: PageProps<"/add-materi
         )}
       </header>
 
-      <motion.div variants={stagger(0.05, 0.08)} initial="hidden" animate="show" className="flex flex-wrap items-start gap-[40px] px-[40px] pb-[48px] pt-[32px]">
-        {/* Document preview / drop target */}
-        {/* A letter page: 520 wide at 8.5 × 11, the inputs and preview spanning its width. */}
-        <motion.div variants={fadeUp} className="w-[520px] max-w-full">
+      {/* Fits the window (owner, 2026-11-27): the source card takes the height left under the header. */}
+      <motion.div variants={stagger(0.05, 0.08)} initial="hidden" animate="show" className="flex min-h-0 flex-1 items-stretch gap-[40px] px-[40px] pb-[24px] pt-[20px]">
+        <motion.div variants={fadeUp} className="flex min-h-0 w-[520px] max-w-full flex-col">
           <input
             ref={fileRef}
             type="file"
@@ -393,112 +401,161 @@ export default function AddMaterialPage({ searchParams }: PageProps<"/add-materi
               e.target.value = "";
             }}
           />
+          {/* One way in at a time: a file (or a folder, dropped or picked), a link, pasted text, or an AI chat link. */}
+          {!batch && (
+            <div role="tablist" aria-label="Add from" className="mb-[12px] flex w-fit rounded-pill bg-alice p-[3px]" data-part="source-tabs">
+              {SOURCES.map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={source === s.id}
+                  disabled={busy}
+                  onClick={() => setSource(s.id)}
+                  className={cn("rounded-pill px-[16px] py-[7px] text-[14px] font-bold text-prussian", source === s.id ? "bg-card shadow-[0_1px_0_var(--color-alice-deep)]" : "opacity-70 hover:opacity-100")}
+                  data-part="source-tab"
+                  data-source={s.id}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          )}
           <Card
             radius={20}
             lip={6}
-            role="button"
-            tabIndex={0}
-            aria-label="Choose a file"
+            {...(source === "file"
+              ? {
+                  role: "button",
+                  tabIndex: 0,
+                  "aria-label": "Choose a file",
+                  onClick: () => !busy && fileRef.current?.click(),
+                  onKeyDown: (e: React.KeyboardEvent<HTMLDivElement>) => e.target === e.currentTarget && (e.key === "Enter" || e.key === " ") && fileRef.current?.click(),
+                }
+              : {})}
             data-part="drop-target"
-            onClick={() => !busy && fileRef.current?.click()}
-            onKeyDown={(e) => e.target === e.currentTarget && (e.key === "Enter" || e.key === " ") && fileRef.current?.click()}
             onDragOver={(e) => e.preventDefault()}
             onDrop={(e) => {
               e.preventDefault();
               if (busy) return;
+              setSource("file");
               void filesFromDataTransfer(e.dataTransfer).then(onFiles);
             }}
-            className="pressable flex aspect-[8.5/11] cursor-pointer flex-col gap-[14px] overflow-hidden px-[28px] pb-[28px] pt-[22px]"
+            className={cn("flex min-h-0 flex-1 flex-col gap-[14px] overflow-hidden px-[26px] pb-[24px] pt-[20px]", source === "file" && "pressable cursor-pointer")}
           >
-            <div className="flex items-center justify-between gap-3">
-              <span className="flex min-w-0 items-baseline gap-[8px]">
-                <span className={cn("truncate text-[15px] font-bold", chosenName ? "text-prussian" : "text-periwinkle-deep")}>{filename}</span>
-                {file && !doc && phase.kind !== "sending" && !unreadable && (
-                  <span className="shrink-0 text-[13px] font-semibold text-wisteria-deep" data-part="file-size">
-                    {(file.size / 1024 / 1024).toFixed(1)} MB
+            {source === "file" && (
+              <>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="flex min-w-0 items-baseline gap-[8px]">
+                    {/* Nothing chosen yet: the drop area below says what to do. */}
+                    {chosenName && <span className="truncate text-[15px] font-bold text-prussian">{filename}</span>}
+                    {file && !doc && phase.kind !== "sending" && !unreadable && (
+                      <span className="shrink-0 text-[13px] font-semibold text-wisteria-deep" data-part="file-size">
+                        {(file.size / 1024 / 1024).toFixed(1)} MB
+                      </span>
+                    )}
                   </span>
-                )}
-              </span>
-              {/* Upload files or a whole folder (every PDF and .pptx in it): a browser's picker takes one or the other. */}
-              <span className="flex shrink-0 items-center gap-[12px]" onClick={(e) => e.stopPropagation()}>
-                {([["files", "Upload a file", fileRef], ["folder", "Upload folder", folderRef]] as const).map(([part, label, ref]) => (
-                  <button key={part} type="button" disabled={busy} onClick={() => ref.current?.click()} className="flex items-center gap-1 text-[13px] font-semibold text-wisteria-deep hover:underline" data-part={`upload-${part}`}>
-                    <IconUpload size={16} /> {label}
-                  </button>
-                ))}
-              </span>
-            </div>
-            {/* Several files: their list takes this space (the other ways in are for one thing at a time). */}
-            {!batch && (<>
-            <label className="flex flex-col gap-[6px] text-[13px] font-semibold text-wisteria-deep" onClick={(e) => e.stopPropagation()}>
-              Or paste a link: a public course website, or a Google Docs, Slides or Drive file shared with the link
-              <input value={websiteUrl} onChange={(e) => { setWebsiteUrl(e.target.value); setFile(null); setChosenName(null); setAiChatUrl(""); setPastedText(""); setPhase({ kind: "idle" }); }} placeholder="https://example.edu/course, or docs.google.com/…" className="h-[40px] rounded-[12px] border-2 border-alice-deep bg-parchment px-[12px] text-[14px] font-medium text-prussian outline-none focus:border-wisteria" />
-            </label>
-            <span className="text-[11px] leading-snug text-wisteria-deep" onClick={(e) => e.stopPropagation()}>GoodNotes or Notability? Export the notebook as a PDF and upload it as handwritten notes.</span>
-            <div className="flex flex-col gap-[6px]" onClick={(e) => e.stopPropagation()}>
-              <span className="text-[13px] font-semibold text-wisteria-deep">Or paste text</span>
-              <textarea value={pastedText} onChange={(e) => { setPastedText(e.target.value); setAiChatUrl(""); setWebsiteUrl(""); setFile(null); setChosenName(null); setPhase({ kind: "idle" }); }} rows={4} placeholder="Paste a syllabus, your notes, or an exported AI chat. The type above decides how it's read." className="resize-y rounded-[12px] border-2 border-alice-deep bg-parchment px-[12px] py-[9px] text-[13px] font-medium text-prussian outline-none focus:border-wisteria" data-part="paste-text" />
-              <span className="text-[13px] font-semibold text-wisteria-deep">Or add an AI chat link</span>
-              <input value={aiChatUrl} onChange={(e) => { setAiChatUrl(e.target.value); setPastedText(""); setWebsiteUrl(""); setFile(null); setChosenName(null); if (e.target.value.trim()) setDefault({ type: "AI chat" }); setPhase({ kind: "idle" }); }} placeholder="Public ChatGPT, Claude, or Gemini share link" className="h-[40px] rounded-[12px] border-2 border-alice-deep bg-parchment px-[12px] text-[14px] font-medium text-prussian outline-none focus:border-wisteria" data-part="ai-chat-url" />
-              <span className="text-[11px] leading-snug text-wisteria-deep">In an AI chat, your questions tell Orca what to prioritize. AI answers are treated as context, not course authority.</span>
-            </div>
-            </>)}
+                  {/* Upload files or a whole folder (every PDF and .pptx in it): a browser's picker takes one or the other. */}
+                  <span className="flex shrink-0 items-center gap-[12px]" onClick={(e) => e.stopPropagation()}>
+                    {([["files", "Upload a file", fileRef], ["folder", "Upload folder", folderRef]] as const).map(([part, label, ref]) => (
+                      <button key={part} type="button" disabled={busy} onClick={() => ref.current?.click()} className="flex items-center gap-1 text-[13px] font-semibold text-wisteria-deep hover:underline" data-part={`upload-${part}`}>
+                        <IconUpload size={16} /> {label}
+                      </button>
+                    ))}
+                    <InfoTip label="About GoodNotes and Notability">GoodNotes or Notability? Export the notebook as a PDF and upload it as handwritten notes.</InfoTip>
+                  </span>
+                </div>
 
-            {phase.kind === "sending" && !batch && (
+                {phase.kind === "sending" && !batch && (
+                  <div className="flex flex-col gap-[8px]" role="status">
+                    <ProgressBar value={phase.stage === "hashing" ? 0.1 : phase.stage === "uploading" ? 0.4 : 0.8} height={10} label="Uploading" />
+                    <span className="text-[13px] font-semibold text-wisteria-deep">{STAGE_MESSAGE[phase.stage]}</span>
+                  </div>
+                )}
+
+                {batch ? (
+                  // Several files: their list scrolls inside the card (the one place this page scrolls).
+                  <div className="mt-[4px] flex min-h-0 flex-1 flex-col gap-[8px] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+                    <span className="text-[12px] font-semibold uppercase tracking-[1.2px] text-wisteria-deep">
+                      {sendable.length} file{sendable.length === 1 ? "" : "s"} to add{batch.length > sendable.length ? ` · ${batch.length - sendable.length} skipped` : ""}
+                    </span>
+                    <BatchList
+                      items={batch}
+                      busy={busy}
+                      compact={bulk}
+                      onChange={(id, p) => setBatch((b) => b && b.map((it) => (it.id === id ? { ...it, ...p, edited: true } : it)))}
+                      onRemove={(id) => setBatch((b) => (b && b.length > 1 ? b.filter((it) => it.id !== id) : null))}
+                      // Commented out with the duplicate check (owner, 2026-11-24).
+                      // onUploadAgain={(id) => {
+                      //   setBatch((b) => b && b.map((it) => (it.id === id ? { ...it, again: true, status: { kind: "waiting" } } : it)));
+                      //   setPhase({ kind: "idle" });
+                      // }}
+                    />
+                  </div>
+                ) : doc ? (
+                  <div className="mt-[4px] flex min-h-0 flex-col gap-[6px] overflow-hidden">
+                    <span className="text-[12px] font-semibold uppercase tracking-[1.2px] text-wisteria-deep">
+                      {doc.length} slides · read by Orca
+                    </span>
+                    {previewLines.map((l, i) => (
+                      <span key={i} className="truncate text-[13px] leading-snug text-prussian/80">
+                        {l}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  !file && (
+                    <div className="flex flex-1 flex-col items-center justify-center gap-[10px] rounded-[16px] border-2 border-dashed border-alice-deep text-wisteria-deep" data-part="drop-hint">
+                      <IconUpload size={32} />
+                      <span className="text-[15px] font-bold">Drop files or a folder here</span>
+                      <span className="text-[13px] font-medium">PDF, .pptx or .docx</span>
+                    </div>
+                  )
+                )}
+              </>
+            )}
+
+            {source === "link" && (
+              <label className="flex flex-col gap-[8px] text-[14px] font-semibold text-prussian">
+                <span className="flex items-center gap-[6px]">
+                  Course website or Google file
+                  <InfoTip label="About links">A public course website, or a Google Docs, Slides or Drive file shared with anyone who has the link.</InfoTip>
+                </span>
+                <input autoFocus value={websiteUrl} onChange={(e) => { setWebsiteUrl(e.target.value); setFile(null); setChosenName(null); setAiChatUrl(""); setPastedText(""); setPhase({ kind: "idle" }); }} placeholder="https://example.edu/course, or docs.google.com/…" className="h-[44px] rounded-[12px] border-2 border-alice-deep bg-parchment px-[12px] text-[14px] font-medium text-prussian outline-none focus:border-wisteria" data-part="website-url" />
+              </label>
+            )}
+
+            {source === "text" && (
+              <label className="flex min-h-0 flex-1 flex-col gap-[8px] text-[14px] font-semibold text-prussian">
+                <span className="flex items-center gap-[6px]">
+                  Pasted text
+                  <InfoTip label="About pasted text">A syllabus, your notes, or an exported AI chat. The type you pick decides how it&apos;s read.</InfoTip>
+                </span>
+                <textarea autoFocus value={pastedText} onChange={(e) => { setPastedText(e.target.value); setAiChatUrl(""); setWebsiteUrl(""); setFile(null); setChosenName(null); setPhase({ kind: "idle" }); }} placeholder="Paste a syllabus, your notes, or an exported AI chat." className="min-h-0 flex-1 resize-none rounded-[12px] border-2 border-alice-deep bg-parchment px-[12px] py-[9px] text-[14px] font-medium text-prussian outline-none focus:border-wisteria" data-part="paste-text" />
+              </label>
+            )}
+
+            {source === "chat" && (
+              <label className="flex flex-col gap-[8px] text-[14px] font-semibold text-prussian">
+                <span className="flex items-center gap-[6px]">
+                  AI chat share link
+                  <InfoTip label="About AI chats">In an AI chat, your questions tell Orca what to prioritize. AI answers are treated as context, not course authority.</InfoTip>
+                </span>
+                <input autoFocus value={aiChatUrl} onChange={(e) => { setAiChatUrl(e.target.value); setPastedText(""); setWebsiteUrl(""); setFile(null); setChosenName(null); if (e.target.value.trim()) setDefault({ type: "AI chat" }); setPhase({ kind: "idle" }); }} placeholder="Public ChatGPT, Claude, or Gemini share link" className="h-[44px] rounded-[12px] border-2 border-alice-deep bg-parchment px-[12px] text-[14px] font-medium text-prussian outline-none focus:border-wisteria" data-part="ai-chat-url" />
+              </label>
+            )}
+
+            {source !== "file" && phase.kind === "sending" && (
               <div className="flex flex-col gap-[8px]" role="status">
                 <ProgressBar value={phase.stage === "hashing" ? 0.1 : phase.stage === "uploading" ? 0.4 : 0.8} height={10} label="Uploading" />
                 <span className="text-[13px] font-semibold text-wisteria-deep">{STAGE_MESSAGE[phase.stage]}</span>
-              </div>
-            )}
-
-            {batch ? (
-              <div className="mt-[4px] flex min-h-0 flex-1 flex-col gap-[8px] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-                <span className="text-[12px] font-semibold uppercase tracking-[1.2px] text-wisteria-deep">
-                  {sendable.length} file{sendable.length === 1 ? "" : "s"} to add{batch.length > sendable.length ? ` · ${batch.length - sendable.length} skipped` : ""}
-                </span>
-                <BatchList
-                  items={batch}
-                  busy={busy}
-                  compact={bulk}
-                  onChange={(id, p) => setBatch((b) => b && b.map((it) => (it.id === id ? { ...it, ...p, edited: true } : it)))}
-                  onRemove={(id) => setBatch((b) => (b && b.length > 1 ? b.filter((it) => it.id !== id) : null))}
-                  // Commented out with the duplicate check (owner, 2026-11-24).
-                  // onUploadAgain={(id) => {
-                  //   setBatch((b) => b && b.map((it) => (it.id === id ? { ...it, again: true, status: { kind: "waiting" } } : it)));
-                  //   setPhase({ kind: "idle" });
-                  // }}
-                />
-              </div>
-            ) : doc ? (
-              <div className="mt-[4px] flex flex-col gap-[6px]">
-                <span className="text-[12px] font-semibold uppercase tracking-[1.2px] text-wisteria-deep">
-                  {doc.length} slides · read by Orca
-                </span>
-                {previewLines.map((l, i) => (
-                  <span key={i} className="truncate text-[13px] leading-snug text-prussian/80">
-                    {l}
-                  </span>
-                ))}
-              </div>
-            ) : (
-              <div className="mt-[6px] flex flex-col gap-[9px]" aria-hidden>
-                {SKELETON.slice(0, 5).map((w, i) => (
-                  <span key={i} className="block h-[8px] rounded-pill bg-alice-deep" style={{ width: `${w}%`, opacity: w ? 1 : 0 }} />
-                ))}
-                {/* Filler where the drop prompt was: the Upload buttons and dropping take files or a folder. */}
-                {SKELETON.slice(5, 11).map((w, i) => (
-                  <span key={`f${i}`} className="block h-[8px] rounded-pill bg-alice-deep" style={{ width: `${w}%`, opacity: w ? 1 : 0 }} />
-                ))}
-                {SKELETON.slice(6).map((w, i) => (
-                  <span key={i} className="block h-[8px] rounded-pill bg-alice-deep" style={{ width: `${w}%`, opacity: w ? 1 : 0 }} />
-                ))}
               </div>
             )}
           </Card>
         </motion.div>
 
         {/* Form */}
-        <div className="flex w-[520px] max-w-full flex-col gap-[28px]">
+        <div className="flex min-h-0 w-[520px] max-w-full flex-col gap-[22px] overflow-y-auto">
           <motion.section variants={fadeUp} className="flex flex-col gap-[14px]" data-part="material-type" data-type={type}>
             <h2 className="text-[17px] font-bold text-prussian">What kind of material is this?</h2>
             <Select label="What kind of material is this?" value={type} options={MATERIAL_TYPES} labels={MATERIAL_TYPE_LABELS} onChange={(t) => setDefault({ type: t })} className="self-start" />
@@ -507,7 +564,7 @@ export default function AddMaterialPage({ searchParams }: PageProps<"/add-materi
               <label className="flex items-center gap-[10px] text-[15px] font-semibold text-prussian">
                 <input type="checkbox" checked={holdBack} disabled={busy} onChange={(e) => setDefault({ heldBack: e.target.checked })} className="size-[18px] accent-wisteria" data-part="hold-back" />
                 Keep hidden for a practice test
-                <span className="text-[13px] font-medium text-wisteria-deep">Orca maps what it covers but writes no questions from it.</span>
+                <InfoTip label="About keeping it hidden">Orca maps what it covers but writes no questions from it.</InfoTip>
               </label>
             )}
           </motion.section>
@@ -532,7 +589,7 @@ export default function AddMaterialPage({ searchParams }: PageProps<"/add-materi
                 onChange={(e) => setNote(e.target.value)}
                 disabled={busy}
                 maxLength={2000}
-                rows={4}
+                rows={3}
                 placeholder="e.g. I kept getting the K-map groups wrong when they wrapped around the edges."
                 className="rounded-[16px] border-2 border-alice-deep bg-parchment px-[16px] py-[12px] text-[16px] text-prussian outline-none focus:border-wisteria"
               />

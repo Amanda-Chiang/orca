@@ -18,7 +18,25 @@ export const SOURCE_STYLE: ReadonlyArray<{ key: StudySource; label: string; colo
 /** The tiles' stripes, in order. */
 export const TILE_ACCENTS = ["bg-study-sky", "bg-study-gold", "bg-study-rose", "bg-study-mint"] as const;
 
-export function StatTile({ label, value, note, accent, share, part }: { label: string; value: string; note?: string | null; accent: string; share?: number | null; part: string }) {
+export function StatTile({ label, value, note, accent, share, part, compact = false }: { label: string; value: string; note?: string | null; accent: string; share?: number | null; part: string; compact?: boolean }) {
+  // Compact: one line (label, then the value and its note), for a page that fits the window.
+  if (compact)
+    return (
+      <Card radius={18} lip={4} className="relative flex items-center gap-[10px] overflow-hidden py-[12px] pl-[20px] pr-[16px]" data-part={`${part}-tile`}>
+        <span className={`absolute inset-y-0 left-0 w-[6px] ${accent}`} aria-hidden />
+        <p className="eyebrow shrink-0 text-[12px] text-wisteria-deep">{label}</p>
+        <p className="ml-auto flex min-w-0 items-baseline gap-[6px]">
+          {note && (
+            <span className="truncate text-[11px] font-semibold text-wisteria-deep" title={note} data-part={`${part}-note`}>
+              {note}
+            </span>
+          )}
+          <span className="shrink-0 text-[22px] font-bold leading-none text-prussian" data-part={part}>
+            {value}
+          </span>
+        </p>
+      </Card>
+    );
   return (
     <Card radius={20} lip={4} className="relative flex flex-col gap-[6px] overflow-hidden px-[18px] pb-[14px] pt-[18px]" data-part={`${part}-tile`}>
       <span className={`absolute inset-x-0 top-0 h-[6px] ${accent}`} aria-hidden />

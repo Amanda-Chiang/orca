@@ -114,6 +114,7 @@ test("pasted text is read as the type chosen: a syllabus is stored as pasted and
   const syllabus = ["ELEN 3201 Circuit Analysis, Fall 2026", "Week 1: Ohm's law, Kirchhoff's current and voltage laws, series and parallel resistors.", "Week 2: Nodal and mesh analysis with dependent sources.", "Grading: homework 30%, midterm 30%, final 40%."].join("\n");
   await page.goto("/add-material");
   await page.getByLabel("What kind of material is this?").selectOption("Syllabus");
+  await page.locator("[data-part=source-tab][data-source=text]").click();
   await page.locator("[data-part=paste-text]").fill(syllabus);
   await page.getByRole("button", { name: "Add to course" }).click();
   await expect(page).toHaveURL(/\/course\/circuits\/review\?run=/, { timeout: 30_000 });
@@ -126,6 +127,7 @@ test("pasted text is read as the type chosen: a syllabus is stored as pasted and
   // The same words pasted as an AI chat: the speakers are labelled and the header tells the model how to weigh them.
   await page.goto("/add-material");
   await page.getByLabel("What kind of material is this?").selectOption("AI chat");
+  await page.locator("[data-part=source-tab][data-source=text]").click();
   await page.locator("[data-part=paste-text]").fill(`You: ${syllabus.split("\n")[1]}\nChatGPT: ${syllabus.split("\n")[2]}`);
   await page.getByRole("button", { name: "Add to course" }).click();
   await expect(page).toHaveURL(/\/course\/circuits\/review\?run=/, { timeout: 30_000 });
@@ -135,6 +137,7 @@ test("pasted text is read as the type chosen: a syllabus is stored as pasted and
   expect(chatPages![0].text).toMatch(/^AI CHAT TRANSCRIPT\n.*\nSTUDENT: Week 1.*\nAI ASSISTANT: Week 2/);
   // Entering a chat link switches the type to AI chat.
   await page.goto("/add-material");
+  await page.locator("[data-part=source-tab][data-source=chat]").click();
   await page.locator("[data-part=ai-chat-url]").fill("https://chatgpt.com/share/abc");
   await expect(page.getByLabel("What kind of material is this?")).toHaveValue("AI chat");
 });
