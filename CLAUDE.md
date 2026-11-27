@@ -804,8 +804,14 @@ now, so that part needs rethinking before it's planned.
   what a section is for, "how this works" paragraphs, or cheerful filler. A short label or a
   state the student needs to act on (an error, an empty state, a confirmation) is fine. When
   something really needs explaining, put it behind an info icon beside its label: a tooltip of one
-  or two sentences on hover or focus (there's no shared one yet; build it on `ui/AnchoredBubble`).
+  or two sentences on hover or focus (`ui/InfoTip`, built on `ui/AnchoredBubble`).
   When in doubt, leave the explanation out.
+- **Main pages fit the window (owner, 2026-11-27).** Calendar, Add course, Settings (Preferences,
+  Connections), Your progress and Add material don't scroll in a 1280×800 laptop's window (about
+  1280×680 after the browser's bar): titles are 32 px, explanations sit behind `InfoTip`, Connections
+  are 2×2 tiles whose setup opens in a pop-up (`settings/ConnectionTile.tsx`), and Add material picks
+  File, Link, Text or AI chat by tab. Only growing lists scroll inside their card (an upload's file
+  list, Your progress's courses, a busy day in Week view).
 - Pixel values from Figma are fine inline (`text-[22px]`, `rounded-[20px]`); colors must be tokens.
 - **Fix mode (the default for bug fixes and small changes).** Make the narrowest fix, then run
   only `npx tsc --noEmit`, `npx eslint` on the changed files, and the one unit test file covering
