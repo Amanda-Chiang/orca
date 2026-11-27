@@ -18,26 +18,25 @@ export interface FeedStatus {
 export async function feedStatus(db: OrcaSupabase, ownerId: string): Promise<FeedStatus> {
   const { data, error } = await db.from("profiles").select("calendar_feed_token").eq("owner_id", ownerId).maybeSingle();
   if (error) throw new Error(`Couldn't read the calendar feed: ${error.message}`);
-  // The column isn't in database.types.ts yet (no local stack to regenerate it); migration 20261125120000 is the contract.
-  return { connected: Boolean((data as { calendar_feed_token?: string | null } | null)?.calendar_feed_token), url: null };
+  return { connected: Boolean(data?.calendar_feed_token), url: null };
 }
 
 /** A new token (the old one stops working), and the link to subscribe to. */
 export async function mintFeed(db: OrcaSupabase, ownerId: string, siteUrl: string): Promise<{ url: string }> {
   const token = randomBytes(24).toString("base64url");
-  const { error } = await db.from("profiles").update({ calendar_feed_token: token } as never).eq("owner_id", ownerId);
+  const { error } = await db.from("profiles").update({ calendar_feed_token: token }).eq("owner_id", ownerId);
   if (error) throw new Error(`Couldn't make the calendar feed: ${error.message}`);
   return { url: `${siteUrl.replace(/\/$/, "")}/api/calendar/feed/${token}.ics` };
 }
 
 export async function revokeFeed(db: OrcaSupabase, ownerId: string): Promise<void> {
-  const { error } = await db.from("profiles").update({ calendar_feed_token: null } as never).eq("owner_id", ownerId);
+  const { error } = await db.from("profiles").update({ calendar_feed_token: null }).eq("owner_id", ownerId);
   if (error) throw new Error(`Couldn't stop the calendar feed: ${error.message}`);
 }
 
 /** The feed for a token, or null when no account holds it. Days are the student's (their timezone). */
 export async function feedForToken(db: OrcaSupabase, token: string, now = new Date()): Promise<string | null> {
-  const { data: profile, error } = await db.from("profiles").select("owner_id, timezone").eq("calendar_feed_token" as never, token).maybeSingle();
+  const { data: profile, error } = await db.from("profiles").select("owner_id, timezone").eq("calendar_feed_token", token).maybeSingle();
   if (error) throw new Error(`Couldn't read the calendar feed: ${error.message}`);
   if (!profile) return null;
   const owner = profile.owner_id;
