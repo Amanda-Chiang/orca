@@ -170,6 +170,19 @@ isOneToOne: false
       referencedColumns: ["id","owner_id"]
     }
                   ]
+                },"google_connections": {
+                  Row: {
+                    "broken_at": string | null,"calendar_error": string | null,"calendar_id": string | null,"calendar_since": string | null,"calendar_synced_at": string | null,"created_at": string,"google_email": string | null,"last_used_at": string | null,"owner_id": string,"refresh_token_enc": string,"scopes": (string)[]
+                  }
+                  Insert: {
+                    "broken_at"?: string | null,"calendar_error"?: string | null,"calendar_id"?: string | null,"calendar_since"?: string | null,"calendar_synced_at"?: string | null,"created_at"?: string,"google_email"?: string | null,"last_used_at"?: string | null,"owner_id": string,"refresh_token_enc": string,"scopes"?: (string)[]
+                  }
+                  Update: {
+                    "broken_at"?: string | null,"calendar_error"?: string | null,"calendar_id"?: string | null,"calendar_since"?: string | null,"calendar_synced_at"?: string | null,"created_at"?: string,"google_email"?: string | null,"last_used_at"?: string | null,"owner_id"?: string,"refresh_token_enc"?: string,"scopes"?: (string)[]
+                  }
+                  Relationships: [
+                    
+                  ]
                 },"material_pages": {
                   Row: {
                     "material_id": string,"n": number,"owner_id": string,"source": string,"text": string

@@ -16,6 +16,7 @@ import { MarkerNotes } from "@/components/config/MarkerNotes";
 import { NotesForOrca } from "@/components/config/NotesForOrca";
 import { AccountCard, SignOutButton, TimezoneRow } from "@/components/settings/Account";
 import { CalendarFeedCard } from "@/components/settings/CalendarFeed";
+import { GoogleConnectionCard } from "@/components/settings/GoogleConnection";
 import { CanvasConnectionCard } from "@/components/settings/CanvasConnection";
 import { ClaudeConnectorCard } from "@/components/settings/ClaudeConnector";
 import { FeedbackCard } from "@/components/settings/FeedbackCard";
@@ -92,6 +93,7 @@ function SettingsBody() {
                     <>
                       <ClaudeConnectorCard />
                       <CanvasConnectionCard />
+                      <GoogleConnectionCard />
                       <NotionConnectionCard />
                       <CalendarFeedCard />
                     </>

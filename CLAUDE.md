@@ -265,6 +265,15 @@ own courses (Data Structures, Fundamentals of Computer Systems) on the hosted pr
   blocks into text; `notion_links` keeps importing again from duplicating). GoodNotes has no API: the
   upload page says to export as PDF. New rate limits: `calendarFeed`, `google`, `notionConnect`,
   `notionPages`, `notionImport`. The new tables and column are in `database.types.ts`.
+- **Google Calendar and Drive sign-in** (2026-11-27): OAuth (web client, PKCE, offline) from Settings → Connections →
+  Google, one feature at a time (`src/lib/google/oauth.ts`: `calendar.app.created`, `drive.file`). The refresh token
+  is encrypted in `google_connections` (migration `20261127090000`, service-role only; `src/lib/server/google.ts`).
+  Calendar: an "Orca" calendar Orca makes and keeps in line with `orcaEvents` (the feed's events, `src/lib/calendar/ics.ts`;
+  `src/lib/google/calendar.ts` plans the writes), on connect, Sync now, and from the heartbeat at most every 30 min.
+  Drive: Add material's "Google Drive" opens Google's picker (`src/lib/google-picker.ts`, a `drive.file` token from
+  `/api/google/picker-token`) and `POST /api/materials/google-drive` downloads each pick (Google formats as PDF)
+  through `addFetchedFile` (`src/lib/server/fetched-file.ts`, shared with share links). Env vars and the Google Cloud
+  steps: `docs/SETUP-HOSTED.md` §11. Not tested against Google itself in CI.
 - **Two hosted Supabase projects.** Production is `fbbimuspcsytjhbqlzzc` (the live site's; its
   keys are Vercel's Production env vars). `mtztzsxgcopohlokragm` is a second hosted project Amanda
   uses for development. `.env` may point at either (it has pointed at each at different times):

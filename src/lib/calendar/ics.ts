@@ -101,47 +101,76 @@ function meetingTime(hhmm: string): string {
   return `${h.padStart(2, "0")}${m.padStart(2, "0")}00`;
 }
 
-export function buildIcs(input: FeedInput): string {
-  const byId = new Map(input.courses.map((c) => [c.id, c]));
-  const ds = stamp(input.now);
-  const lines: string[] = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Orca//Study calendar//EN", "CALSCALE:GREGORIAN", "METHOD:PUBLISH", "X-WR-CALNAME:Orca", "X-WR-TIMEZONE:" + icsText(input.timezone)];
-  const event = (uid: string, summary: string, body: string[], description?: string) => {
-    lines.push("BEGIN:VEVENT", `UID:${uid}@orca`, `DTSTAMP:${ds}`, `SUMMARY:${icsText(summary)}`, ...body);
-    if (description) lines.push(`DESCRIPTION:${icsText(description)}`);
-    lines.push("END:VEVENT");
-  };
-  const allDay = (day: string) => {
-    const start = utcDate(day);
-    return [`DTSTART;VALUE=DATE:${dayStr(start)}`, `DTEND;VALUE=DATE:${dayStr(new Date(start.getTime() + DAY_MS))}`];
-  };
+/**
+ * One event of the student's calendar, as both the feed and the Google Calendar sync
+ * (`src/lib/google/calendar.ts`, 2026-11-27) write it. `uid` is stable across rebuilds.
+ */
+export interface OrcaCalendarEvent {
+  uid: string;
+  summary: string;
+  description?: string;
+  /** The (first) day, YYYY-MM-DD. */
+  day: string;
+  /** Local start and end, HH:MM in the student's timezone; absent for an all-day event. */
+  times?: { start: string; end: string };
+  /** Repeats every week on this weekday from `day` on. */
+  weekly?: Weekday;
+}
 
+function iso(yyyymmdd: string): string {
+  return `${yyyymmdd.slice(0, 4)}-${yyyymmdd.slice(4, 6)}-${yyyymmdd.slice(6, 8)}`;
+}
+
+/** HH:MM, zero-padded, from a meeting's time. */
+export function clockTime(hhmm: string): string {
+  const [h, m] = hhmm.split(":");
+  return `${h.padStart(2, "0")}:${(m ?? "0").padStart(2, "0")}`;
+}
+
+/** The student's exams, due dates, class meetings and review and dive days, as events. */
+export function orcaEvents(input: Omit<FeedInput, "now">): OrcaCalendarEvent[] {
+  const byId = new Map(input.courses.map((c) => [c.id, c]));
+  const out: OrcaCalendarEvent[] = [];
   for (const e of input.exams) {
     const c = byId.get(e.courseId);
-    event(`exam-${e.id}`, `${e.title} · ${c?.short ?? "Exam"}`, allDay(e.date), c ? `${c.name}: ${e.title}` : e.title);
+    out.push({ uid: `exam-${e.id}`, summary: `${e.title} · ${c?.short ?? "Exam"}`, day: e.date, description: c ? `${c.name}: ${e.title}` : e.title });
   }
   for (const e of input.events) {
     const c = e.courseId ? byId.get(e.courseId) : undefined;
-    event(`event-${e.id}`, c ? `${e.title} · ${c.short}` : e.title, allDay(e.date), c ? `${c.name}: ${e.title}` : undefined);
+    out.push({ uid: `event-${e.id}`, summary: c ? `${e.title} · ${c.short}` : e.title, day: e.date, ...(c ? { description: `${c.name}: ${e.title}` } : {}) });
   }
   for (const c of input.courses) {
     const s = c.schedule;
     if (!s) continue;
     s.meetings.forEach((m: ClassMeeting, i) => {
-      const first = firstOnOrAfter(input.from, m.day);
-      event(`meeting-${c.id}-${i}`, `${c.short} class`, [
-        `DTSTART;TZID=${input.timezone}:${first}T${meetingTime(m.start)}`,
-        `DTEND;TZID=${input.timezone}:${first}T${meetingTime(m.end)}`,
-        `RRULE:FREQ=WEEKLY;BYDAY=${BYDAY[m.day]}`,
-      ], c.name);
+      out.push({ uid: `meeting-${c.id}-${i}`, summary: `${c.short} class`, day: iso(firstOnOrAfter(input.from, m.day)), times: { start: clockTime(m.start), end: clockTime(m.end) }, weekly: m.day, description: c.name });
     });
     for (const d of reviewDays(s)) {
-      const first = firstOnOrAfter(input.from, d);
-      event(`review-${c.id}-${d}`, `Orca review · ${c.short}`, [`DTSTART;VALUE=DATE:${first}`, `RRULE:FREQ=WEEKLY;BYDAY=${BYDAY[d]}`], `${c.name}: quick review day. Open Orca, or ask your AI with the Orca connector.`);
+      out.push({ uid: `review-${c.id}-${d}`, summary: `Orca review · ${c.short}`, day: iso(firstOnOrAfter(input.from, d)), weekly: d, description: `${c.name}: quick review day. Open Orca, or ask your AI with the Orca connector.` });
     }
     for (const d of s.deepDays ?? []) {
-      const first = firstOnOrAfter(input.from, d);
-      event(`dive-${c.id}-${d}`, `Orca dive · ${c.short}`, [`DTSTART;VALUE=DATE:${first}`, `RRULE:FREQ=WEEKLY;BYDAY=${BYDAY[d]}`], `${c.name}: dive day.`);
+      out.push({ uid: `dive-${c.id}-${d}`, summary: `Orca dive · ${c.short}`, day: iso(firstOnOrAfter(input.from, d)), weekly: d, description: `${c.name}: dive day.` });
     }
+  }
+  return out;
+}
+
+export function buildIcs(input: FeedInput): string {
+  const ds = stamp(input.now);
+  const lines: string[] = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Orca//Study calendar//EN", "CALSCALE:GREGORIAN", "METHOD:PUBLISH", "X-WR-CALNAME:Orca", "X-WR-TIMEZONE:" + icsText(input.timezone)];
+  for (const e of orcaEvents(input)) {
+    const start = utcDate(e.day);
+    lines.push("BEGIN:VEVENT", `UID:${e.uid}@orca`, `DTSTAMP:${ds}`, `SUMMARY:${icsText(e.summary)}`);
+    if (e.times) {
+      lines.push(`DTSTART;TZID=${input.timezone}:${dayStr(start)}T${meetingTime(e.times.start)}`, `DTEND;TZID=${input.timezone}:${dayStr(start)}T${meetingTime(e.times.end)}`);
+    } else {
+      lines.push(`DTSTART;VALUE=DATE:${dayStr(start)}`);
+      // A one-off all-day event ends the next day; a weekly one is a day long by default.
+      if (e.weekly === undefined) lines.push(`DTEND;VALUE=DATE:${dayStr(new Date(start.getTime() + DAY_MS))}`);
+    }
+    if (e.weekly !== undefined) lines.push(`RRULE:FREQ=WEEKLY;BYDAY=${BYDAY[e.weekly]}`);
+    if (e.description) lines.push(`DESCRIPTION:${icsText(e.description)}`);
+    lines.push("END:VEVENT");
   }
   lines.push("END:VCALENDAR");
   return lines.map(fold).join("\r\n") + "\r\n";
