@@ -30,6 +30,9 @@ const WHAT: Record<RateAction, string> = {
   notionConnect: "Notion connections",
   notionPages: "Notion page listings",
   notionImport: "Notion imports",
+  googleConnect: "Google sign-ins",
+  googleSync: "calendar syncs",
+  googleToken: "Google Drive pickers",
 };
 
 function spell(seconds: number): string {

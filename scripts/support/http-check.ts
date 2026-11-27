@@ -193,6 +193,12 @@ export async function startApp(opts: { modelUrl?: string } = {}): Promise<string
     ORCA_JOBS: "inline",
     ORCA_UPLOAD_PIPELINE: "",
     ORCA_DAILY_BUDGET_USD: "",
+    // Google sign-in (2026-11-27): a made-up client, so connect answers a redirect to Google; no
+    // picker key, so the Drive picker says it isn't set up. Nothing here reaches Google.
+    GOOGLE_CLIENT_ID: "check-routes.apps.googleusercontent.com",
+    GOOGLE_CLIENT_SECRET: "check-routes-secret",
+    GOOGLE_PICKER_API_KEY: "",
+    GOOGLE_PROJECT_NUMBER: "",
     // Where emailed and connector links point (required in production).
     SITE_URL: `http://localhost:${port}`,
   });

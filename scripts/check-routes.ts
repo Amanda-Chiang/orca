@@ -7,7 +7,7 @@
  * Covers the routes nothing else calls directly: Notes for Orca and course settings (with the
  * injection screen), course delete, material remove, pause/stop/check of runs, pasted text, dives
  * and their cancel, Find connections, the study timer (and its 4-hour cap), study time and the
- * study log, usage, and the admin gate. The Claude connector has its own suite (check-connector.ts).
+ * study log, usage, Google sign-in (without reaching Google), and the admin gate. The Claude connector has its own suite (check-connector.ts).
  *
  *   npm run check:routes                                      # local stack; starts next dev + fake model
  *   ORCA_URL=http://localhost:3100 npm run check:routes       # a server that's already running
@@ -67,6 +67,13 @@ async function signedOut() {
     ["GET", "/api/connector"],
     ["POST", "/api/connector", {}],
     ["DELETE", "/api/connector"],
+    ["GET", "/api/google"],
+    ["DELETE", "/api/google"],
+    ["GET", "/api/google/connect?feature=drive"],
+    ["GET", "/api/google/callback?state=x&code=y"],
+    ["POST", "/api/google/calendar/sync", {}],
+    ["POST", "/api/google/picker-token", {}],
+    ["POST", "/api/materials/google-drive", { courseId: anyId, fileId: "1AbCdEfGhIjKlMnOp", type: "Lecture", assigned: null, due: null }],
   ];
   for (const [method, path, payload] of routes) {
     const r = await api(path, { method, body: payload });
@@ -279,6 +286,43 @@ async function usage(A: Student) {
   check("today's use against the daily caps, resetting at the student's midnight", r.status === 200 && typeof u.pages === "number" && u.pagesPerDay > 0 && u.tokensPerDay > 0 && u.timeZone === "UTC" && u.resetsAt.endsWith("T00:00:00.000Z"), r);
 }
 
+async function google(A: Student, B: Student, courseB: string) {
+  section("Google sign-in (/api/google/*)");
+  const status = body<{ configured: boolean; pickerReady: boolean; calendar: { connected: boolean }; drive: { connected: boolean } }>(await get("/api/google", A));
+  check("status: set up on this server, nothing connected, no picker without its key", status.configured && !status.pickerReady && !status.calendar.connected && !status.drive.connected, status);
+  // Redirects are read, never followed: nothing here reaches Google.
+  const manual = (path: string, who: Student, cookie?: string) => fetch(`${APP}${path}`, { redirect: "manual", headers: { Authorization: `Bearer ${who.token}`, ...(cookie ? { cookie } : {}) } });
+  const connect = await manual(`/api/google/connect?feature=drive&next=${encodeURIComponent("https://evil.example/")}`, A);
+  const to = new URL(connect.headers.get("location") ?? "http://x/");
+  const cookie = connect.headers.get("set-cookie") ?? "";
+  check(
+    "connect: off to Google's consent screen for drive.file only, with PKCE and a httpOnly state cookie",
+    connect.status === 303 && to.origin === "https://accounts.google.com" && to.searchParams.get("scope") === "openid email https://www.googleapis.com/auth/drive.file" && to.searchParams.get("code_challenge_method") === "S256" && /orca_google_oauth=/.test(cookie) && /HttpOnly/i.test(cookie),
+    { status: connect.status, location: to.toString(), cookie },
+  );
+  const bad = await manual("/api/google/connect?feature=gmail", A);
+  check("connect: an unknown feature goes back with an error, not to Google", bad.status === 303 && !(bad.headers.get("location") ?? "").includes("accounts.google.com"), bad.headers.get("location"));
+  const pair = cookie.split(";")[0];
+  const wrongState = await manual(`/api/google/callback?state=not-it&code=x`, A, pair);
+  check("callback: a state that isn't the cookie's is refused, back on this site (never the evil next)", wrongState.status === 303 && (wrongState.headers.get("location") ?? "").includes("google=error") && !(wrongState.headers.get("location") ?? "").includes("evil"), wrongState.headers.get("location"));
+  const state = to.searchParams.get("state");
+  const otherStudent = await manual(`/api/google/callback?state=${state}&code=x`, B, pair);
+  check("callback: another student can't finish A's sign-in", otherStudent.status === 303 && (otherStudent.headers.get("location") ?? "").includes("google=error"), otherStudent.headers.get("location"));
+  const denied = await manual(`/api/google/callback?state=${state}&error=access_denied`, A, pair);
+  check("callback: the student saying no on Google's screen comes back as denied", denied.status === 303 && (denied.headers.get("location") ?? "").includes("google=denied"), denied.headers.get("location"));
+  const sync = await post("/api/google/calendar/sync", A, {});
+  check("sync without Calendar connected → 409", sync.status === 409, sync);
+  const token = await post("/api/google/picker-token", A, {});
+  check("picker token without the picker's key → 503", token.status === 503, token);
+  const notMine = await post("/api/materials/google-drive", A, { courseId: courseB, fileId: "1AbCdEfGhIjKlMnOp", type: "Lecture", assigned: null, due: null });
+  check("a Drive file into another student's course → 404", notMine.status === 404, notMine);
+  const badId = await post("/api/materials/google-drive", A, { courseId: courseB, fileId: "../../x", type: "Lecture", assigned: null, due: null });
+  check("a malformed Drive file id → 400", badId.status === 400, badId);
+  const off = await api("/api/google", { method: "DELETE", token: A.token, body: { removeCalendar: true } });
+  check("disconnect with nothing connected is harmless", off.status === 200, off);
+  check("no connection row was written by any of it", (await rows(`google_connections?owner_id=in.(${A.id},${B.id})&select=owner_id`)).length === 0, null);
+}
+
 async function admin(A: Student) {
   section("Admin gate (/api/admin/*)");
   const paths = ["/api/admin/overview", "/api/admin/spend", "/api/admin/questions", "/api/admin/users"];
@@ -341,6 +385,7 @@ async function main() {
     await studyTime(A, B, courseA);
     await usage(A);
     await deleteCourseChecks(A, B);
+    await google(A, B, await createCourse(B, "Data Structures"));
     await admin(A);
   } catch (e) {
     check("the suite ran to the end", false, e instanceof Error ? e.stack ?? e.message : String(e));
