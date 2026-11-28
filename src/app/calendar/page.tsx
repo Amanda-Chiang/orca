@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
 import { fadeSwap } from "@/lib/motion";
@@ -29,7 +29,8 @@ import { BackButton } from "@/components/layout/BackButton";
 import { RoundButton } from "@/components/ui/RoundButton";
 import { MonthGrid } from "@/components/calendar/MonthGrid";
 import { WeekGrid } from "@/components/calendar/WeekGrid";
-import { CalendarEntry } from "@/components/calendar/CalendarEntry";
+import { CalendarEntry, GoogleCalendarEntry } from "@/components/calendar/CalendarEntry";
+import { type GoogleCalendarEvent, type GoogleEntry, googleEntries } from "@/lib/google/events";
 import { CalendarFilter, TypeMark } from "@/components/calendar/CalendarFilter";
 import { cn } from "@/lib/cn";
 
@@ -40,6 +41,42 @@ const VIEWS: { id: CalendarView; label: string }[] = [
 
 /** The key's short names (the filter spells them out). */
 const KEY_LABELS = { exam: "Exam", hw: "HW", rev: "Review", dive: "Dive in" } as const;
+
+/** What Orca's calendar shows: its own entries and the student's Google events. */
+type Item = CalendarEvent | GoogleEntry;
+const isGoogle = (e: Item): e is GoogleEntry => e.kind === "google";
+
+type GoogleState = { status: "off" } | { status: "on"; from: string; events: GoogleCalendarEvent[] } | { status: "error"; message: string };
+
+/**
+ * The student's Google Calendar events for the days shown (owner, 2026-11-28: read only, fetched as
+ * the page turns, never stored). Off when Google Calendar isn't connected.
+ */
+function useGoogleEvents(from: string | null, to: string | null): GoogleState {
+  const [state, setState] = useState<GoogleState>({ status: "off" });
+  useEffect(() => {
+    if (!from || !to) return;
+    const ctrl = new AbortController();
+    (async () => {
+      try {
+        const res = await fetch(`/api/google/calendar/events?from=${from}&to=${to}`, { cache: "no-store", signal: ctrl.signal });
+        const body = (await res.json().catch(() => ({}))) as { connected?: boolean; events?: GoogleCalendarEvent[]; error?: string; reconnect?: boolean };
+        if (!res.ok) return setState({ status: "error", message: body.reconnect ? "Reconnect Google Calendar in Settings to see your events." : "Couldn't load your Google Calendar." });
+        setState(body.connected ? { status: "on", from, events: body.events ?? [] } : { status: "off" });
+      } catch {
+        if (!ctrl.signal.aborted) setState({ status: "error", message: "Couldn't load your Google Calendar." });
+      }
+    })();
+    return () => ctrl.abort();
+  }, [from, to]);
+  return state;
+}
+
+const dayAfter = (iso: string) => {
+  const [y, m, d] = iso.split("-").map(Number);
+  const n = new Date(y, m - 1, d + 1);
+  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}-${String(n.getDate()).padStart(2, "0")}`;
+};
 
 const parseDay = (iso: string) => {
   const [y, m, d] = iso.split("-").map(Number);
@@ -122,23 +159,31 @@ export default function CalendarPage() {
     });
   };
 
-  const visible = useMemo(() => filterEntries(shown, filter), [shown, filter]);
-  const byDate = useMemo(() => {
-    const m = new Map<string, CalendarEvent[]>();
-    for (const e of visible) m.set(e.date, [...(m.get(e.date) ?? []), e]);
-    return m;
-  }, [visible]);
-
   // null = follow today; set once the student pages away.
   const [picked, setPicked] = useState<string | null>(null);
-  // Until the client clock is known, render the empty sea rather than a wrong month.
-  if (!today) return <Screen bg="ocean" />;
   const anchor = picked ?? today;
-  const days = view === "month" ? monthDays(anchor) : weekDays(anchor);
+  const days = useMemo(() => (anchor ? (view === "month" ? monthDays(anchor) : weekDays(anchor)) : []), [anchor, view]);
+  const google = useGoogleEvents(days[0] ?? null, days.length ? dayAfter(days[days.length - 1]) : null);
+  const googleShown = useMemo(
+    () => (google.status === "on" && days.length ? googleEntries(google.events, days, Intl.DateTimeFormat().resolvedOptions().timeZone) : []),
+    [google, days],
+  );
+
+  const visible = useMemo(() => filterEntries(shown, filter), [shown, filter]);
+  const byDate = useMemo(() => {
+    // Google events after Orca's own in a day; the filters are for Orca's entries.
+    const m = new Map<string, Item[]>();
+    for (const e of [...visible, ...googleShown]) m.set(e.date, [...(m.get(e.date) ?? []), e]);
+    return m;
+  }, [visible, googleShown]);
+
+  // Until the client clock is known, render the empty sea rather than a wrong month.
+  if (!today || !anchor) return <Screen bg="ocean" />;
   const title = heading(view, anchor, days, today);
   const showsToday = days.includes(today) && (view === "week" || anchor.slice(0, 7) === today.slice(0, 7));
 
-  const entry = (e: CalendarEvent, compact: boolean) => {
+  const entry = (e: Item, compact: boolean) => {
+    if (isGoogle(e)) return <GoogleCalendarEntry event={e} compact={compact} />;
     const course = e.courseId ? byId.get(e.courseId) : undefined;
     const cramming = cram.exams.has(e.id) ? "exam" : e.courseId && cram.courses.has(e.courseId) ? "course" : undefined;
     return <CalendarEntry event={e} course={course} color={e.courseId ? colors.get(e.courseId) : undefined} cramming={cramming} compact={compact} />;
@@ -176,6 +221,17 @@ export default function CalendarPage() {
               {KEY_LABELS[t]}
             </span>
           ))}
+          {google.status === "on" && (
+            <span className="inline-flex items-center gap-[5px] whitespace-nowrap" data-part="google-legend">
+              <span aria-hidden className="h-[14px] w-[16px] rounded-[4px] border border-dashed border-muted" />
+              Google
+            </span>
+          )}
+          {google.status === "error" && (
+            <span className="whitespace-nowrap text-[13px] font-semibold text-bad-text" data-part="google-error">
+              {google.message}
+            </span>
+          )}
           {cram.courses.size > 0 && (
             <span className="inline-flex items-center gap-[5px] whitespace-nowrap" data-part="cram-legend">
               <span aria-hidden className="h-[16px] w-[16px] rounded-[4px] bg-cram" />

@@ -2,16 +2,17 @@
  * Google sign-in for Calendar and Drive (2026-11-27), pure: the scopes each feature asks for, the
  * consent-screen URL, and the checks on what comes back. Server code is `src/lib/server/google.ts`.
  *
- * Each feature asks only for its own scope (incremental authorization), so a student who only picks
- * Drive files never sees a calendar permission. Both are the narrowest Google has:
- * `calendar.app.created` reaches only the calendar Orca makes, `drive.file` only the files the
- * student picks in Google's picker (a non-sensitive scope).
+ * Each feature asks only for its own scopes (incremental authorization), so a student who only picks
+ * Drive files never sees a calendar permission. Calendar is read only (owner, 2026-11-28: Orca reads
+ * the student's calendars, it doesn't write one): `calendar.events.readonly` for the events and
+ * `calendar.calendarlist.readonly` to find the calendars they're on. Drive is `drive.file`: only the
+ * files the student picks in Google's picker (a non-sensitive scope).
  */
 export type GoogleFeature = "calendar" | "drive";
 
-export const GOOGLE_SCOPES: Record<GoogleFeature, string> = {
-  calendar: "https://www.googleapis.com/auth/calendar.app.created",
-  drive: "https://www.googleapis.com/auth/drive.file",
+export const GOOGLE_SCOPES: Record<GoogleFeature, readonly string[]> = {
+  calendar: ["https://www.googleapis.com/auth/calendar.events.readonly", "https://www.googleapis.com/auth/calendar.calendarlist.readonly"],
+  drive: ["https://www.googleapis.com/auth/drive.file"],
 };
 
 /** Asked with every feature, to show which Google account is connected. */
@@ -25,9 +26,9 @@ export function isFeature(value: unknown): value is GoogleFeature {
   return value === "calendar" || value === "drive";
 }
 
-/** Which features a granted scope list covers. */
+/** Which features a granted scope list covers (every scope a feature needs). */
 export function grantedFeatures(scopes: readonly string[]): GoogleFeature[] {
-  return (Object.keys(GOOGLE_SCOPES) as GoogleFeature[]).filter((f) => scopes.includes(GOOGLE_SCOPES[f]));
+  return (Object.keys(GOOGLE_SCOPES) as GoogleFeature[]).filter((f) => GOOGLE_SCOPES[f].every((s) => scopes.includes(s)));
 }
 
 export interface ConsentRequest {
@@ -46,7 +47,7 @@ export function consentUrl(req: ConsentRequest): string {
   url.searchParams.set("client_id", req.clientId);
   url.searchParams.set("redirect_uri", req.redirectUri);
   url.searchParams.set("response_type", "code");
-  url.searchParams.set("scope", [...IDENTITY_SCOPES, GOOGLE_SCOPES[req.feature]].join(" "));
+  url.searchParams.set("scope", [...IDENTITY_SCOPES, ...GOOGLE_SCOPES[req.feature]].join(" "));
   // A refresh token every time, so a reconnect after Google dropped one always works.
   url.searchParams.set("access_type", "offline");
   url.searchParams.set("prompt", "consent");

@@ -2,17 +2,16 @@
  * Google Calendar and Drive for a student (2026-11-27), against Supabase and Google's APIs. The
  * refresh token is encrypted at rest (the Canvas token's key) and never leaves the server; the
  * browser only ever gets a short-lived access token narrowed to `drive.file`, for Google's picker.
- * Pure parts: `src/lib/google/oauth.ts` (consent URL, checks) and `src/lib/google/calendar.ts`
- * (events and the sync plan).
+ * Calendar is read only since 2026-11-28 (owner): the student's events are read when Orca's
+ * calendar page asks and never stored. Pure parts: `src/lib/google/oauth.ts` (consent URL, checks)
+ * and `src/lib/google/events.ts` (Google's events as calendar entries).
  *
  * Settings: GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET (the OAuth web client), and for the Drive
  * picker GOOGLE_PICKER_API_KEY (a browser API key) and GOOGLE_PROJECT_NUMBER (the Cloud project's
  * number). Redirect URI: `<SITE_URL>/api/google/callback` (docs/SETUP-HOSTED.md §13).
  */
-import { orcaEvents } from "@/lib/calendar/ics";
-import { type ExistingEvent, type GoogleEvent, syncPlan, toGoogleEvent } from "@/lib/google/calendar";
+import { type GoogleCalendarEvent, type RawGoogleEvent, fromGoogleEvent } from "@/lib/google/events";
 import { GOOGLE_SCOPES, type GoogleFeature, REVOKE_ENDPOINT, TOKEN_ENDPOINT, emailFromIdToken, grantedFeatures } from "@/lib/google/oauth";
-import { feedInputFor, localDay } from "@/lib/server/calendar-feed";
 import { decryptToken, encryptToken } from "@/lib/server/canvas";
 import type { OrcaSupabase } from "@/lib/supabase/server";
 
@@ -57,7 +56,7 @@ export interface GoogleStatus {
   /** Whether the Drive picker can open (its API key and project number are set too). */
   pickerReady: boolean;
   email: string | null;
-  calendar: { connected: boolean; syncedAt: string | null; error: string | null };
+  calendar: { connected: boolean };
   drive: { connected: boolean };
   /** Google stopped accepting Orca's access: connect again. */
   needsReconnect: boolean;
@@ -65,14 +64,14 @@ export interface GoogleStatus {
 
 export async function googleStatus(db: OrcaSupabase, ownerId: string): Promise<GoogleStatus> {
   const config = googleConfig();
-  const { data, error } = await connections(db).select("google_email, scopes, calendar_id, calendar_synced_at, calendar_error, broken_at").eq("owner_id", ownerId).maybeSingle();
+  const { data, error } = await connections(db).select("google_email, scopes, broken_at").eq("owner_id", ownerId).maybeSingle();
   if (error) throw new Error(`Couldn't read the Google connection: ${error.message}`);
   const features = data && !data.broken_at ? grantedFeatures(data.scopes) : [];
   return {
     configured: config !== null,
     pickerReady: Boolean(config?.pickerApiKey && config.projectNumber),
     email: data?.google_email ?? null,
-    calendar: { connected: features.includes("calendar"), syncedAt: data?.calendar_synced_at ?? null, error: data?.calendar_error ?? null },
+    calendar: { connected: features.includes("calendar") },
     drive: { connected: features.includes("drive") },
     needsReconnect: Boolean(data?.broken_at),
   };
@@ -113,22 +112,21 @@ export async function finishConsent(db: OrcaSupabase, ownerId: string, code: str
   const refresh = t.refresh_token ? encryptToken(t.refresh_token) : sameAccount ? before.refresh_token_enc : null;
   if (!refresh) throw new GoogleError(502, "Google didn't give Orca lasting access. Try connecting again.");
   const row = { owner_id: ownerId, refresh_token_enc: refresh, google_email: email, scopes, broken_at: null, last_used_at: new Date().toISOString() };
-  // Another Google account replaces the old one, and its Orca calendar is made anew.
-  const fresh = { calendar_id: null, calendar_since: null, calendar_synced_at: null, calendar_error: null, created_at: new Date().toISOString() };
-  const { error } = await connections(db).upsert(sameAccount ? row : { ...row, ...fresh });
+  // Another Google account replaces the old one (undefined leaves the column as it is).
+  const { error } = await connections(db).upsert({ ...row, created_at: sameAccount ? undefined : new Date().toISOString() });
   if (error) throw new Error(`Couldn't save the Google connection: ${error.message}`);
   return { features: grantedFeatures(scopes), email };
 }
 
-/** A fresh access token, narrowed to `scopes` (Google allows a subset of what was granted). */
+/** A fresh access token, narrowed to the feature's scopes (Google allows a subset of what was granted). */
 export async function accessToken(db: OrcaSupabase, ownerId: string, feature: GoogleFeature): Promise<{ token: string; expiresIn: number }> {
   const config = googleConfig();
   if (!config) throw new GoogleError(503, "Google isn't set up on this server.");
   const { data, error } = await connections(db).select("refresh_token_enc, scopes, broken_at").eq("owner_id", ownerId).maybeSingle();
   if (error) throw new Error(`Couldn't read the Google connection: ${error.message}`);
-  if (!data || data.broken_at || !data.scopes.includes(GOOGLE_SCOPES[feature])) throw new GoogleError(409, feature === "drive" ? "Connect Google Drive first." : "Connect Google Calendar first.", true);
+  if (!data || data.broken_at || !GOOGLE_SCOPES[feature].every((s) => data.scopes.includes(s))) throw new GoogleError(409, feature === "drive" ? "Connect Google Drive first." : "Connect Google Calendar first.", true);
   try {
-    const t = await tokenCall({ grant_type: "refresh_token", refresh_token: decryptToken(data.refresh_token_enc), client_id: config.clientId, client_secret: config.clientSecret, scope: GOOGLE_SCOPES[feature] });
+    const t = await tokenCall({ grant_type: "refresh_token", refresh_token: decryptToken(data.refresh_token_enc), client_id: config.clientId, client_secret: config.clientSecret, scope: GOOGLE_SCOPES[feature].join(" ") });
     if (!t.access_token) throw new GoogleError(502, "Google sent no access token.");
     await connections(db).update({ last_used_at: new Date().toISOString() }).eq("owner_id", ownerId);
     return { token: t.access_token, expiresIn: t.expires_in ?? 3600 };
@@ -138,19 +136,11 @@ export async function accessToken(db: OrcaSupabase, ownerId: string, feature: Go
   }
 }
 
-/** Disconnect: the Orca calendar is deleted (when asked), Google's grant revoked, the row removed. */
-export async function disconnectGoogle(db: OrcaSupabase, ownerId: string, opts: { removeCalendar: boolean }): Promise<void> {
-  const { data, error } = await connections(db).select("refresh_token_enc, calendar_id, broken_at").eq("owner_id", ownerId).maybeSingle();
+/** Disconnect: Google's grant revoked and the row removed. Nothing Orca imported is touched. */
+export async function disconnectGoogle(db: OrcaSupabase, ownerId: string): Promise<void> {
+  const { data, error } = await connections(db).select("refresh_token_enc, broken_at").eq("owner_id", ownerId).maybeSingle();
   if (error) throw new Error(`Couldn't read the Google connection: ${error.message}`);
   if (!data) return;
-  if (opts.removeCalendar && data.calendar_id && !data.broken_at) {
-    try {
-      const { token } = await accessToken(db, ownerId, "calendar");
-      await calendarApi(token, `/calendars/${encodeURIComponent(data.calendar_id)}`, { method: "DELETE" }, [404, 410]);
-    } catch {
-      // Best effort: the calendar stays in Google if it can't be reached; the student can delete it there.
-    }
-  }
   if (!data.broken_at) {
     await fetch(REVOKE_ENDPOINT, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ token: decryptToken(data.refresh_token_enc) }), signal: AbortSignal.timeout(10_000) }).catch(() => null);
   }
@@ -158,103 +148,39 @@ export async function disconnectGoogle(db: OrcaSupabase, ownerId: string, opts: 
   if (deleteError) throw new Error(`Couldn't remove the Google connection: ${deleteError.message}`);
 }
 
-/* ── Calendar ── */
+/* ── Calendar (read only) ── */
 
 const CALENDAR_API = "https://www.googleapis.com/calendar/v3";
+/** Enough for a student's own, school and shared calendars; more are left out. */
+const MAX_CALENDARS = 20;
+const MAX_EVENTS_PER_CALENDAR = 250;
 
-async function calendarApi(token: string, path: string, init: RequestInit = {}, okStatuses: number[] = []): Promise<Response> {
-  const res = await fetch(`${CALENDAR_API}${path}`, { ...init, headers: { authorization: `Bearer ${token}`, "content-type": "application/json", ...(init.headers ?? {}) }, signal: AbortSignal.timeout(20_000) });
-  if (!res.ok && !okStatuses.includes(res.status)) {
+async function calendarGet<T>(token: string, path: string): Promise<T> {
+  const res = await fetch(`${CALENDAR_API}${path}`, { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(20_000) });
+  if (!res.ok) {
     const detail = ((await res.json().catch(() => null)) as { error?: { message?: string } } | null)?.error?.message;
     throw new GoogleError(res.status === 401 || res.status === 403 ? 409 : 502, `Google Calendar answered ${res.status}${detail ? `: ${detail}` : ""}.`);
   }
-  return res;
-}
-
-/** Eight at a time, so a sync of a busy term stays quick without tripping Google's rate limit. */
-async function inBatches<T>(items: readonly T[], run: (item: T) => Promise<void>, size = 8): Promise<void> {
-  for (let i = 0; i < items.length; i += size) await Promise.all(items.slice(i, i + size).map(run));
-}
-
-export interface SyncResult {
-  written: number;
-  removed: number;
-  total: number;
+  return (await res.json()) as T;
 }
 
 /**
- * Bring the student's Orca calendar in Google in line with Orca: made if missing (or deleted in
- * Google), every changed event written, every event Orca no longer has removed. Records the
- * outcome on the connection either way.
+ * The student's Google events between two instants, from every calendar they show in Google
+ * Calendar (`selected`), read when asked and not stored. A calendar named "Orca" is skipped: that's
+ * Orca's own subscription feed added to Google, already on Orca's calendar.
  */
-export async function syncCalendar(db: OrcaSupabase, ownerId: string, now = new Date()): Promise<SyncResult> {
-  try {
-    const result = await runSync(db, ownerId, now);
-    await connections(db).update({ calendar_synced_at: now.toISOString(), calendar_error: null }).eq("owner_id", ownerId);
-    return result;
-  } catch (e) {
-    const message = e instanceof Error ? e.message : "The sync failed.";
-    await connections(db).update({ calendar_error: message.slice(0, 300) }).eq("owner_id", ownerId);
-    throw e;
-  }
-}
-
-async function runSync(db: OrcaSupabase, ownerId: string, now: Date): Promise<SyncResult> {
+export async function googleEvents(db: OrcaSupabase, ownerId: string, timeMin: string, timeMax: string): Promise<GoogleCalendarEvent[]> {
   const { token } = await accessToken(db, ownerId, "calendar");
-  const { data: conn, error } = await connections(db).select("calendar_id, calendar_since").eq("owner_id", ownerId).single();
-  if (error) throw new Error(`Couldn't read the Google connection: ${error.message}`);
-  const input = await feedInputFor(db, ownerId, now);
-
-  let calendarId = conn.calendar_id;
-  if (calendarId) {
-    const found = await calendarApi(token, `/calendars/${encodeURIComponent(calendarId)}`, {}, [404, 410]);
-    if (!found.ok) calendarId = null;
-  }
-  let since = conn.calendar_since ?? localDay(now, input.timezone);
-  if (!calendarId) {
-    const made = await calendarApi(token, "/calendars", { method: "POST", body: JSON.stringify({ summary: "Orca", description: "Exams, due dates, classes and review days from Orca.", timeZone: input.timezone }) });
-    calendarId = ((await made.json()) as { id: string }).id;
-    since = localDay(now, input.timezone);
-    const { error: saveError } = await connections(db).update({ calendar_id: calendarId, calendar_since: since }).eq("owner_id", ownerId);
-    if (saveError) throw new Error(`Couldn't save the Orca calendar: ${saveError.message}`);
-  }
-  const base = `/calendars/${encodeURIComponent(calendarId)}/events`;
-
-  // Weekly events run from the day the calendar was made, so their start doesn't move every week.
-  const wanted: GoogleEvent[] = orcaEvents({ ...input, from: since }).map((e) => toGoogleEvent(e, input.timezone));
-  const existing: ExistingEvent[] = [];
-  let pageToken: string | undefined;
-  do {
-    const q = new URLSearchParams({ maxResults: "2500", showDeleted: "false", fields: "items(id,extendedProperties),nextPageToken" });
-    if (pageToken) q.set("pageToken", pageToken);
-    const page = (await (await calendarApi(token, `${base}?${q}`)).json()) as { items?: { id: string; extendedProperties?: { private?: { h?: string } } }[]; nextPageToken?: string };
-    for (const item of page.items ?? []) existing.push({ id: item.id, h: item.extendedProperties?.private?.h ?? null });
-    pageToken = page.nextPageToken;
-  } while (pageToken);
-
-  const plan = syncPlan(wanted, existing);
-  await inBatches(plan.write, async (event) => {
-    // Update in place; an id Google has never seen is inserted. A deleted one comes back (status confirmed).
-    const put = await calendarApi(token, `${base}/${event.id}`, { method: "PUT", body: JSON.stringify({ ...event, status: "confirmed" }) }, [404]);
-    if (put.status === 404) await calendarApi(token, base, { method: "POST", body: JSON.stringify(event) });
-  });
-  await inBatches(plan.remove, async (id) => {
-    await calendarApi(token, `${base}/${id}`, { method: "DELETE" }, [404, 410]);
-  });
-  return { written: plan.write.length, removed: plan.remove.length, total: wanted.length };
-}
-
-/** For the heartbeat: sync when the calendar is connected and the last sync is older than `maxAgeMs`. Never throws. */
-export async function syncCalendarIfStale(db: OrcaSupabase, ownerId: string, maxAgeMs = 30 * 60_000): Promise<void> {
-  if (!googleConfig()) return;
-  try {
-    const { data } = await connections(db).select("scopes, calendar_synced_at, broken_at").eq("owner_id", ownerId).maybeSingle();
-    if (!data || data.broken_at || !data.scopes.includes(GOOGLE_SCOPES.calendar)) return;
-    if (data.calendar_synced_at && Date.now() - Date.parse(data.calendar_synced_at) < maxAgeMs) return;
-    await syncCalendar(db, ownerId);
-  } catch {
-    // Recorded on the connection by syncCalendar; Settings shows it.
-  }
+  const list = await calendarGet<{ items?: { id: string; summary?: string; summaryOverride?: string; selected?: boolean; hidden?: boolean }[] }>(token, "/users/me/calendarList?fields=items(id,summary,summaryOverride,selected,hidden)&maxResults=250");
+  const calendars = (list.items ?? []).filter((c) => c.selected && !c.hidden && (c.summaryOverride ?? c.summary) !== "Orca").slice(0, MAX_CALENDARS);
+  const q = new URLSearchParams({ timeMin, timeMax, singleEvents: "true", orderBy: "startTime", maxResults: String(MAX_EVENTS_PER_CALENDAR), fields: "items(id,summary,status,start,end,transparency)" });
+  const pages = await Promise.all(
+    calendars.map(async (c) => {
+      const page = await calendarGet<{ items?: RawGoogleEvent[] }>(token, `/calendars/${encodeURIComponent(c.id)}/events?${q}`);
+      return (page.items ?? []).flatMap((e) => fromGoogleEvent(e, c.summaryOverride ?? c.summary ?? "Google Calendar") ?? []);
+    }),
+  );
+  return pages.flat();
 }
 
 /* ── Drive ── */

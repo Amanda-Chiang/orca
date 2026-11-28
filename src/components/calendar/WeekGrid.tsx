@@ -1,10 +1,9 @@
 import type { ReactNode } from "react";
-import type { CalendarEvent } from "@/lib/data";
 import { cn } from "@/lib/cn";
 import { WEEKDAYS } from "./MonthGrid";
 
 /** The week: seven tall columns, every entry in full (course over what it is). Entries have no time of day, so no hours. */
-export function WeekGrid({
+export function WeekGrid<E extends { id: string }>({
   days,
   today,
   byDate,
@@ -12,8 +11,8 @@ export function WeekGrid({
 }: {
   days: readonly string[];
   today: string;
-  byDate: ReadonlyMap<string, CalendarEvent[]>;
-  entry: (e: CalendarEvent, compact: boolean) => ReactNode;
+  byDate: ReadonlyMap<string, E[]>;
+  entry: (e: E, compact: boolean) => ReactNode;
 }) {
   return (
     <div className="grid h-full min-h-0 grid-cols-7 overflow-hidden rounded-[20px] border border-line bg-card">

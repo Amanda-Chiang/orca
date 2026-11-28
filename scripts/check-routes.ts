@@ -71,7 +71,7 @@ async function signedOut() {
     ["DELETE", "/api/google"],
     ["GET", "/api/google/connect?feature=drive"],
     ["GET", "/api/google/callback?state=x&code=y"],
-    ["POST", "/api/google/calendar/sync", {}],
+    ["GET", "/api/google/calendar/events?from=2026-11-01&to=2026-11-08"],
     ["POST", "/api/google/picker-token", {}],
     ["POST", "/api/materials/google-drive", { courseId: anyId, fileId: "1AbCdEfGhIjKlMnOp", type: "Lecture", assigned: null, due: null }],
   ];
@@ -310,15 +310,17 @@ async function google(A: Student, B: Student, courseB: string) {
   check("callback: another student can't finish A's sign-in", otherStudent.status === 303 && (otherStudent.headers.get("location") ?? "").includes("google=error"), otherStudent.headers.get("location"));
   const denied = await manual(`/api/google/callback?state=${state}&error=access_denied`, A, pair);
   check("callback: the student saying no on Google's screen comes back as denied", denied.status === 303 && (denied.headers.get("location") ?? "").includes("google=denied"), denied.headers.get("location"));
-  const sync = await post("/api/google/calendar/sync", A, {});
-  check("sync without Calendar connected → 409", sync.status === 409, sync);
+  const events = await get("/api/google/calendar/events?from=2026-11-29&to=2026-12-06", A);
+  check("Google events without Calendar connected → not connected, none", events.status === 200 && (events.body as { connected?: boolean }).connected === false, events);
+  const tooLong = await get("/api/google/calendar/events?from=2026-01-01&to=2026-06-01", A);
+  check("Google events for more than 45 days → 400", tooLong.status === 400, tooLong);
   const token = await post("/api/google/picker-token", A, {});
   check("picker token without the picker's key → 503", token.status === 503, token);
   const notMine = await post("/api/materials/google-drive", A, { courseId: courseB, fileId: "1AbCdEfGhIjKlMnOp", type: "Lecture", assigned: null, due: null });
   check("a Drive file into another student's course → 404", notMine.status === 404, notMine);
   const badId = await post("/api/materials/google-drive", A, { courseId: courseB, fileId: "../../x", type: "Lecture", assigned: null, due: null });
   check("a malformed Drive file id → 400", badId.status === 400, badId);
-  const off = await api("/api/google", { method: "DELETE", token: A.token, body: { removeCalendar: true } });
+  const off = await api("/api/google", { method: "DELETE", token: A.token });
   check("disconnect with nothing connected is harmless", off.status === 200, off);
   check("no connection row was written by any of it", (await rows(`google_connections?owner_id=in.(${A.id},${B.id})&select=owner_id`)).length === 0, null);
 }

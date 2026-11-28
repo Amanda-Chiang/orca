@@ -289,19 +289,21 @@ the heartbeat the app sends every 5 minutes while a tab is open (`profiles.last_
 ## 11. Google Calendar and Drive sign-in (the owner, once)
 
 Students connect Google from Settings → Connections (and Drive from Add material's "Google Drive"
-button). Orca asks for two narrow scopes, each only when the student uses that feature:
-`calendar.app.created` (only an "Orca" calendar that Orca makes; a **sensitive** scope) and
-`drive.file` (only files the student picks in Google's picker; **non-sensitive**). Without the
+button). Orca asks for narrow scopes, each only when the student uses that feature: Calendar,
+read only (`calendar.events.readonly` and `calendar.calendarlist.readonly`, **sensitive**: their
+events show on Orca's calendar), and `drive.file` (only files the student picks in Google's
+picker; **non-sensitive**). Without the
 variables below the Google card and button don't show.
 
 1. Google Cloud console → new project ("Orca"). Note its **project number** (Dashboard).
 2. APIs & Services → Library: enable **Google Calendar API**, **Google Drive API** and **Google
    Picker API**.
 3. Google Auth Platform → Branding: app name Orca, support email, the homepage
-   (`https://orca.us.com`), privacy policy URL; under Authorized domains, `orca.us.com`. Audience: **External**, status
+   (`https://orca.us.com`), privacy policy `https://orca.us.com/privacy`, terms
+   `https://orca.us.com/terms`; under Authorized domains, `orca.us.com`. Audience: **External**, status
    **Testing**; add each tester's Google address under Test users (at most 100).
-4. Data Access → Add scopes: `openid`, `.../auth/userinfo.email`, `.../auth/calendar.app.created`,
-   `.../auth/drive.file`.
+4. Data Access → Add scopes: `openid`, `.../auth/userinfo.email`, `.../auth/calendar.events.readonly`,
+   `.../auth/calendar.calendarlist.readonly`, `.../auth/drive.file`.
 5. Clients → Create client → **Web application**. Authorized redirect URIs:
    `https://orca.us.com/api/google/callback` and `http://localhost:3000/api/google/callback`.
    Authorized JavaScript origins (for the picker): `https://orca.us.com`, `http://localhost:3000`.

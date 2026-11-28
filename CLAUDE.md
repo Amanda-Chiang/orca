@@ -266,11 +266,15 @@ own courses (Data Structures, Fundamentals of Computer Systems) on the hosted pr
   upload page says to export as PDF. New rate limits: `calendarFeed`, `google`, `notionConnect`,
   `notionPages`, `notionImport`. The new tables and column are in `database.types.ts`.
 - **Google Calendar and Drive sign-in** (2026-11-27): OAuth (web client, PKCE, offline) from Settings → Connections →
-  Google, one feature at a time (`src/lib/google/oauth.ts`: `calendar.app.created`, `drive.file`). The refresh token
-  is encrypted in `google_connections` (migration `20261127090000`, service-role only; `src/lib/server/google.ts`).
-  Calendar: an "Orca" calendar Orca makes and keeps in line with `orcaEvents` (the feed's events, `src/lib/calendar/ics.ts`;
-  `src/lib/google/calendar.ts` plans the writes), on connect, Sync now, and from the heartbeat at most every 30 min.
-  Drive: Add material's "Google Drive" opens Google's picker (`src/lib/google-picker.ts`, a `drive.file` token from
+  Google, one feature at a time (`src/lib/google/oauth.ts`: `calendar.events.readonly` + `calendar.calendarlist.readonly`,
+  `drive.file`). The refresh token is encrypted in `google_connections` (migration `20261127090000`, service-role only;
+  `src/lib/server/google.ts`). **Calendar is read only** (owner, 2026-11-28: Orca reads the student's calendars; the
+  writer that kept an "Orca" calendar in Google is gone, and the subscription feed puts Orca's dates in their calendar
+  app): `GET /api/google/calendar/events` reads the shown days' events from every calendar they show in Google (not
+  one named "Orca", the feed), never stored, and the calendar page draws them dashed (`src/lib/google/events.ts`).
+  The `calendar_*` columns of `google_connections` are unused since. Public `/privacy` and `/terms` (for Google's
+  Branding) must match the scopes. Drive: Add material's "Google Drive" opens Google's picker on My Drive's folders
+  (select a folder's files; `drive.file` can't read a picked folder) (`src/lib/google-picker.ts`, a `drive.file` token from
   `/api/google/picker-token`) and `POST /api/materials/google-drive` downloads each pick (Google formats as PDF)
   through `addFetchedFile` (`src/lib/server/fetched-file.ts`, shared with share links). Env vars and the Google Cloud
   steps: `docs/SETUP-HOSTED.md` §11. Not tested against Google itself in CI.
