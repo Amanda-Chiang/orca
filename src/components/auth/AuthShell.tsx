@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Screen } from "@/components/layout/Screen";
+import { LegalLinks } from "@/components/legal/LegalPage";
 
 /**
  * The frame of every account screen (Figma: 12 · Log in, 13 · Sign up): the form on the left
@@ -17,6 +18,7 @@ export function AuthShell({ eyebrow, title, lead, aside, children }: { eyebrow: 
             {lead && <p className="text-[20px] text-prussian">{lead}</p>}
           </div>
           {children}
+          <LegalLinks />
         </section>
         {aside && (
           <aside className="flex flex-1 items-center justify-center" aria-hidden={false}>
