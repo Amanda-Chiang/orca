@@ -1,4 +1,5 @@
 import type { CalendarEvent } from "@/lib/data";
+import type { GoogleEntry } from "@/lib/google/events";
 import type { CourseColor } from "@/lib/course/colors";
 import { entryType } from "@/lib/course/calendar-view";
 import { cn } from "@/lib/cn";
@@ -62,6 +63,20 @@ export function CalendarEntry({
           <span className={cn("break-words", course && "font-medium opacity-80")}>{event.title}</span>
         </span>
       )}
+    </div>
+  );
+}
+
+/** One of the student's Google Calendar events (read only, 2026-11-28): quiet, so Orca's own entries lead. */
+export function GoogleCalendarEntry({ event, compact }: { event: GoogleEntry; compact?: boolean }) {
+  const label = event.time ? `${event.time} ${event.title}` : event.title;
+  return (
+    <div
+      data-part="google-event"
+      title={`${event.calendar} · ${label}`}
+      className={cn("flex min-w-0 items-center rounded-[7px] border border-dashed border-line font-semibold leading-[1.2] text-muted", compact ? "gap-[5px] px-[6px] py-[2px] text-[11.5px]" : "gap-[6px] px-[8px] py-[5px] text-[12.5px]")}
+    >
+      <span className={compact ? "truncate" : "break-words"}>{label}</span>
     </div>
   );
 }

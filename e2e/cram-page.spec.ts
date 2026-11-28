@@ -181,13 +181,14 @@ test("setup picks the files and the hours for each day, one at 0; the page then 
 
 test("the schedule shows a column per day of the cram with its hours and topics, today highlighted, a past day marked met; a topic answered since the cram started is in progress", async ({ page, student }) => {
   // A three-day cram that started yesterday: an hour yesterday (studied in full), two hours today, half an hour tomorrow; the exam the day after.
-  const since = new Date(Date.now() - 86_400_000 - 60_000).toISOString();
+  // Fixed times of yesterday (local), not "24 hours ago": in the hour after midnight that hour-long session would start the day before.
   const yesterday = inDays(-1);
+  const since = new Date(`${yesterday}T00:00:00`).toISOString();
   const perDay = { [yesterday]: 1, [inDays(0)]: 2, [inDays(1)]: 0.5 };
   const miss: AnswerEvent = { kind: "answer", id: crypto.randomUUID(), at: new Date(Date.now() - 30 * 60_000).toISOString(), courseId: F.course, topicId: F.booleanAlgebra, objectiveId: F.simplify, questionId: F.ba1, tier: "retrieval", outcome: "incorrect", grader: "exact", source: "quiz", sessionId: "cram-1" };
   await seedState(student, {
     ...FIXTURE_STATE,
-    results: [{ courseId: F.course, topicId: F.booleanAlgebra, mode: "topic", sessionId: "cram-0", correct: 1, total: 2, seconds: 3600, finishedAt: daysAgo(1) }],
+    results: [{ courseId: F.course, topicId: F.booleanAlgebra, mode: "topic", sessionId: "cram-0", correct: 1, total: 2, seconds: 3600, finishedAt: new Date(`${yesterday}T13:00:00`).toISOString() }],
     evidence: [miss],
   });
   const seeded = await admin()

@@ -31,7 +31,7 @@ const WHAT: Record<RateAction, string> = {
   notionPages: "Notion page listings",
   notionImport: "Notion imports",
   googleConnect: "Google sign-ins",
-  googleSync: "calendar syncs",
+  googleEvents: "calendar reads",
   googleToken: "Google Drive pickers",
 };
 
