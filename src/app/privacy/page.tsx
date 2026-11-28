@@ -33,9 +33,9 @@ export default function PrivacyPage() {
       <p>Connecting Google is optional, and you choose each feature separately from Settings → Connections.</p>
       <ul>
         <li>
-          <strong>Google Calendar</strong> (scope <code>calendar.app.created</code>): Orca creates one calendar named &quot;Orca&quot; and
-          writes your exams, due dates, class times and review days to it. Orca can only see and change calendars it created. It cannot read
-          your other calendars or events.
+          <strong>Google Calendar</strong> (scope <code>calendar.events.readonly</code>): Orca reads the events on your calendars, read only, to
+          show them beside your exams, due dates and review days in Orca&apos;s calendar. Orca never creates, changes or deletes
+          anything in your Google Calendar. Event details are fetched when needed and are not kept after they are shown.
         </li>
         <li>
           <strong>Google Drive</strong> (scope <code>drive.file</code>): Orca can open only the files you pick in Google&apos;s file picker. It
@@ -45,14 +45,14 @@ export default function PrivacyPage() {
         <li>Orca also reads your Google account&apos;s email address, to show which account is connected.</li>
       </ul>
       <p>
-        Orca keeps a Google refresh token, encrypted, so the calendar stays in sync. Disconnecting Google in Settings revokes that token, deletes
-        it from Orca and, if you choose, deletes the Orca calendar. You can also remove Orca&apos;s access at any time from your Google
+        Orca keeps a Google refresh token, encrypted, so it can read your calendar without asking you to sign in each time. Disconnecting Google
+        in Settings revokes that token and deletes it from Orca. You can also remove Orca&apos;s access at any time from your Google
         account&apos;s permissions page (myaccount.google.com/permissions).
       </p>
       <p>
         Orca&apos;s use and transfer of information received from Google APIs to any other app will adhere to the{" "}
         <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>, including the Limited
-        Use requirements. Specifically, Orca uses Google user data only to provide the calendar and file features you turn on; does not transfer it
+        Use requirements. Specifically, Orca uses Google user data only to show your calendar and import the files you pick; does not transfer it
         to others except as needed to provide those features (for example, a Drive file you pick is processed by our AI model provider like any
         other material), to comply with the law, or as part of a merger or sale with notice to you; does not use it for advertising; and does not
         let people read it, except with your consent, for security, to comply with the law, or when it has been aggregated and anonymised for
