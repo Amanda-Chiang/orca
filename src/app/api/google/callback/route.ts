@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { readOAuthCookie, safeNext, withOutcome } from "@/lib/google/oauth";
-import { GoogleError, finishConsent, redirectUri, syncCalendar } from "@/lib/server/google";
+import { GoogleError, finishConsent, redirectUri } from "@/lib/server/google";
 import { forStudent } from "@/lib/server/student";
 
 /**
  * Google's redirect after the consent screen (2026-11-27): checks the state against the cookie
  * `/api/google/connect` set (same student, same request), trades the code for tokens, saves the
- * refresh token encrypted, and for Calendar makes and fills the Orca calendar at once. Then back to
+ * refresh token encrypted. Then back to
  * the page the student came from, with `?google=connected|denied|error|reconnect`.
  */
 export const runtime = "nodejs";
@@ -32,13 +32,6 @@ export async function GET(request: Request) {
       const { features } = await finishConsent(db, student.id, code, cookie.verifier, redirectUri(request));
       // A student can untick a permission on Google's screen; then the feature they asked for isn't granted.
       if (!features.includes(cookie.feature)) return done("denied");
-      if (cookie.feature === "calendar") {
-        try {
-          await syncCalendar(db, student.id);
-        } catch {
-          // Connected; the error is on the connection and Settings offers Sync now.
-        }
-      }
       return done("connected");
     } catch (e) {
       if (e instanceof GoogleError) return done(e.reconnect ? "reconnect" : "error");

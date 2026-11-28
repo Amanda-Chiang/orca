@@ -1,6 +1,6 @@
 /** Which routes a signed-out visitor may open, and where a `next` parameter may send someone. Pure. */
 
-const PUBLIC = ["/sign-in", "/sign-up", "/forgot-password", "/reset-password", "/auth/callback"];
+const PUBLIC = ["/sign-in", "/sign-up", "/forgot-password", "/reset-password", "/auth/callback", "/privacy", "/terms"];
 
 export function isPublicPath(pathname: string): boolean {
   return PUBLIC.some((p) => pathname === p || pathname.startsWith(`${p}/`));

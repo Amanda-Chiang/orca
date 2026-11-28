@@ -6,7 +6,7 @@ import { passwordProblem, validEmail } from "../src/lib/auth/validate.ts";
 import { contentSecurityPolicy } from "../src/lib/csp.ts";
 
 test("only the account screens and the email callback are public", () => {
-  for (const p of ["/sign-in", "/sign-up", "/forgot-password", "/reset-password", "/auth/callback"]) assert.ok(isPublicPath(p), p);
+  for (const p of ["/sign-in", "/sign-up", "/forgot-password", "/reset-password", "/auth/callback", "/privacy", "/terms"]) assert.ok(isPublicPath(p), p);
   for (const p of ["/", "/home", "/settings", "/course/x", "/sign-in-evil", "/auth"]) assert.ok(!isPublicPath(p), p);
   assert.ok(isGuestOnlyPath("/sign-in"));
   assert.ok(!isGuestOnlyPath("/reset-password"));

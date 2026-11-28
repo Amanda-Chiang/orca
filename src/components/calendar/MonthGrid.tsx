@@ -2,7 +2,6 @@
 
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence } from "motion/react";
-import type { CalendarEvent } from "@/lib/data";
 import type { Box } from "@/lib/anchor-geometry";
 import { AnchoredBubble } from "@/components/ui/AnchoredBubble";
 import { useDismiss } from "@/hooks/useDismiss";
@@ -32,7 +31,7 @@ export function dayTitle(iso: string) {
  * click anywhere on the day, opens a pop-up with all of them, so rows never change height. The weeks
  * share the height they're given (the calendar fits the window), and a day shows as many entries as fit.
  */
-export function MonthGrid({
+export function MonthGrid<E extends { id: string }>({
   days,
   month,
   today,
@@ -44,8 +43,8 @@ export function MonthGrid({
   /** "YYYY-MM" of the month shown; other days are faded. */
   month: string;
   today: string;
-  byDate: ReadonlyMap<string, CalendarEvent[]>;
-  entry: (e: CalendarEvent, compact: boolean) => ReactNode;
+  byDate: ReadonlyMap<string, E[]>;
+  entry: (e: E, compact: boolean) => ReactNode;
 }) {
   const [open, setOpen] = useState<{ day: string; box: Box } | null>(null);
   const popover = useRef<HTMLDivElement>(null);

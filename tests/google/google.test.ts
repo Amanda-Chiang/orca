@@ -1,19 +1,21 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { orcaEvents } from "../../src/lib/calendar/ics.ts";
-import { googleEventId, syncPlan, toGoogleEvent } from "../../src/lib/google/calendar.ts";
+import { fromGoogleEvent, googleEntries } from "../../src/lib/google/events.ts";
 import { GOOGLE_SCOPES, consentUrl, emailFromIdToken, grantedFeatures, readOAuthCookie, safeNext, withOutcome, writeOAuthCookie } from "../../src/lib/google/oauth.ts";
 
 test("each feature asks only for its own narrow scope, offline, with PKCE", () => {
   const url = new URL(consentUrl({ clientId: "cid", redirectUri: "https://orca.test/api/google/callback", feature: "drive", state: "s", codeChallenge: "c" }));
   assert.equal(url.origin + url.pathname, "https://accounts.google.com/o/oauth2/v2/auth");
   const scopes = url.searchParams.get("scope")!.split(" ");
-  assert.deepEqual(scopes, ["openid", "email", GOOGLE_SCOPES.drive]);
-  assert.ok(!scopes.includes(GOOGLE_SCOPES.calendar));
+  assert.deepEqual(scopes, ["openid", "email", ...GOOGLE_SCOPES.drive]);
+  for (const s of GOOGLE_SCOPES.calendar) assert.ok(!scopes.includes(s));
   assert.equal(url.searchParams.get("access_type"), "offline");
   assert.equal(url.searchParams.get("include_granted_scopes"), "true");
   assert.equal(url.searchParams.get("code_challenge_method"), "S256");
-  assert.deepEqual(grantedFeatures(["openid", GOOGLE_SCOPES.calendar]), ["calendar"]);
+  assert.deepEqual(grantedFeatures(["openid", ...GOOGLE_SCOPES.calendar]), ["calendar"]);
+  // Calendar needs both of its scopes: one alone (a box unticked on Google's screen) isn't Calendar.
+  assert.deepEqual(grantedFeatures(["openid", GOOGLE_SCOPES.calendar[0]]), []);
+  assert.ok(GOOGLE_SCOPES.calendar.every((s) => s.endsWith(".readonly")), "Calendar is read only");
 });
 
 test("the callback only sends the student back to a path on this site", () => {
@@ -40,40 +42,25 @@ test("the ID token's email is read; junk gives null", () => {
   assert.equal(emailFromIdToken(undefined), null);
 });
 
-const input = {
-  courses: [{ id: "c1", name: "Data Structures", short: "DS", schedule: { meetings: [{ day: 1 as const, start: "9:05", end: "10:20" }], quickDays: [0 as const], deepDays: null } }],
-  exams: [{ id: "e1", courseId: "c1", title: "Midterm", date: "2026-12-10" }],
-  events: [],
-  from: "2026-11-27",
-  timezone: "America/New_York",
-};
-
-test("Orca's events become Google events with valid, stable ids", () => {
-  const events = orcaEvents(input).map((e) => toGoogleEvent(e, input.timezone));
-  for (const e of events) assert.match(e.id, /^[a-v0-9]{5,1024}$/);
-  assert.equal(new Set(events.map((e) => e.id)).size, events.length);
-  assert.equal(googleEventId("exam-e1"), events.find((e) => e.summary.startsWith("Midterm"))!.id);
-  const exam = events.find((e) => e.summary === "Midterm · DS")!;
-  assert.deepEqual(exam.start, { date: "2026-12-10" });
-  assert.deepEqual(exam.end, { date: "2026-12-11" });
-  const meeting = events.find((e) => e.summary === "DS class")!;
-  assert.deepEqual(meeting.start, { dateTime: "2026-11-30T09:05:00", timeZone: "America/New_York" });
-  assert.deepEqual(meeting.recurrence, ["RRULE:FREQ=WEEKLY;BYDAY=MO"]);
-  assert.equal(meeting.transparency, "opaque");
-  const review = events.find((e) => e.summary === "Orca review · DS")!;
-  assert.deepEqual(review.start, { date: "2026-11-29" });
-  assert.deepEqual(review.end, { date: "2026-11-30" });
-});
-
-test("a sync writes only what changed and removes what Orca no longer has", () => {
-  const wanted = orcaEvents(input).map((e) => toGoogleEvent(e, input.timezone));
-  const [first, ...rest] = wanted;
-  const plan = syncPlan(wanted, [
-    { id: first.id, h: first.extendedProperties.private.h },
-    { id: rest[0].id, h: "stale" },
-    { id: "orcagone", h: "x" },
-  ]);
-  assert.deepEqual(plan.write.map((e) => e.id), rest.map((e) => e.id));
-  assert.deepEqual(plan.remove, ["orcagone"]);
-  assert.deepEqual(syncPlan(wanted, wanted.map((e) => ({ id: e.id, h: e.extendedProperties.private.h }))), { write: [], remove: [] });
+test("Google's events land on the student's local days, all-day ones on every day they cover", () => {
+  const raw = [
+    { id: "a", summary: "COMS 3134 Lecture", start: { dateTime: "2026-12-01T14:10:00Z" }, end: { dateTime: "2026-12-01T15:25:00Z" } },
+    { id: "b", summary: "Trip", start: { date: "2026-12-02" }, end: { date: "2026-12-04" } },
+    { id: "c", status: "cancelled", start: { date: "2026-12-01" }, end: { date: "2026-12-02" } },
+    { id: "d", start: { dateTime: "2026-12-03T03:30:00Z" }, end: { dateTime: "2026-12-03T04:00:00Z" } },
+    { id: "e", summary: "Outside", start: { dateTime: "2026-12-20T15:00:00Z" }, end: { dateTime: "2026-12-20T16:00:00Z" } },
+  ];
+  const events = raw.flatMap((e) => fromGoogleEvent(e, "Classes") ?? []);
+  assert.equal(events.length, 4);
+  const days = ["2026-11-29", "2026-11-30", "2026-12-01", "2026-12-02", "2026-12-03", "2026-12-04", "2026-12-05"];
+  const shown = googleEntries([...events, events[0]], days, "America/New_York");
+  assert.deepEqual(
+    shown.map((e) => [e.date, e.title, e.time]),
+    [
+      ["2026-12-02", "Trip", null],
+      ["2026-12-03", "Trip", null],
+      ["2026-12-01", "COMS 3134 Lecture", "9:10 AM"],
+      ["2026-12-02", "Busy", "10:30 PM"],
+    ],
+  );
 });

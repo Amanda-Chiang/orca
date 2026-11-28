@@ -58,9 +58,13 @@ export async function pickDriveFiles(opts: { token: string; apiKey: string; appI
   await loadPicker();
   const g = window.google.picker;
   return new Promise((resolve) => {
-    const view = new g.DocsView(g.ViewId.DOCS).setMimeTypes(MIMES).setIncludeFolders(true).setSelectFolderEnabled(false);
+    // Opens on My Drive's folders, in a list, so a folder of notes is open it, select all (owner,
+    // 2026-11-28). drive.file can't read a picked folder's contents, so files are what's picked.
+    const folders = new g.DocsView(g.ViewId.DOCS).setParent("root").setIncludeFolders(true).setSelectFolderEnabled(false).setMimeTypes(MIMES).setMode(g.DocsViewMode.LIST).setLabel("My Drive");
+    const all = new g.DocsView(g.ViewId.DOCS).setMimeTypes(MIMES).setIncludeFolders(true).setSelectFolderEnabled(false).setLabel("All files");
     const picker = new g.PickerBuilder()
-      .addView(view)
+      .addView(folders)
+      .addView(all)
       .enableFeature(g.Feature.MULTISELECT_ENABLED)
       .setOAuthToken(opts.token)
       .setDeveloperKey(opts.apiKey)
