@@ -33,7 +33,8 @@ export default function PrivacyPage() {
       <p>Connecting Google is optional, and you choose each feature separately from Settings → Connections.</p>
       <ul>
         <li>
-          <strong>Google Calendar</strong> (scope <code>calendar.events.readonly</code>): Orca reads the events on your calendars, read only, to
+          <strong>Google Calendar</strong> (scopes <code>calendar.events.readonly</code> and <code>calendar.calendarlist.readonly</code>): Orca reads
+          the list of your calendars and the events on them, read only, to
           show them beside your exams, due dates and review days in Orca&apos;s calendar. Orca never creates, changes or deletes
           anything in your Google Calendar. Event details are fetched when needed and are not kept after they are shown.
         </li>
